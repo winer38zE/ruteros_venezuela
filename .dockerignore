@@ -1,0 +1,19 @@
+# Git y entorno local
+.git
+.gitignore
+.env
+.venv
+venv
+__pycache__
+*.py[cod]
+*.db
+
+# IDE
+.idea
+.vscode
+
+# App móvil (no forma parte del backend)
+mobile/
+
+# Documentación y notas internas
+PROMPT_CONTABILIDAD.md

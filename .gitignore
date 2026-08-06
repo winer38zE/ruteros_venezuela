@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# SQLite local / pruebas
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Flutter (raíz mobile tiene su propio .gitignore)
+mobile/.dart_tool/
+mobile/build/

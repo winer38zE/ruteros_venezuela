@@ -1,0 +1,15 @@
+services:
+  api:
+    build: .
+    container_name: ruteros-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:////app/data/ruteros.db
+      - SECRET_KEY=${SECRET_KEY:-cambiar-esta-clave-en-produccion}
+    volumes:
+      - ruteros_data:/app/data
+
+volumes:
+  ruteros_data:

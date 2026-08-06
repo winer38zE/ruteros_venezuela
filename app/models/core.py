@@ -1,0 +1,361 @@
+import uuid
+import enum
+from datetime import datetime
+from sqlalchemy import (
+    Column, String, Boolean, DateTime, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR
+)
+from sqlalchemy.orm import relationship, declarative_base
+
+Base = declarative_base()
+
+# ---------- TIPO UUID PORTÁTIL ----------
+class GUID(TypeDecorator):
+    """Guarda UUID como texto en SQLite, y como UUID nativo si algún día usás Postgres."""
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import UUID
+            return dialect.type_descriptor(UUID())
+        return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
+
+
+# ---------- ENUMS ----------
+class RolUsuario(str, enum.Enum):
+    DUENO = "DUEÑO"       # <-- Corregido a mayúsculas
+    VENDEDOR = "VENDEDOR" # <-- Corregido a mayúsculas
+    COBRADOR = "COBRADOR" # <-- Corregido a mayúsculas
+
+class FrecuenciaPago(str, enum.Enum):
+    CONTADO = "contado"
+    SEMANAL = "semanal"
+    QUINCENAL = "quincenal"
+    MENSUAL = "mensual"
+
+class EstadoVenta(str, enum.Enum):
+    PENDIENTE = "pendiente"
+    PARCIAL = "parcial"
+    PAGADA = "pagada"
+
+class MonedaPago(str, enum.Enum):
+    BOLIVAR = "bolivar"
+    DOLAR = "dolar"
+    EURO = "euro"
+    PAGO_MOVIL = "pago_movil"
+    TRANSFERENCIA = "transferencia"
+
+class TipoCliente(str, enum.Enum):
+    MAYORISTA = "mayorista"
+    DETAL = "detal"
+
+class TipoReferenciaAsiento(str, enum.Enum):
+    VENTA = "venta"
+    COBRO = "cobro"
+
+class TipoMovimientoInventario(str, enum.Enum):
+    ENTRADA = "entrada"
+    SALIDA = "salida"
+
+
+class TipoMovimientoFinanciero(str, enum.Enum):
+    ENTRADA = "entrada"
+    SALIDA = "salida"
+
+
+class CategoriaMovimientoFinanciero(str, enum.Enum):
+    INGRESO_OPERATIVO = "ingreso_operativo"
+    PAGO_VENDEDOR = "pago_vendedor"
+    PAGO_COBRADOR = "pago_cobrador"
+    PAGO_PROVEEDOR = "pago_proveedor"
+    GASTO_MOTO = "gasto_moto"
+    OPERACION_GENERAL = "operacion_general"
+
+
+# ---------- EMPRESA (tenant) ----------
+class Empresa(Base):
+    __tablename__ = "empresas"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    nombre = Column(String, nullable=False)
+    activa = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    usuarios = relationship("Usuario", back_populates="empresa")
+    clientes = relationship("Cliente", back_populates="empresa")
+    productos = relationship("Producto", back_populates="empresa")
+    configuracion_fiscal = relationship(
+        "ConfiguracionFiscal", back_populates="empresa", uselist=False
+    )
+    almacenes = relationship("Almacen", back_populates="empresa")
+
+
+# ---------- USUARIO ----------
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    nombre = Column(String, nullable=False)
+    username = Column(String, unique=True, index=True) # <-- AQUÍ ESTÁ AGREGADO EL USERNAME
+    telefono = Column(String, nullable=True)
+    rol = Column(Enum(RolUsuario), nullable=False)
+    password_hash = Column(String, nullable=False)
+    activo = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa", back_populates="usuarios")
+
+
+# ---------- CLIENTE ----------
+class Cliente(Base):
+    __tablename__ = "clientes"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    vendedor_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=True)
+    nombre = Column(String, nullable=False)
+    telefono = Column(String, nullable=True)
+    direccion = Column(Text, nullable=True)
+    tipo_cliente = Column(Enum(TipoCliente), default=TipoCliente.DETAL)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa", back_populates="clientes")
+
+
+# ---------- PRODUCTO ----------
+class Producto(Base):
+    __tablename__ = "productos"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    nombre = Column(String, nullable=False)
+    categoria = Column(String, nullable=True)
+    precio_usd = Column(Numeric(10, 2), nullable=False)
+    stock = Column(Integer, default=0)
+    activo = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa", back_populates="productos")
+    precios = relationship("PrecioProducto", back_populates="producto")
+    lotes = relationship("LoteInventario", back_populates="producto")
+
+
+# ---------- CONFIGURACIÓN FISCAL MULTI-PAÍS ----------
+class ConfiguracionFiscal(Base):
+    __tablename__ = "configuracion_fiscal"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, unique=True)
+    pais = Column(String, nullable=False, default="VE")
+    moneda_base = Column(String, nullable=False, default="USD")
+    iva_porcentaje = Column(Numeric(5, 2), nullable=False, default=16.00)
+    igtf_porcentaje = Column(Numeric(5, 2), nullable=False, default=3.00)
+    aplica_igtf_divisas = Column(Boolean, default=True)
+    razon_social = Column(String, nullable=True)
+    rif = Column(String, nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa", back_populates="configuracion_fiscal")
+
+
+# ---------- INVENTARIO MULTI-ALMACÉN ----------
+class Almacen(Base):
+    __tablename__ = "almacenes"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    nombre = Column(String, nullable=False)
+    ubicacion = Column(String, nullable=True)
+    es_principal = Column(Boolean, default=False)
+    activo = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa", back_populates="almacenes")
+    lotes = relationship("LoteInventario", back_populates="almacen")
+
+
+class LoteInventario(Base):
+    __tablename__ = "lotes_inventario"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    producto_id = Column(GUID(), ForeignKey("productos.id"), nullable=False)
+    almacen_id = Column(GUID(), ForeignKey("almacenes.id"), nullable=False)
+    numero_lote = Column(String, nullable=False)
+    cantidad = Column(Integer, nullable=False, default=0)
+    costo_unitario_usd = Column(Numeric(10, 2), nullable=False, default=0)
+    fecha_vencimiento = Column(DateTime, nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    producto = relationship("Producto", back_populates="lotes")
+    almacen = relationship("Almacen", back_populates="lotes")
+
+
+class PrecioProducto(Base):
+    __tablename__ = "precios_producto"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    producto_id = Column(GUID(), ForeignKey("productos.id"), nullable=False)
+    tipo_cliente = Column(Enum(TipoCliente), nullable=False)
+    precio_usd = Column(Numeric(10, 2), nullable=False)
+
+    producto = relationship("Producto", back_populates="precios")
+
+
+class MovimientoInventario(Base):
+    __tablename__ = "movimientos_inventario"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    producto_id = Column(GUID(), ForeignKey("productos.id"), nullable=False)
+    almacen_id = Column(GUID(), ForeignKey("almacenes.id"), nullable=False)
+    lote_id = Column(GUID(), ForeignKey("lotes_inventario.id"), nullable=True)
+    tipo = Column(Enum(TipoMovimientoInventario), nullable=False)
+    cantidad = Column(Integer, nullable=False)
+    referencia_tipo = Column(String, nullable=True)
+    referencia_id = Column(GUID(), nullable=True)
+    fecha = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------- CONTABILIDAD (LIBRO DIARIO) ----------
+class AsientoContable(Base):
+    __tablename__ = "asientos_contables"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    fecha = Column(DateTime, nullable=False)
+    referencia_tipo = Column(Enum(TipoReferenciaAsiento), nullable=False)
+    referencia_id = Column(GUID(), nullable=False)
+    descripcion = Column(String, nullable=False)
+    tasa_usd_aplicada = Column(Numeric(12, 4), nullable=False)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    lineas = relationship("LineaAsiento", back_populates="asiento", cascade="all, delete-orphan")
+
+
+class LineaAsiento(Base):
+    __tablename__ = "lineas_asiento"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    asiento_id = Column(GUID(), ForeignKey("asientos_contables.id"), nullable=False)
+    cuenta_codigo = Column(String, nullable=False)
+    cuenta_nombre = Column(String, nullable=False)
+    debito_usd = Column(Numeric(12, 4), nullable=False, default=0)
+    credito_usd = Column(Numeric(12, 4), nullable=False, default=0)
+    debito_bs = Column(Numeric(14, 4), nullable=False, default=0)
+    credito_bs = Column(Numeric(14, 4), nullable=False, default=0)
+
+    asiento = relationship("AsientoContable", back_populates="lineas")
+
+
+# ---------- TASA DE CAMBIO ----------
+class TasaCambio(Base):
+    __tablename__ = "tasas_cambio"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    fecha = Column(DateTime, default=datetime.utcnow)
+    momento = Column(String, nullable=False)  # "manana" o "tarde"
+    usd_bs = Column(Numeric(12, 4), nullable=False)
+    eur_bs = Column(Numeric(12, 4), nullable=False)
+
+
+# ---------- VENTA ----------
+class Venta(Base):
+    __tablename__ = "ventas"
+
+    id = Column(GUID(), primary_key=True)  # generado en el celular (offline-first)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False)
+    vendedor_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+
+    fecha = Column(DateTime, nullable=False)
+    total_usd = Column(Numeric(10, 2), nullable=False)
+
+    tasa_usd_aplicada = Column(Numeric(12, 4), nullable=False)
+    tasa_eur_aplicada = Column(Numeric(12, 4), nullable=False)
+
+    frecuencia_pago = Column(Enum(FrecuenciaPago), nullable=False)
+    estado = Column(Enum(EstadoVenta), default=EstadoVenta.PENDIENTE)
+
+    sincronizado = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    detalles = relationship("DetalleVenta", back_populates="venta")
+    cobros = relationship("Cobro", back_populates="venta")
+    cliente = relationship("Cliente")
+
+
+class DetalleVenta(Base):
+    __tablename__ = "detalles_venta"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    venta_id = Column(GUID(), ForeignKey("ventas.id"), nullable=False)
+    producto_id = Column(GUID(), ForeignKey("productos.id"), nullable=False)
+    cantidad = Column(Integer, nullable=False)
+    precio_unitario_usd = Column(Numeric(10, 2), nullable=False)
+
+    venta = relationship("Venta", back_populates="detalles")
+
+
+# ---------- COBRO (append-only) ----------
+class Cobro(Base):
+    __tablename__ = "cobros"
+
+    id = Column(GUID(), primary_key=True)  # generado en el celular
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    venta_id = Column(GUID(), ForeignKey("ventas.id"), nullable=False)
+    cobrador_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+
+    fecha = Column(DateTime, nullable=False)
+    monto_usd = Column(Numeric(10, 2), nullable=False)
+
+    moneda_pago = Column(Enum(MonedaPago), nullable=False)
+    tasa_usd_aplicada = Column(Numeric(12, 4), nullable=False)
+    tasa_eur_aplicada = Column(Numeric(12, 4), nullable=False)
+
+    sincronizado = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    venta = relationship("Venta", back_populates="cobros")
+
+
+# ---------- FINANZAS / NÓMINA ----------
+class ConfiguracionNomina(Base):
+    __tablename__ = "configuracion_nomina"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, unique=True)
+    comision_vendedor_por_articulo_usd = Column(Numeric(10, 2), nullable=False, default=10.00)
+    comision_cobrador_porcentaje = Column(Numeric(5, 2), nullable=False, default=10.00)
+    sueldo_base_cobrador_usd = Column(Numeric(10, 2), nullable=False, default=0.00)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+
+class MovimientoFinanciero(Base):
+    __tablename__ = "movimientos_financieros"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    tipo = Column(Enum(TipoMovimientoFinanciero), nullable=False)
+    categoria = Column(Enum(CategoriaMovimientoFinanciero), nullable=False)
+    monto_usd = Column(Numeric(12, 2), nullable=False)
+    descripcion = Column(Text, nullable=False)
+    fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
+    registrado_por_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+    empleado_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=True)
+    periodo_desde = Column(DateTime, nullable=True)
+    periodo_hasta = Column(DateTime, nullable=True)
+    aprobado = Column(Boolean, default=False)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
