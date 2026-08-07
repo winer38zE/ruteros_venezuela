@@ -1,8 +1,12 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.models.core import Base
 from app.core.db import engine
 from app.core.migrate import aplicar_migraciones_sqlite
+from app.core.bootstrap import asegurar_usuario_admin
 
 # Importamos todas tus rutas organizadas
 from app.api import (
@@ -11,10 +15,27 @@ from app.api import (
     auth_router,
 )
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 aplicar_migraciones_sqlite(engine)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="API Sistema Ruteros Multimoneda", version="2.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        asegurar_usuario_admin()
+    except Exception:
+        logger.exception("Bootstrap de admin falló; el servidor continuará arrancando.")
+    yield
+
+
+app = FastAPI(
+    title="API Sistema Ruteros Multimoneda",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
