@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -17,8 +18,8 @@ class ApiException implements Exception {
 class ApiService {
   ApiService({http.Client? client}) : _client = client ?? http.Client();
 
-  /// IP fija de la laptop en red local (dispositivo físico vía USB/Wi-Fi).
-  static const String baseUrl = 'http://192.168.20.5:8000/api/v1';
+  /// Alias de [ApiConfig.apiBaseUrl] — punto único de configuración.
+  static String get baseUrl => ApiConfig.apiBaseUrl;
 
   static const _kToken = 'auth_token';
   static const _kUsuarioId = 'usuario_id';
@@ -105,9 +106,9 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
       return _decode(res);
     } on SocketException {
-      throw ApiException(0, 'Sin conexión. Verifica Wi-Fi y que el backend esté activo en $baseUrl');
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
     } on TimeoutException {
-      throw ApiException(0, 'Tiempo de espera agotado. Revisa la red local.');
+      throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -126,9 +127,9 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
       return _decode(res);
     } on SocketException {
-      throw ApiException(0, 'Sin conexión. Verifica Wi-Fi y que el backend esté activo en $baseUrl');
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
     } on TimeoutException {
-      throw ApiException(0, 'Tiempo de espera agotado. Revisa la red local.');
+      throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -146,7 +147,7 @@ class ApiService {
       }
       return res.bodyBytes;
     } on SocketException {
-      throw ApiException(0, 'Sin conexión al descargar. Revisa la red local.');
+      throw ApiException(0, 'Sin conexión al descargar. Revisa internet.');
     } on TimeoutException {
       throw ApiException(0, 'Descarga interrumpida por tiempo de espera.');
     } on ApiException {

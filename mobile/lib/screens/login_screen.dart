@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
-import '../services/api_service.dart';
+import '../config/api_config.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_background.dart';
 import '../widgets/glass_container.dart';
@@ -72,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Text('Sistema Ruteros Multimoneda'),
                     const SizedBox(height: 8),
                     Text(
-                      ApiService.baseUrl,
+                      ApiConfig.apiBaseUrl,
                       style: Theme.of(context).textTheme.bodySmall,
                       textAlign: TextAlign.center,
                     ),
