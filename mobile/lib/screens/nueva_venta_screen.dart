@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
+import '../widgets/score_badge.dart';
 
 class NuevaVentaScreen extends StatefulWidget {
   const NuevaVentaScreen({super.key});
@@ -106,6 +107,17 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     if (_cliente == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona un cliente')),
+      );
+      return;
+    }
+    if (_frecuencia != 'contado' && _cliente!.bloqueadoCredito) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Crédito Rechazado: Cliente reportado con alto riesgo crediticio. Solo ventas de contado.',
+          ),
+          backgroundColor: Color(0xFFEF4444),
+        ),
       );
       return;
     }
@@ -207,10 +219,26 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   decoration: _input('Cliente', icon: Icons.person_outline),
                   dropdownColor: AppColors.bgElevated,
                   items: _clientes
-                      .map((c) => DropdownMenuItem(value: c, child: Text('${c.nombre} (${c.tipoCliente})')))
+                      .map((c) => DropdownMenuItem(
+                            value: c,
+                            child: Text('${c.nombre} · Score ${c.scoreCredito}'),
+                          ))
                       .toList(),
-                  onChanged: (c) => setState(() => _cliente = c),
+                  onChanged: (c) => setState(() {
+                    _cliente = c;
+                    if (c != null && c.bloqueadoCredito && _frecuencia != 'contado') {
+                      _frecuencia = 'contado';
+                    }
+                  }),
                 ),
+                if (_cliente != null) ...[
+                  const SizedBox(height: 8),
+                  ScoreBadge(
+                    score: _cliente!.scoreCredito,
+                    estado: _cliente!.bloqueadoCredito ? 'Malo / Moroso' : 'Score activo',
+                    compact: true,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 if (_almacenes.isNotEmpty)
                   DropdownButtonFormField<Almacen>(
@@ -228,7 +256,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                         value: _frecuencia,
                         decoration: _input('Frecuencia pago'),
                         dropdownColor: AppColors.bgElevated,
-                        items: _frecuencias.map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
+                        items: _frecuencias
+                            .where((f) => f == 'contado' || !(_cliente?.bloqueadoCredito ?? false))
+                            .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                            .toList(),
                         onChanged: (f) => setState(() => _frecuencia = f!),
                       ),
                     ),

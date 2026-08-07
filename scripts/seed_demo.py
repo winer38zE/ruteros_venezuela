@@ -89,10 +89,16 @@ def main():
 
     print("Clientes, productos y almacén...")
     cli_det = _post("/api/v1/clientes/", {
-        "nombre_completo": "Bodega La Esquina", "tipo_cliente": "detal",
+        "nombre_completo": "Bodega La Esquina",
+        "identificacion": "V12345678",
+        "telefono": "04141234567",
+        "tipo_cliente": "detal",
     })
     cli_may = _post("/api/v1/clientes/", {
-        "nombre_completo": "Distribuidora Norte", "tipo_cliente": "mayorista",
+        "nombre_completo": "Distribuidora Norte",
+        "identificacion": "V87654321",
+        "telefono": "04241234567",
+        "tipo_cliente": "mayorista",
     })
     prod = _post("/api/v1/productos/", {
         "nombre": "Harina PAN 1kg",

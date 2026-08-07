@@ -10,6 +10,7 @@ from app.models.core import (
 from app.schemas.core import VentaCreate, VentaResponse
 from app.services.contabilidad import generar_asiento_venta
 from app.services.inventario import procesar_detalles_venta, calcular_total_detalles
+from app.services.buro_credito import validar_venta_credito
 from datetime import datetime
 from typing import List, Optional
 import uuid
@@ -73,6 +74,8 @@ def crear_venta(
         frecuencia = FrecuenciaPago(venta.frecuencia_pago)
     except ValueError:
         raise HTTPException(status_code=400, detail="Frecuencia de pago inválida")
+
+    validar_venta_credito(cliente_actual, frecuencia)
 
     tipo_cliente = cliente_actual.tipo_cliente or TipoCliente.DETAL
     total_venta = Decimal(str(venta.total_usd))

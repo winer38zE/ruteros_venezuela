@@ -1,34 +1,204 @@
-from fastapi import APIRouter, Depends
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from app.core.db import get_db
 from app.core.tenant import obtener_empresa_tenant
 from app.models.core import Cliente, TipoCliente
-from app.schemas.core import ClienteCreate, ClienteResponse
-from typing import List
+from app.schemas.core import (
+    ClienteCreate,
+    ClienteUpdate,
+    ClienteResponse,
+    BuroCreditoResponse,
+    ClienteAutocompletadoResponse,
+    HistorialBuroItem,
+)
+from app.services.buro_credito import (
+    normalizar_identificacion,
+    clasificar_score,
+    etiqueta_estado,
+    consultar_buro,
+    datos_autocompletado_buro,
+    sincronizar_score_inicial,
+)
+from typing import List, Optional
 
 router = APIRouter()
+
+
+def _serializar_cliente(c: Cliente) -> ClienteResponse:
+    score = c.score_credito or 70
+    nivel = clasificar_score(score)
+    return ClienteResponse(
+        id=c.id,
+        empresa_id=c.empresa_id,
+        nombre=c.nombre,
+        identificacion=c.identificacion,
+        telefono=c.telefono,
+        telefono_secundario=c.telefono_secundario,
+        direccion=c.direccion,
+        punto_referencia=c.punto_referencia,
+        empresa_trabajo=c.empresa_trabajo,
+        direccion_laboral=c.direccion_laboral,
+        ref_familiar_nombre=c.ref_familiar_nombre,
+        ref_familiar_parentesco=c.ref_familiar_parentesco,
+        ref_familiar_telefono=c.ref_familiar_telefono,
+        email=c.email,
+        score_credito=score,
+        nivel_riesgo=nivel,
+        estado_credito=etiqueta_estado(score),
+        tipo_cliente=c.tipo_cliente.value if hasattr(c.tipo_cliente, "value") else (c.tipo_cliente or "detal"),
+    )
 
 
 @router.post("/", response_model=ClienteResponse)
 def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
     empresa_actual = obtener_empresa_tenant(db)
+    ident = normalizar_identificacion(cliente.identificacion)
+
+    existente = db.query(Cliente).filter(Cliente.identificacion == ident).first()
+    if existente:
+        raise HTTPException(
+            status_code=400,
+            detail="Esta identificación ya está registrada en la red Ruteros. Use buró para verificar.",
+        )
 
     nuevo_cliente = Cliente(
         nombre=cliente.nombre_completo,
-        direccion=cliente.direccion,
+        identificacion=ident,
         telefono=cliente.telefono,
+        telefono_secundario=cliente.telefono_secundario,
+        direccion=cliente.direccion,
+        punto_referencia=cliente.punto_referencia,
+        empresa_trabajo=cliente.empresa_trabajo,
+        direccion_laboral=cliente.direccion_laboral,
+        ref_familiar_nombre=cliente.ref_familiar_nombre,
+        ref_familiar_parentesco=cliente.ref_familiar_parentesco,
+        ref_familiar_telefono=cliente.ref_familiar_telefono,
+        email=cliente.email,
         tipo_cliente=TipoCliente(cliente.tipo_cliente or "detal"),
         empresa_id=empresa_actual.id,
     )
+    sincronizar_score_inicial(db, nuevo_cliente)
 
     db.add(nuevo_cliente)
     db.commit()
     db.refresh(nuevo_cliente)
-
-    return nuevo_cliente
+    return _serializar_cliente(nuevo_cliente)
 
 
 @router.get("/", response_model=List[ClienteResponse])
-def listar_clientes(db: Session = Depends(get_db)):
+def listar_clientes(
+    db: Session = Depends(get_db),
+    q: Optional[str] = Query(None, description="Buscar por nombre, teléfono o cédula"),
+):
     empresa = obtener_empresa_tenant(db)
-    return db.query(Cliente).filter(Cliente.empresa_id == empresa.id).all()
+    query = db.query(Cliente).filter(Cliente.empresa_id == empresa.id)
+    if q:
+        term = f"%{q.strip()}%"
+        ident = normalizar_identificacion(q) if q.strip() else ""
+        filtros = [
+            Cliente.nombre.ilike(term),
+            Cliente.telefono.ilike(term),
+            Cliente.telefono_secundario.ilike(term),
+        ]
+        if ident:
+            filtros.append(Cliente.identificacion.ilike(f"%{ident}%"))
+        query = query.filter(or_(*filtros))
+    clientes = query.order_by(Cliente.nombre.asc()).all()
+    return [_serializar_cliente(c) for c in clientes]
+
+
+@router.get("/buro/{identificacion}", response_model=BuroCreditoResponse)
+def consultar_buro_credito(identificacion: str, db: Session = Depends(get_db)):
+    data = consultar_buro(db, identificacion)
+    return BuroCreditoResponse(
+        identificacion=data["identificacion"],
+        encontrado=data["encontrado"],
+        score_global=data["score_global"],
+        nivel_riesgo=data["nivel_riesgo"],
+        estado_credito=data["estado_credito"],
+        historial_cumplimiento=[
+            HistorialBuroItem(**h) for h in data["historial_cumplimiento"]
+        ],
+    )
+
+
+@router.get("/verificar/{identificacion}", response_model=ClienteAutocompletadoResponse)
+def verificar_identificacion(identificacion: str, db: Session = Depends(get_db)):
+    data = datos_autocompletado_buro(db, identificacion)
+    if not data:
+        return ClienteAutocompletadoResponse(
+            identificacion=normalizar_identificacion(identificacion),
+            en_red=False,
+        )
+    return ClienteAutocompletadoResponse(**data)
+
+
+@router.get("/{cliente_id}", response_model=ClienteResponse)
+def obtener_cliente(cliente_id: UUID, db: Session = Depends(get_db)):
+    empresa = obtener_empresa_tenant(db)
+    cliente = (
+        db.query(Cliente)
+        .filter(Cliente.id == cliente_id, Cliente.empresa_id == empresa.id)
+        .first()
+    )
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    return _serializar_cliente(cliente)
+
+
+@router.put("/{cliente_id}", response_model=ClienteResponse)
+def actualizar_cliente(
+    cliente_id: UUID,
+    body: ClienteUpdate,
+    db: Session = Depends(get_db),
+):
+    empresa = obtener_empresa_tenant(db)
+    cliente = (
+        db.query(Cliente)
+        .filter(Cliente.id == cliente_id, Cliente.empresa_id == empresa.id)
+        .first()
+    )
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    if body.identificacion is not None:
+        ident = normalizar_identificacion(body.identificacion)
+        dup = (
+            db.query(Cliente)
+            .filter(Cliente.identificacion == ident, Cliente.id != cliente.id)
+            .first()
+        )
+        if dup:
+            raise HTTPException(status_code=400, detail="La identificación ya está en uso en la red")
+        cliente.identificacion = ident
+
+    if body.nombre_completo is not None:
+        cliente.nombre = body.nombre_completo
+    if body.telefono is not None:
+        cliente.telefono = body.telefono
+    if body.telefono_secundario is not None:
+        cliente.telefono_secundario = body.telefono_secundario
+    if body.direccion is not None:
+        cliente.direccion = body.direccion
+    if body.punto_referencia is not None:
+        cliente.punto_referencia = body.punto_referencia
+    if body.empresa_trabajo is not None:
+        cliente.empresa_trabajo = body.empresa_trabajo
+    if body.direccion_laboral is not None:
+        cliente.direccion_laboral = body.direccion_laboral
+    if body.ref_familiar_nombre is not None:
+        cliente.ref_familiar_nombre = body.ref_familiar_nombre
+    if body.ref_familiar_parentesco is not None:
+        cliente.ref_familiar_parentesco = body.ref_familiar_parentesco
+    if body.ref_familiar_telefono is not None:
+        cliente.ref_familiar_telefono = body.ref_familiar_telefono
+    if body.email is not None:
+        cliente.email = body.email
+    if body.tipo_cliente is not None:
+        cliente.tipo_cliente = TipoCliente(body.tipo_cliente)
+
+    db.commit()
+    db.refresh(cliente)
+    return _serializar_cliente(cliente)

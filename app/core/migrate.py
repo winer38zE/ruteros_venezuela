@@ -16,6 +16,16 @@ def aplicar_migraciones_sqlite(engine) -> None:
     alteraciones: dict[str, list[tuple[str, str]]] = {
         "clientes": [
             ("tipo_cliente", "VARCHAR(20) DEFAULT 'detal'"),
+            ("identificacion", "VARCHAR(32)"),
+            ("telefono_secundario", "VARCHAR(32)"),
+            ("punto_referencia", "VARCHAR(255)"),
+            ("empresa_trabajo", "VARCHAR(255)"),
+            ("direccion_laboral", "TEXT"),
+            ("ref_familiar_nombre", "VARCHAR(255)"),
+            ("ref_familiar_parentesco", "VARCHAR(64)"),
+            ("ref_familiar_telefono", "VARCHAR(32)"),
+            ("email", "VARCHAR(255)"),
+            ("score_credito", "INTEGER DEFAULT 70"),
         ],
         "movimientos_financieros": [
             ("monto_original", "NUMERIC(14, 2)"),
@@ -44,3 +54,17 @@ def aplicar_migraciones_sqlite(engine) -> None:
                     conn.execute(
                         text(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {definicion}")
                     )
+
+        if insp.has_table("clientes"):
+            conn.execute(
+                text(
+                    "UPDATE clientes SET identificacion = 'TMP-' || id "
+                    "WHERE identificacion IS NULL OR identificacion = ''"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE clientes SET score_credito = 70 "
+                    "WHERE score_credito IS NULL"
+                )
+            )

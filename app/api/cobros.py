@@ -12,6 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 import uuid
 from app.services.contabilidad import generar_asiento_cobro
+from app.services.buro_credito import actualizar_score_por_cobro
 
 router = APIRouter()
 
@@ -119,7 +120,12 @@ def registrar_cobro(
     if not empresa_actual:
         raise HTTPException(status_code=400, detail="Debes crear una empresa primero")
 
-    venta = db.query(Venta).filter(Venta.id == cobro.venta_id).first()
+    venta = (
+        db.query(Venta)
+        .options(joinedload(Venta.cobros), joinedload(Venta.cliente))
+        .filter(Venta.id == cobro.venta_id)
+        .first()
+    )
     if not venta:
         raise HTTPException(status_code=400, detail="La venta indicada no existe")
     if venta.empresa_id != empresa_actual.id:
@@ -163,6 +169,9 @@ def registrar_cobro(
     db.flush()
     db.refresh(venta)
     _actualizar_estado_venta(db, venta)
+    db.refresh(venta, attribute_names=["cliente", "cobros"])
+    if venta.cliente:
+        actualizar_score_por_cobro(db, venta, nuevo_cobro)
     generar_asiento_cobro(db, nuevo_cobro)
     db.commit()
     db.refresh(nuevo_cobro)

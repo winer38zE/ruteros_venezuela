@@ -2,7 +2,8 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR
+    Column, String, Boolean, DateTime, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship, declarative_base
 
@@ -135,17 +136,42 @@ class Usuario(Base):
 # ---------- CLIENTE ----------
 class Cliente(Base):
     __tablename__ = "clientes"
+    __table_args__ = (
+        UniqueConstraint("identificacion", name="uq_clientes_identificacion_global"),
+    )
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     vendedor_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=True)
     nombre = Column(String, nullable=False)
+    identificacion = Column(String, nullable=False, index=True)
     telefono = Column(String, nullable=True)
+    telefono_secundario = Column(String, nullable=True)
     direccion = Column(Text, nullable=True)
+    punto_referencia = Column(String, nullable=True)
+    empresa_trabajo = Column(String, nullable=True)
+    direccion_laboral = Column(Text, nullable=True)
+    ref_familiar_nombre = Column(String, nullable=True)
+    ref_familiar_parentesco = Column(String, nullable=True)
+    ref_familiar_telefono = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    score_credito = Column(Integer, nullable=False, default=70)
     tipo_cliente = Column(Enum(TipoCliente), default=TipoCliente.DETAL)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     empresa = relationship("Empresa", back_populates="clientes")
+    ventas = relationship("Venta", back_populates="cliente")
+
+
+class EventoBuroCredito(Base):
+    """Historial anónimo compartido por identificación (sin exponer empresa origen)."""
+    __tablename__ = "eventos_buro_credito"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    identificacion = Column(String, nullable=False, index=True)
+    tipo_evento = Column(String, nullable=False)
+    mensaje = Column(String, nullable=False)
+    fecha = Column(DateTime, default=datetime.utcnow)
 
 
 # ---------- PRODUCTO ----------

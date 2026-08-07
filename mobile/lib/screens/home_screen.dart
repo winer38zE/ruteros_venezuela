@@ -16,6 +16,7 @@ import 'nuevo_cobro_screen.dart';
 import 'registrar_movimiento_screen.dart';
 import 'registrar_usuario_screen.dart';
 import 'usuarios_screen.dart';
+import 'clientes_list_screen.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -81,6 +82,18 @@ class HomeScreen extends StatelessWidget {
         color: AppColors.neonCyan,
         screen: CobrosListScreen(),
         badge: 'FIELD',
+      ));
+    }
+
+    if (state.puedeVender || user.esDueno) {
+      modules.add(const _ModuleDef(
+        id: 'clientes',
+        icon: Icons.groups_2_rounded,
+        title: 'Gestión de Clientes',
+        subtitle: 'Scoring, buró y referencias',
+        color: AppColors.neonCyan,
+        screen: ClientesListScreen(),
+        badge: 'KYC',
       ));
     }
 

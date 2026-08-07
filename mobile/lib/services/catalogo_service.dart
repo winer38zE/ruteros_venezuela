@@ -4,14 +4,29 @@ class Cliente {
   final String id;
   final String nombre;
   final String tipoCliente;
+  final int scoreCredito;
+  final String nivelRiesgo;
+  final String identificacion;
 
-  Cliente({required this.id, required this.nombre, required this.tipoCliente});
+  Cliente({
+    required this.id,
+    required this.nombre,
+    required this.tipoCliente,
+    this.scoreCredito = 70,
+    this.nivelRiesgo = 'bueno',
+    this.identificacion = '',
+  });
 
   factory Cliente.fromJson(Map<String, dynamic> j) => Cliente(
         id: j['id'],
         nombre: j['nombre'],
         tipoCliente: j['tipo_cliente'] ?? 'detal',
+        scoreCredito: j['score_credito'] ?? 70,
+        nivelRiesgo: j['nivel_riesgo'] ?? 'bueno',
+        identificacion: j['identificacion'] ?? '',
       );
+
+  bool get bloqueadoCredito => scoreCredito <= 35;
 }
 
 class Producto {

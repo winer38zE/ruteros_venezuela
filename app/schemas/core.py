@@ -43,19 +43,86 @@ class UsuarioUpdate(BaseModel):
 class ClienteCreate(BaseModel):
     id: Optional[str] = None
     nombre_completo: str
-    direccion: Optional[str] = None
+    identificacion: str = Field(min_length=5, max_length=32)
     telefono: Optional[str] = None
+    telefono_secundario: Optional[str] = None
+    direccion: Optional[str] = None
+    punto_referencia: Optional[str] = None
+    empresa_trabajo: Optional[str] = None
+    direccion_laboral: Optional[str] = None
+    ref_familiar_nombre: Optional[str] = None
+    ref_familiar_parentesco: Optional[str] = None
+    ref_familiar_telefono: Optional[str] = None
+    email: Optional[str] = None
     tipo_cliente: Optional[str] = Field(default="detal", pattern="^(mayorista|detal)$")
+
+class ClienteUpdate(BaseModel):
+    nombre_completo: Optional[str] = None
+    identificacion: Optional[str] = Field(default=None, min_length=5, max_length=32)
+    telefono: Optional[str] = None
+    telefono_secundario: Optional[str] = None
+    direccion: Optional[str] = None
+    punto_referencia: Optional[str] = None
+    empresa_trabajo: Optional[str] = None
+    direccion_laboral: Optional[str] = None
+    ref_familiar_nombre: Optional[str] = None
+    ref_familiar_parentesco: Optional[str] = None
+    ref_familiar_telefono: Optional[str] = None
+    email: Optional[str] = None
+    tipo_cliente: Optional[str] = Field(default=None, pattern="^(mayorista|detal)$")
 
 class ClienteResponse(BaseModel):
     id: UUID
     empresa_id: UUID
     nombre: str
-    direccion: Optional[str] = None
+    identificacion: str
     telefono: Optional[str] = None
+    telefono_secundario: Optional[str] = None
+    direccion: Optional[str] = None
+    punto_referencia: Optional[str] = None
+    empresa_trabajo: Optional[str] = None
+    direccion_laboral: Optional[str] = None
+    ref_familiar_nombre: Optional[str] = None
+    ref_familiar_parentesco: Optional[str] = None
+    ref_familiar_telefono: Optional[str] = None
+    email: Optional[str] = None
+    score_credito: int = 70
+    nivel_riesgo: str = "bueno"
+    estado_credito: str = "Bueno"
     tipo_cliente: str = "detal"
 
     model_config = ConfigDict(from_attributes=True)
+
+class HistorialBuroItem(BaseModel):
+    fecha: str
+    tipo: str
+    mensaje: str
+
+class BuroCreditoResponse(BaseModel):
+    identificacion: str
+    encontrado: bool
+    score_global: Optional[int] = None
+    nivel_riesgo: Optional[str] = None
+    estado_credito: Optional[str] = None
+    historial_cumplimiento: List[HistorialBuroItem] = []
+
+class ClienteAutocompletadoResponse(BaseModel):
+    identificacion: str
+    nombre_completo: Optional[str] = None
+    telefono: Optional[str] = None
+    telefono_secundario: Optional[str] = None
+    direccion: Optional[str] = None
+    punto_referencia: Optional[str] = None
+    empresa_trabajo: Optional[str] = None
+    direccion_laboral: Optional[str] = None
+    ref_familiar_nombre: Optional[str] = None
+    ref_familiar_parentesco: Optional[str] = None
+    ref_familiar_telefono: Optional[str] = None
+    email: Optional[str] = None
+    score_global: Optional[int] = None
+    nivel_riesgo: Optional[str] = None
+    estado_credito: Optional[str] = None
+    en_red: bool = False
 
 # --- PRODUCTOS ---
 class ProductoCreate(BaseModel):
