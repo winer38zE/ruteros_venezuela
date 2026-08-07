@@ -65,7 +65,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         onPressed: () async {
           final ok = await Navigator.push<bool>(
             context,
-            MaterialPageRoute(builder: (_) => const RegistrarMovimientoScreen()),
+            MaterialPageRoute(builder: (_) => const RegistrarMovimientoScreen(soloGasto: true)),
           );
           if (ok == true) _cargar();
         },

@@ -11,6 +11,27 @@ import 'inventario_screen.dart';
 import 'ventas_list_screen.dart';
 import 'cobros_list_screen.dart';
 import 'finanzas_screen.dart';
+import 'nueva_venta_screen.dart';
+import 'nuevo_cobro_screen.dart';
+import 'registrar_movimiento_screen.dart';
+import 'registrar_usuario_screen.dart';
+import 'usuarios_screen.dart';
+
+class _QuickAction {
+  const _QuickAction({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.screen,
+    required this.visible,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final Widget screen;
+  final bool visible;
+}
 
 class _ModuleDef {
   const _ModuleDef({
@@ -98,6 +119,37 @@ class HomeScreen extends StatelessWidget {
     return modules;
   }
 
+  List<_QuickAction> _quickActions(AppState state) => [
+        _QuickAction(
+          label: 'Registrar Usuario',
+          icon: Icons.person_add_alt_1_rounded,
+          color: AppColors.neonBlue,
+          screen: const RegistrarUsuarioScreen(),
+          visible: state.esDueno,
+        ),
+        _QuickAction(
+          label: 'Registrar Venta',
+          icon: Icons.add_shopping_cart_rounded,
+          color: AppColors.emerald,
+          screen: const NuevaVentaScreen(),
+          visible: state.puedeVender,
+        ),
+        _QuickAction(
+          label: 'Registrar Cobro',
+          icon: Icons.price_check_rounded,
+          color: AppColors.neonCyan,
+          screen: const NuevoCobroScreen(),
+          visible: state.puedeCobrar,
+        ),
+        _QuickAction(
+          label: 'Registrar Gasto',
+          icon: Icons.receipt_long_rounded,
+          color: AppColors.amber,
+          screen: const RegistrarMovimientoScreen(soloGasto: true),
+          visible: state.esDueno,
+        ),
+      ].where((a) => a.visible).toList();
+
   void _openModule(BuildContext context, Widget screen) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
@@ -107,6 +159,7 @@ class HomeScreen extends StatelessWidget {
     final state = context.watch<AppState>();
     final user = state.usuario!;
     final modules = _modules(state);
+    final quickActions = _quickActions(state);
 
     return Scaffold(
       extendBody: true,
@@ -240,6 +293,67 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              if (quickActions.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Accesos rápidos',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          height: 92,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: quickActions.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 10),
+                            itemBuilder: (context, index) {
+                              final action = quickActions[index];
+                              return _QuickActionChip(
+                                label: action.label,
+                                icon: action.icon,
+                                color: action.color,
+                                onTap: () => _openModule(context, action.screen),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (state.esDueno)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: GlassContainer(
+                      accentColor: AppColors.neonBlue,
+                      onTap: () => _openModule(context, const UsuariosScreen()),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.groups_rounded, color: AppColors.neonBlue),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Gestionar equipo y roles',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: AppColors.neonBlue.withValues(alpha: 0.7)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
                 sliver: modules.isEmpty
@@ -295,6 +409,52 @@ class HomeScreen extends StatelessWidget {
 }
 
 void _noop() {}
+
+class _QuickActionChip extends StatelessWidget {
+  const _QuickActionChip({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: GlassContainer(
+          accentColor: color,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: SizedBox(
+            width: 118,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.label});

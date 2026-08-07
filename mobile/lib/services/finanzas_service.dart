@@ -32,16 +32,24 @@ class MovimientoFinanciero {
   final String tipo;
   final String categoria;
   final double montoUsd;
+  final double? montoOriginal;
+  final String moneda;
+  final String? metodoPago;
   final String descripcion;
   final String fecha;
+  final bool tieneComprobante;
 
   MovimientoFinanciero({
     required this.id,
     required this.tipo,
     required this.categoria,
     required this.montoUsd,
+    this.montoOriginal,
+    required this.moneda,
+    this.metodoPago,
     required this.descripcion,
     required this.fecha,
+    this.tieneComprobante = false,
   });
 
   factory MovimientoFinanciero.fromJson(Map<String, dynamic> j) => MovimientoFinanciero(
@@ -49,8 +57,12 @@ class MovimientoFinanciero {
         tipo: j['tipo'],
         categoria: j['categoria'],
         montoUsd: (j['monto_usd'] as num).toDouble(),
+        montoOriginal: j['monto_original'] != null ? (j['monto_original'] as num).toDouble() : null,
+        moneda: j['moneda'] ?? 'usd',
+        metodoPago: j['metodo_pago'],
         descripcion: j['descripcion'],
         fecha: j['fecha'],
+        tieneComprobante: j['tiene_comprobante'] ?? false,
       );
 }
 
@@ -110,9 +122,7 @@ class NominaCalculada {
   });
 
   factory NominaCalculada.fromJson(Map<String, dynamic> j) => NominaCalculada(
-        empleados: (j['empleados'] as List)
-            .map((e) => DetalleNominaEmpleado.fromJson(e))
-            .toList(),
+        empleados: (j['empleados'] as List).map((e) => DetalleNominaEmpleado.fromJson(e)).toList(),
         totalPendienteUsd: (j['total_pendiente_usd'] as num).toDouble(),
         comisionVendedorPorArticulo: (j['comision_vendedor_por_articulo_usd'] as num).toDouble(),
         comisionCobradorPorcentaje: (j['comision_cobrador_porcentaje'] as num).toDouble(),
@@ -123,24 +133,36 @@ class FinanzasService {
   FinanzasService(this._api);
   final ApiClient _api;
 
+  static const categoriasGasto = [
+    ('gasto_moto', 'Moto / Vehículo (repuestos, gasolina, taller)'),
+    ('pago_proveedor', 'Pago a Proveedor'),
+    ('servicios_operativos', 'Servicios y Gastos Operativos'),
+    ('operacion_general', 'Operación General'),
+  ];
+
   static const categoriasSalida = [
+    ...categoriasGasto,
     ('pago_vendedor', 'Pago a Vendedor'),
     ('pago_cobrador', 'Pago a Cobrador'),
-    ('pago_proveedor', 'Pago a Proveedor'),
-    ('gasto_moto', 'Gasto de Moto'),
-    ('operacion_general', 'Operación General'),
   ];
 
   static const categoriasEntrada = [
     ('ingreso_operativo', 'Ingreso Operativo'),
-    ('operacion_general', 'Operación General'),
+  ];
+
+  static const monedas = [('usd', 'USD'), ('ves', 'VES'), ('cop', 'COP')];
+
+  static const metodosPago = [
+    ('efectivo', 'Efectivo'),
+    ('transferencia', 'Transferencia'),
+    ('pago_movil', 'Pago Móvil'),
+    ('tarjeta', 'Tarjeta'),
+    ('otro', 'Otro'),
   ];
 
   Map<String, String> _queryFechas({DateTime? desde, DateTime? hasta}) {
     final q = <String, String>{};
-    if (desde != null) {
-      q['fecha_desde'] = DateTime(desde.year, desde.month, desde.day).toIso8601String();
-    }
+    if (desde != null) q['fecha_desde'] = DateTime(desde.year, desde.month, desde.day).toIso8601String();
     if (hasta != null) {
       final fin = DateTime(hasta.year, hasta.month, hasta.day, 23, 59, 59);
       q['fecha_hasta'] = fin.toIso8601String();
@@ -158,17 +180,45 @@ class FinanzasService {
     return data.map((e) => MovimientoFinanciero.fromJson(e)).toList();
   }
 
+  Future<MovimientoFinanciero> registrarGasto({
+    required String categoria,
+    required double monto,
+    required String moneda,
+    required String descripcion,
+    String? metodoPago,
+    double? tasaAplicada,
+    String? proveedorId,
+    String? comprobanteBase64,
+  }) async {
+    final data = await _api.post('/finanzas/movimientos', {
+      'tipo': 'salida',
+      'categoria': categoria,
+      'monto': monto,
+      'moneda': moneda,
+      'descripcion': descripcion,
+      if (metodoPago != null) 'metodo_pago': metodoPago,
+      if (tasaAplicada != null) 'tasa_aplicada': tasaAplicada,
+      if (proveedorId != null) 'proveedor_id': proveedorId,
+      if (comprobanteBase64 != null) 'comprobante_base64': comprobanteBase64,
+    });
+    return MovimientoFinanciero.fromJson(data);
+  }
+
   Future<MovimientoFinanciero> registrarMovimiento({
     required String tipo,
     required String categoria,
     required double montoUsd,
     required String descripcion,
+    String moneda = 'usd',
+    String? metodoPago,
   }) async {
     final data = await _api.post('/finanzas/movimientos', {
       'tipo': tipo,
       'categoria': categoria,
-      'monto_usd': montoUsd,
+      'monto': montoUsd,
+      'moneda': moneda,
       'descripcion': descripcion,
+      if (metodoPago != null) 'metodo_pago': metodoPago,
     });
     return MovimientoFinanciero.fromJson(data);
   }
@@ -181,15 +231,11 @@ class FinanzasService {
   Future<void> aprobarPago({
     required String empleadoId,
     required double montoUsd,
-    DateTime? periodoDesde,
-    DateTime? periodoHasta,
     String? descripcion,
   }) async {
     await _api.post('/finanzas/nomina/aprobar-pago', {
       'empleado_id': empleadoId,
       'monto_usd': montoUsd,
-      if (periodoDesde != null) 'periodo_desde': periodoDesde.toIso8601String(),
-      if (periodoHasta != null) 'periodo_hasta': periodoHasta.toIso8601String(),
       if (descripcion != null) 'descripcion': descripcion,
     });
   }

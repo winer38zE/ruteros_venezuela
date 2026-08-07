@@ -137,6 +137,27 @@ class ApiService {
     }
   }
 
+  Future<dynamic> patch(String path, Map<String, dynamic> body) async {
+    try {
+      final res = await _client
+          .patch(
+            _uri(path),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 30));
+      return _decode(res);
+    } on SocketException {
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
+    } on TimeoutException {
+      throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(0, 'Error de red: $e');
+    }
+  }
+
   Future<List<int>> download(String path, {Map<String, String>? query}) async {
     try {
       final res = await _client
