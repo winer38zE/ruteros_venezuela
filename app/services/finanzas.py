@@ -7,6 +7,8 @@ from app.models.core import (
     MovimientoFinanciero,
     TipoMovimientoFinanciero,
     CategoriaMovimientoFinanciero,
+    MonedaGasto,
+    MetodoPagoSalida,
     Usuario,
     RolUsuario,
     Venta,
@@ -188,21 +190,42 @@ def calcular_resumen_financiero(
     }
 
 
+def _normalizar_monto_usd(monto, moneda: str, tasa_aplicada=None) -> Decimal:
+    m = _d(monto)
+    if moneda == MonedaGasto.USD.value or moneda == "usd":
+        return m
+    if not tasa_aplicada or _d(tasa_aplicada) <= 0:
+        raise ValueError("Se requiere tasa_aplicada para monedas VES o COP")
+    return m / _d(tasa_aplicada)
+
+
 def registrar_movimiento(
     db: Session,
     empresa_id,
     registrado_por_id,
     data: dict,
 ) -> MovimientoFinanciero:
+    moneda = data.get("moneda", MonedaGasto.USD.value)
+    monto_original = _d(data.get("monto") or data.get("monto_usd"))
+    tasa = data.get("tasa_aplicada")
+    monto_usd = _normalizar_monto_usd(monto_original, moneda, tasa)
+
+    metodo = data.get("metodo_pago")
     mov = MovimientoFinanciero(
         empresa_id=empresa_id,
         tipo=TipoMovimientoFinanciero(data["tipo"]),
         categoria=CategoriaMovimientoFinanciero(data["categoria"]),
-        monto_usd=_d(data["monto_usd"]),
+        monto_usd=monto_usd,
+        monto_original=monto_original,
+        moneda=MonedaGasto(moneda),
+        metodo_pago=MetodoPagoSalida(metodo) if metodo else None,
+        tasa_aplicada=_d(tasa) if tasa else None,
         descripcion=data["descripcion"],
         fecha=data.get("fecha") or datetime.utcnow(),
         registrado_por_id=registrado_por_id,
         empleado_id=data.get("empleado_id"),
+        proveedor_id=data.get("proveedor_id"),
+        comprobante_base64=data.get("comprobante_base64"),
         aprobado=data.get("aprobado", False),
         periodo_desde=data.get("periodo_desde"),
         periodo_hasta=data.get("periodo_hasta"),
@@ -245,7 +268,8 @@ def aprobar_pago_nomina(
         {
             "tipo": "salida",
             "categoria": categoria.value,
-            "monto_usd": monto_usd,
+            "monto": monto_usd,
+            "moneda": "usd",
             "descripcion": desc,
             "empleado_id": empleado_id,
             "periodo_desde": periodo_desde,

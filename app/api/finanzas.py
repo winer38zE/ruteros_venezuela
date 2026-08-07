@@ -25,6 +25,28 @@ from app.services.finanzas import (
 router = APIRouter()
 
 
+def _serializar_movimiento(m: MovimientoFinanciero) -> dict:
+    return {
+        "id": m.id,
+        "empresa_id": m.empresa_id,
+        "tipo": m.tipo.value if hasattr(m.tipo, "value") else m.tipo,
+        "categoria": m.categoria.value if hasattr(m.categoria, "value") else m.categoria,
+        "monto_usd": float(m.monto_usd),
+        "monto_original": float(m.monto_original) if m.monto_original is not None else None,
+        "moneda": m.moneda.value if m.moneda and hasattr(m.moneda, "value") else (m.moneda or "usd"),
+        "metodo_pago": m.metodo_pago.value if m.metodo_pago and hasattr(m.metodo_pago, "value") else m.metodo_pago,
+        "tasa_aplicada": float(m.tasa_aplicada) if m.tasa_aplicada is not None else None,
+        "descripcion": m.descripcion,
+        "fecha": m.fecha,
+        "registrado_por_id": m.registrado_por_id,
+        "empleado_id": m.empleado_id,
+        "proveedor_id": m.proveedor_id,
+        "tiene_comprobante": bool(m.comprobante_base64),
+        "aprobado": m.aprobado,
+        "fecha_creacion": m.fecha_creacion,
+    }
+
+
 @router.get("/resumen", response_model=ResumenFinancieroResponse)
 def resumen_financiero(
     db: Session = Depends(get_db),
@@ -49,7 +71,8 @@ def listar_movimientos(
         q = q.filter(MovimientoFinanciero.fecha >= fecha_desde)
     if fecha_hasta:
         q = q.filter(MovimientoFinanciero.fecha <= fecha_hasta)
-    return q.order_by(MovimientoFinanciero.fecha.desc()).all()
+    items = q.order_by(MovimientoFinanciero.fecha.desc()).all()
+    return [_serializar_movimiento(m) for m in items]
 
 
 @router.post("/movimientos", response_model=MovimientoFinancieroResponse)
@@ -66,7 +89,7 @@ def crear_movimiento(
     )
     db.commit()
     db.refresh(mov)
-    return mov
+    return _serializar_movimiento(mov)
 
 
 @router.get("/nomina/config", response_model=ConfiguracionNominaResponse)
@@ -122,6 +145,6 @@ def aprobar_pago(
         )
         db.commit()
         db.refresh(mov)
-        return mov
+        return _serializar_movimiento(mov)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -84,6 +84,18 @@ class HomeScreen extends StatelessWidget {
       ));
     }
 
+    if (state.puedeVender || user.esDueno) {
+      modules.add(const _ModuleDef(
+        id: 'inventario',
+        icon: Icons.inventory_2_rounded,
+        title: 'Gestión de Inventario',
+        subtitle: 'Productos, stock y ajustes',
+        color: AppColors.violet,
+        screen: InventarioScreen(),
+        badge: 'STOCK',
+      ));
+    }
+
     if (user.esDueno) {
       modules.addAll(const [
         _ModuleDef(
@@ -103,15 +115,6 @@ class HomeScreen extends StatelessWidget {
           color: AppColors.neonBlue,
           screen: ContabilidadScreen(),
           badge: 'PRO',
-        ),
-        _ModuleDef(
-          id: 'inventario',
-          icon: Icons.inventory_2_rounded,
-          title: 'Inventario',
-          subtitle: 'Stock en tiempo real valorado',
-          color: AppColors.violet,
-          screen: InventarioScreen(),
-          badge: 'STOCK',
         ),
       ]);
     }

@@ -79,7 +79,22 @@ class CategoriaMovimientoFinanciero(str, enum.Enum):
     PAGO_COBRADOR = "pago_cobrador"
     PAGO_PROVEEDOR = "pago_proveedor"
     GASTO_MOTO = "gasto_moto"
+    SERVICIOS_OPERATIVOS = "servicios_operativos"
     OPERACION_GENERAL = "operacion_general"
+
+
+class MonedaGasto(str, enum.Enum):
+    USD = "usd"
+    VES = "ves"
+    COP = "cop"
+
+
+class MetodoPagoSalida(str, enum.Enum):
+    EFECTIVO = "efectivo"
+    TRANSFERENCIA = "transferencia"
+    PAGO_MOVIL = "pago_movil"
+    TARJETA = "tarjeta"
+    OTRO = "otro"
 
 
 # ---------- EMPRESA (tenant) ----------
@@ -140,9 +155,14 @@ class Producto(Base):
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     nombre = Column(String, nullable=False)
+    sku = Column(String, nullable=True)
     categoria = Column(String, nullable=True)
     precio_usd = Column(Numeric(10, 2), nullable=False)
+    precio_ves = Column(Numeric(14, 2), nullable=True)
+    precio_cop = Column(Numeric(14, 2), nullable=True)
+    costo_usd = Column(Numeric(10, 2), nullable=False, default=0)
     stock = Column(Integer, default=0)
+    stock_minimo = Column(Integer, default=0)
     activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
@@ -343,6 +363,19 @@ class ConfiguracionNomina(Base):
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
 
+class Proveedor(Base):
+    __tablename__ = "proveedores"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    nombre = Column(String, nullable=False)
+    telefono = Column(String, nullable=True)
+    rif = Column(String, nullable=True)
+    notas = Column(Text, nullable=True)
+    activo = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+
 class MovimientoFinanciero(Base):
     __tablename__ = "movimientos_financieros"
 
@@ -351,10 +384,16 @@ class MovimientoFinanciero(Base):
     tipo = Column(Enum(TipoMovimientoFinanciero), nullable=False)
     categoria = Column(Enum(CategoriaMovimientoFinanciero), nullable=False)
     monto_usd = Column(Numeric(12, 2), nullable=False)
+    monto_original = Column(Numeric(14, 2), nullable=True)
+    moneda = Column(Enum(MonedaGasto), nullable=False, default=MonedaGasto.USD)
+    metodo_pago = Column(Enum(MetodoPagoSalida), nullable=True)
+    tasa_aplicada = Column(Numeric(12, 4), nullable=True)
     descripcion = Column(Text, nullable=False)
     fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
     registrado_por_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
     empleado_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=True)
+    proveedor_id = Column(GUID(), ForeignKey("proveedores.id"), nullable=True)
+    comprobante_base64 = Column(Text, nullable=True)
     periodo_desde = Column(DateTime, nullable=True)
     periodo_hasta = Column(DateTime, nullable=True)
     aprobado = Column(Boolean, default=False)

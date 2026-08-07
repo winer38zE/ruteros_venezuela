@@ -17,6 +17,21 @@ def aplicar_migraciones_sqlite(engine) -> None:
         "clientes": [
             ("tipo_cliente", "VARCHAR(20) DEFAULT 'detal'"),
         ],
+        "movimientos_financieros": [
+            ("monto_original", "NUMERIC(14, 2)"),
+            ("moneda", "VARCHAR(10) DEFAULT 'usd'"),
+            ("metodo_pago", "VARCHAR(20)"),
+            ("tasa_aplicada", "NUMERIC(12, 4)"),
+            ("proveedor_id", "CHAR(36)"),
+            ("comprobante_base64", "TEXT"),
+        ],
+        "productos": [
+            ("sku", "VARCHAR(64)"),
+            ("precio_ves", "NUMERIC(14, 2)"),
+            ("precio_cop", "NUMERIC(14, 2)"),
+            ("costo_usd", "NUMERIC(10, 2) DEFAULT 0"),
+            ("stock_minimo", "INTEGER DEFAULT 0"),
+        ],
     }
 
     with engine.begin() as conn:

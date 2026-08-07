@@ -266,3 +266,68 @@ def inventario_valorado(db: Session, empresa_id) -> list[dict]:
             "valor_total_usd": float(costo_prom * stock_total),
         })
     return resultado
+
+
+def ajustar_stock_manual(
+    db: Session,
+    empresa_id,
+    producto_id,
+    tipo: TipoMovimientoInventario,
+    cantidad: int,
+    motivo: str,
+    almacen_id=None,
+) -> MovimientoInventario:
+    producto = (
+        db.query(Producto)
+        .filter(Producto.id == producto_id, Producto.empresa_id == empresa_id)
+        .first()
+    )
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    almacen = obtener_almacen(db, empresa_id, almacen_id)
+    ref_tipo = f"ajuste:{motivo.strip()}"
+
+    if tipo == TipoMovimientoInventario.ENTRADA:
+        mov = MovimientoInventario(
+            empresa_id=empresa_id,
+            producto_id=producto.id,
+            almacen_id=almacen.id,
+            lote_id=None,
+            tipo=TipoMovimientoInventario.ENTRADA,
+            cantidad=cantidad,
+            referencia_tipo=ref_tipo,
+            referencia_id=None,
+        )
+        db.add(mov)
+        if almacen.es_principal:
+            producto.stock += cantidad
+        return mov
+
+    if stock_disponible(db, producto, almacen.id) < cantidad:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stock insuficiente para '{producto.nombre}'",
+        )
+    descontar_stock(
+        db,
+        empresa_id,
+        producto.id,
+        cantidad,
+        almacen.id,
+        referencia_tipo=ref_tipo,
+        referencia_id=None,
+    )
+    mov = (
+        db.query(MovimientoInventario)
+        .filter(
+            MovimientoInventario.empresa_id == empresa_id,
+            MovimientoInventario.producto_id == producto.id,
+            MovimientoInventario.referencia_tipo == ref_tipo,
+        )
+        .order_by(MovimientoInventario.fecha.desc())
+        .first()
+    )
+    if not mov:
+        raise HTTPException(status_code=500, detail="No se pudo registrar el movimiento de salida")
+    return mov

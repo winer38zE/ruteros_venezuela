@@ -12,6 +12,7 @@ from app.core.bootstrap import asegurar_usuario_admin
 from app.api import (
     empresas, clientes, usuarios, productos, ventas,
     tasas_cambio, cobros, configuracion_fiscal, inventario, contabilidad, finanzas,
+    proveedores,
     auth_router,
 )
 
@@ -49,6 +50,7 @@ app.add_middleware(
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(empresas.router, prefix="/api/v1/empresas", tags=["Empresas"])
 app.include_router(usuarios.router, prefix="/api/v1/usuarios", tags=["Usuarios"])
+app.include_router(proveedores.router, prefix="/api/v1/proveedores", tags=["Proveedores"])
 app.include_router(clientes.router, prefix="/api/v1/clientes", tags=["Clientes"])
 app.include_router(productos.router, prefix="/api/v1/productos", tags=["Productos"])
 app.include_router(ventas.router, prefix="/api/v1/ventas", tags=["Ventas"])
@@ -77,5 +79,5 @@ def probar_conexion():
     return {
         "status": "success",
         "codigo": 200,
-        "mensaje": "¡El sistema de ED NET PRO está vivo, conectado y operativo al 100%!"
+        "mensaje": "ED NET PRO - Mi primera API inteligente"
     }

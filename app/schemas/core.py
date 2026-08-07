@@ -29,8 +29,15 @@ class UsuarioResponse(BaseModel):
     username: str
     rol: str
     activo: bool
+    telefono: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class UsuarioUpdate(BaseModel):
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+    activo: Optional[bool] = None
+    password: Optional[str] = None
 
 # --- CLIENTES ---
 class ClienteCreate(BaseModel):
@@ -54,8 +61,27 @@ class ClienteResponse(BaseModel):
 class ProductoCreate(BaseModel):
     id: Optional[str] = None
     nombre: str
+    sku: Optional[str] = None
+    categoria: Optional[str] = None
     precio_base_usd: float
+    precio_ves: Optional[float] = None
+    precio_cop: Optional[float] = None
+    costo_usd: float = 0.0
     stock_actual: float = 0.0
+    stock_minimo: int = 0
+    precio_mayorista_usd: Optional[float] = None
+    precio_detal_usd: Optional[float] = None
+
+class ProductoUpdate(BaseModel):
+    nombre: Optional[str] = None
+    sku: Optional[str] = None
+    categoria: Optional[str] = None
+    precio_base_usd: Optional[float] = None
+    precio_ves: Optional[float] = None
+    precio_cop: Optional[float] = None
+    costo_usd: Optional[float] = None
+    stock_minimo: Optional[int] = None
+    activo: Optional[bool] = None
     precio_mayorista_usd: Optional[float] = None
     precio_detal_usd: Optional[float] = None
 
@@ -63,10 +89,16 @@ class ProductoResponse(BaseModel):
     id: UUID
     empresa_id: UUID
     nombre: str
-    # CORRECCIÓN: Usamos los nombres exactos de tu base de datos
-    precio_usd: float  
+    sku: Optional[str] = None
+    categoria: Optional[str] = None
+    precio_usd: float
+    precio_ves: Optional[float] = None
+    precio_cop: Optional[float] = None
+    costo_usd: float = 0.0
     stock: int
-    
+    stock_minimo: int = 0
+    activo: bool = True
+
     model_config = ConfigDict(from_attributes=True)
 
 # --- VENTAS ---
@@ -310,6 +342,13 @@ class MovimientoInventarioResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class AjusteInventarioCreate(BaseModel):
+    producto_id: UUID
+    tipo: str = Field(pattern="^(entrada|salida)$")
+    cantidad: int = Field(gt=0)
+    motivo: str = Field(min_length=2, max_length=120)
+    almacen_id: Optional[UUID] = None
+
 # --- CONTABILIDAD ---
 class LineaAsientoResponse(BaseModel):
     id: UUID
@@ -351,12 +390,23 @@ class ConfiguracionNominaResponse(BaseModel):
 class MovimientoFinancieroCreate(BaseModel):
     tipo: str = Field(pattern="^(entrada|salida)$")
     categoria: str = Field(
-        pattern="^(ingreso_operativo|pago_vendedor|pago_cobrador|pago_proveedor|gasto_moto|operacion_general)$"
+        pattern=(
+            "^(ingreso_operativo|pago_vendedor|pago_cobrador|pago_proveedor|"
+            "gasto_moto|servicios_operativos|operacion_general)$"
+        )
     )
-    monto_usd: float = Field(gt=0)
+    monto: float = Field(gt=0)
+    moneda: str = Field(default="usd", pattern="^(usd|ves|cop)$")
+    metodo_pago: Optional[str] = Field(
+        default=None,
+        pattern="^(efectivo|transferencia|pago_movil|tarjeta|otro)$",
+    )
+    tasa_aplicada: Optional[float] = None
     descripcion: str
     fecha: Optional[datetime] = None
     empleado_id: Optional[UUID] = None
+    proveedor_id: Optional[UUID] = None
+    comprobante_base64: Optional[str] = None
 
 class MovimientoFinancieroResponse(BaseModel):
     id: UUID
@@ -364,10 +414,16 @@ class MovimientoFinancieroResponse(BaseModel):
     tipo: str
     categoria: str
     monto_usd: float
+    monto_original: Optional[float] = None
+    moneda: str
+    metodo_pago: Optional[str] = None
+    tasa_aplicada: Optional[float] = None
     descripcion: str
     fecha: datetime
     registrado_por_id: UUID
     empleado_id: Optional[UUID] = None
+    proveedor_id: Optional[UUID] = None
+    tiene_comprobante: bool = False
     aprobado: bool
     fecha_creacion: datetime
 
@@ -408,3 +464,21 @@ class AprobarPagoNominaRequest(BaseModel):
     periodo_desde: Optional[datetime] = None
     periodo_hasta: Optional[datetime] = None
     descripcion: Optional[str] = None
+
+# --- PROVEEDORES ---
+class ProveedorCreate(BaseModel):
+    nombre: str
+    telefono: Optional[str] = None
+    rif: Optional[str] = None
+    notas: Optional[str] = None
+
+class ProveedorResponse(BaseModel):
+    id: UUID
+    empresa_id: UUID
+    nombre: str
+    telefono: Optional[str] = None
+    rif: Optional[str] = None
+    notas: Optional[str] = None
+    activo: bool
+
+    model_config = ConfigDict(from_attributes=True)

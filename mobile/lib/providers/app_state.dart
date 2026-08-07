@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/contabilidad_service.dart';
 import '../services/inventario_service.dart';
+import '../services/productos_service.dart';
 import '../services/catalogo_service.dart';
 import '../services/ventas_service.dart';
 import '../services/cobros_service.dart';
@@ -15,6 +16,7 @@ class AppState extends ChangeNotifier {
     auth = AuthService(api);
     contabilidad = ContabilidadService(api);
     inventario = InventarioService(api);
+    productos = ProductosService(api);
     catalogo = CatalogoService(api);
     ventas = VentasService(api);
     cobros = CobrosService(api);
@@ -28,6 +30,7 @@ class AppState extends ChangeNotifier {
   late final AuthService auth;
   late final ContabilidadService contabilidad;
   late final InventarioService inventario;
+  late final ProductosService productos;
   late final CatalogoService catalogo;
   late final VentasService ventas;
   late final CobrosService cobros;

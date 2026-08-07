@@ -13,9 +13,9 @@ from app.schemas.core import (
     LoteInventarioCreate, LoteInventarioResponse,
     PrecioProductoCreate, PrecioProductoResponse,
     StockProductoResponse, InventarioValoradoItem,
-    MovimientoInventarioResponse,
+    MovimientoInventarioResponse, AjusteInventarioCreate,
 )
-from app.services.inventario import consultar_stock_producto, inventario_valorado
+from app.services.inventario import consultar_stock_producto, inventario_valorado, ajustar_stock_manual
 
 router = APIRouter()
 
@@ -153,6 +153,28 @@ def consultar_stock_todos(db: Session = Depends(get_db)):
 def consultar_inventario_valorado(db: Session = Depends(get_db)):
     empresa = obtener_empresa_tenant(db)
     return inventario_valorado(db, empresa.id)
+
+
+@router.post("/movimiento", response_model=MovimientoInventarioResponse)
+def registrar_movimiento_manual(body: AjusteInventarioCreate, db: Session = Depends(get_db)):
+    empresa = obtener_empresa_tenant(db)
+    try:
+        tipo = TipoMovimientoInventario(body.tipo)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Tipo de movimiento inválido")
+
+    mov = ajustar_stock_manual(
+        db,
+        empresa.id,
+        body.producto_id,
+        tipo,
+        body.cantidad,
+        body.motivo,
+        body.almacen_id,
+    )
+    db.commit()
+    db.refresh(mov)
+    return mov
 
 
 @router.get("/movimientos", response_model=List[MovimientoInventarioResponse])
