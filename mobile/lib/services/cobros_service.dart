@@ -1,5 +1,62 @@
 import '../services/api_client.dart';
 
+class FilaCobranza {
+  final String id;
+  final String clienteId;
+  final String clienteNombre;
+  final String productosResumen;
+  final double costoTotalUsd;
+  final double totalUsd;
+  final double cobradoUsd;
+  final double saldoPendienteUsd;
+  final String frecuenciaPago;
+  final String tipoCredito;
+  final String estado;
+  final String estadoCuenta;
+  final String? proximoPago;
+  final double montoProximaCuotaUsd;
+  final int cuotasPagadas;
+  final int cuotasTotales;
+
+  FilaCobranza({
+    required this.id,
+    required this.clienteId,
+    required this.clienteNombre,
+    required this.productosResumen,
+    required this.costoTotalUsd,
+    required this.totalUsd,
+    required this.cobradoUsd,
+    required this.saldoPendienteUsd,
+    required this.frecuenciaPago,
+    required this.tipoCredito,
+    required this.estado,
+    required this.estadoCuenta,
+    this.proximoPago,
+    required this.montoProximaCuotaUsd,
+    required this.cuotasPagadas,
+    required this.cuotasTotales,
+  });
+
+  factory FilaCobranza.fromJson(Map<String, dynamic> j) => FilaCobranza(
+        id: j['id'],
+        clienteId: j['cliente_id'],
+        clienteNombre: j['cliente_nombre'] ?? '—',
+        productosResumen: j['productos_resumen'] ?? '—',
+        costoTotalUsd: (j['costo_total_usd'] as num?)?.toDouble() ?? 0,
+        totalUsd: (j['total_usd'] as num).toDouble(),
+        cobradoUsd: (j['cobrado_usd'] as num).toDouble(),
+        saldoPendienteUsd: (j['saldo_pendiente_usd'] as num).toDouble(),
+        frecuenciaPago: j['frecuencia_pago'] ?? 'contado',
+        tipoCredito: j['tipo_credito'] ?? '—',
+        estado: j['estado'],
+        estadoCuenta: j['estado_cuenta'] ?? 'Al día',
+        proximoPago: j['proximo_pago'],
+        montoProximaCuotaUsd: (j['monto_proxima_cuota_usd'] as num?)?.toDouble() ?? 0,
+        cuotasPagadas: j['cuotas_pagadas'] ?? 0,
+        cuotasTotales: j['cuotas_totales'] ?? 0,
+      );
+}
+
 class VentaPendiente {
   final String id;
   final String clienteId;
@@ -65,6 +122,11 @@ class CobrosService {
     ('pago_movil', 'Pago Móvil'),
     ('transferencia', 'Transferencia'),
   ];
+
+  Future<List<FilaCobranza>> panelCobranza() async {
+    final data = await _api.get('/cobros/panel-cobranza') as List;
+    return data.map((e) => FilaCobranza.fromJson(e)).toList();
+  }
 
   Future<List<VentaPendiente>> ventasPendientes() async {
     final data = await _api.get('/cobros/ventas-pendientes') as List;

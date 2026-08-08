@@ -27,6 +27,8 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   Cliente? _cliente;
   Almacen? _almacen;
   String _frecuencia = 'semanal';
+  String _tipoTasa = 'bcv';
+  int _numeroCuotas = 12;
   final List<ItemCarrito> _carrito = [];
 
   bool _cargando = true;
@@ -103,7 +105,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     });
   }
 
-  Future<void> _registrarVenta() async {
+  Future<void> _registrarVenta({bool borrador = false}) async {
     if (_cliente == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona un cliente')),
@@ -136,7 +138,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
     setState(() => _guardando = true);
     try {
-      await context.read<AppState>().ventas.crearVenta(
+      final venta = await context.read<AppState>().ventas.crearVenta(
             clienteId: _cliente!.id,
             totalUsd: _total,
             tasaUsd: _tasa!.usdBs,
@@ -145,11 +147,41 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             items: _carrito,
             almacenId: _almacen?.id,
             ventaId: const Uuid().v4(),
+            numeroCuotas: _frecuencia == 'contado' ? null : _numeroCuotas,
+            tipoTasaUsd: _tipoTasa,
+            esBorrador: borrador,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Venta registrada: ${_fmt.format(_total)}')),
-      );
+      final msg = borrador
+          ? 'Borrador guardado (${venta.estado})'
+          : 'Venta registrada: ${_fmt.format(_total)}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      if (!borrador && venta.cuotas.isNotEmpty) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.bgCard,
+            title: const Text('Plan de amortización'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView(
+                shrinkWrap: true,
+                children: venta.cuotas
+                    .map((c) => ListTile(
+                          dense: true,
+                          title: Text('Cuota ${c.numeroCuota}'),
+                          subtitle: Text(c.fechaVencimiento.substring(0, 10)),
+                          trailing: Text('\$${c.montoUsd.toStringAsFixed(2)}'),
+                        ))
+                    .toList(),
+              ),
+            ),
+            actions: [
+              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+      }
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -190,20 +222,34 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: _guardando ? null : _registrarVenta,
-            icon: _guardando
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.check_circle_rounded),
-            label: Text(
-              _guardando ? 'Registrando...' : 'Registrar Venta ${_fmt.format(_total)}',
-              style: const TextStyle(fontSize: 16),
-            ),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(double.infinity, 52),
-              backgroundColor: AppColors.emerald,
-              foregroundColor: AppColors.bgDeep,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (context.watch<AppState>().esVendedor)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: OutlinedButton.icon(
+                    onPressed: _guardando ? null : () => _registrarVenta(borrador: true),
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Guardar borrador'),
+                  ),
+                ),
+              FilledButton.icon(
+                onPressed: _guardando ? null : () => _registrarVenta(),
+                icon: _guardando
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.check_circle_rounded),
+                label: Text(
+                  _guardando ? 'Registrando...' : 'Registrar Venta ${_fmt.format(_total)}',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 52),
+                  backgroundColor: AppColors.emerald,
+                  foregroundColor: AppColors.bgDeep,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -270,6 +316,34 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                         child: Text(_tasa != null ? '${_tasa!.usdBs}' : '—'),
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: _tipoTasa,
+                        decoration: _input('Tasa activa'),
+                        dropdownColor: AppColors.bgElevated,
+                        items: const [
+                          DropdownMenuItem(value: 'bcv', child: Text('BCV')),
+                          DropdownMenuItem(value: 'paralelo', child: Text('Paralelo')),
+                        ],
+                        onChanged: (v) => setState(() => _tipoTasa = v ?? 'bcv'),
+                      ),
+                    ),
+                    if (_frecuencia != 'contado') ...[
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          initialValue: '$_numeroCuotas',
+                          keyboardType: TextInputType.number,
+                          decoration: _input('N° cuotas'),
+                          onChanged: (v) => _numeroCuotas = int.tryParse(v) ?? _numeroCuotas,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],

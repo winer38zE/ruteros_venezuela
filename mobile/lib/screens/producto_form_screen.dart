@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../services/productos_service.dart';
+import '../services/proveedores_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
@@ -28,6 +29,8 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
   final _stockMinCtrl = TextEditingController();
 
   String? _categoria;
+  String? _proveedorId;
+  List<Proveedor> _proveedores = [];
   bool _guardando = false;
 
   @override
@@ -47,6 +50,14 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     } else {
       _categoria = ProductosService.categorias.first;
     }
+    _cargarProveedores();
+  }
+
+  Future<void> _cargarProveedores() async {
+    try {
+      _proveedores = await context.read<AppState>().proveedores.listar();
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   @override
@@ -107,6 +118,7 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
           costoUsd: costo,
           stockInicial: stockInicial,
           stockMinimo: stockMin,
+          proveedorId: _proveedorId,
         );
       }
       if (!mounted) return;
@@ -181,6 +193,24 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
                       .toList(),
                   onChanged: (v) => setState(() => _categoria = v),
                 ),
+                if (_proveedores.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: _proveedorId,
+                    decoration: const InputDecoration(
+                      labelText: 'Proveedor',
+                      prefixIcon: Icon(Icons.local_shipping_outlined),
+                    ),
+                    dropdownColor: AppColors.bgElevated,
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Sin proveedor')),
+                      ..._proveedores.map(
+                        (p) => DropdownMenuItem(value: p.id, child: Text(p.nombre)),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _proveedorId = v),
+                  ),
+                ],
               ],
             ),
           ),

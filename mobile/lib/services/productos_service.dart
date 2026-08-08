@@ -78,6 +78,7 @@ class ProductosService {
     double costoUsd = 0,
     int stockInicial = 0,
     int stockMinimo = 0,
+    String? proveedorId,
   }) async {
     final data = await _api.post('/productos/', {
       'nombre': nombre,
@@ -89,6 +90,7 @@ class ProductosService {
       'costo_usd': costoUsd,
       'stock_actual': stockInicial,
       'stock_minimo': stockMinimo,
+      if (proveedorId != null) 'proveedor_id': proveedorId,
     });
     return ProductoDetalle.fromJson(data);
   }

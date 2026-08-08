@@ -102,7 +102,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final esDueno = context.watch<AppState>().esDueno;
+    final esDueno = context.watch<AppState>().puedeOperaciones;
     final totalValor = _valorado.fold<double>(0, (s, i) => s + i.valorTotalUsd);
     final bajoStock = _items.where((i) => i.bajoStock).length;
     final filtrados = _filtrados;

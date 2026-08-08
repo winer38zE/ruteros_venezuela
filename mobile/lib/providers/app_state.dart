@@ -11,6 +11,7 @@ import '../services/finanzas_service.dart';
 import '../services/usuarios_service.dart';
 import '../services/proveedores_service.dart';
 import '../services/clientes_service.dart';
+import '../services/tasas_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
@@ -25,6 +26,7 @@ class AppState extends ChangeNotifier {
     usuarios = UsuariosService(api);
     proveedores = ProveedoresService(api);
     clientes = ClientesService(api);
+    tasas = TasasService(api);
     _inicializar();
   }
 
@@ -40,6 +42,7 @@ class AppState extends ChangeNotifier {
   late final UsuariosService usuarios;
   late final ProveedoresService proveedores;
   late final ClientesService clientes;
+  late final TasasService tasas;
 
   Usuario? usuario;
   bool inicializado = false;
@@ -48,9 +51,12 @@ class AppState extends ChangeNotifier {
 
   bool get esVendedor => usuario?.rol == 'VENDEDOR';
   bool get esCobrador => usuario?.rol == 'COBRADOR';
+  bool get esAdministrador => usuario?.rol == 'ADMINISTRADOR';
   bool get esDueno => usuario?.esDueno ?? false;
-  bool get puedeVender => esVendedor || esDueno;
-  bool get puedeCobrar => esCobrador || esDueno;
+  bool get puedeOperaciones => esDueno || esAdministrador;
+  bool get puedeVender => esVendedor || puedeOperaciones;
+  bool get puedeCobrar => esCobrador || puedeOperaciones;
+  bool get puedeConfigurar => esDueno;
 
   Future<void> _inicializar() async {
     try {

@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_list_tile.dart';
 import 'nuevo_cobro_screen.dart';
+import 'panel_cobranza_screen.dart';
 
 class CobrosListScreen extends StatefulWidget {
   const CobrosListScreen({super.key});
@@ -51,6 +52,14 @@ class _CobrosListScreenState extends State<CobrosListScreen> {
       title: 'Mis Cobros',
       accentColor: AppColors.neonCyan,
       actions: [
+        IconButton(
+          icon: const Icon(Icons.table_chart_rounded),
+          tooltip: 'Panel Excel',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PanelCobranzaScreen()),
+          ),
+        ),
         IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _cargar),
       ],
       floatingActionButton: NeonFab(

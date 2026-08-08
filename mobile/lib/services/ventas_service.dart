@@ -1,5 +1,32 @@
 import '../services/api_client.dart';
 
+class CuotaAmortizacion {
+  final String id;
+  final int numeroCuota;
+  final String fechaVencimiento;
+  final double montoUsd;
+  final double montoPagadoUsd;
+  final String estado;
+
+  CuotaAmortizacion({
+    required this.id,
+    required this.numeroCuota,
+    required this.fechaVencimiento,
+    required this.montoUsd,
+    required this.montoPagadoUsd,
+    required this.estado,
+  });
+
+  factory CuotaAmortizacion.fromJson(Map<String, dynamic> j) => CuotaAmortizacion(
+        id: j['id'],
+        numeroCuota: j['numero_cuota'],
+        fechaVencimiento: j['fecha_vencimiento'],
+        montoUsd: (j['monto_usd'] as num).toDouble(),
+        montoPagadoUsd: (j['monto_pagado_usd'] as num).toDouble(),
+        estado: j['estado'],
+      );
+}
+
 class DetalleVenta {
   final String id;
   final String productoId;
@@ -29,7 +56,9 @@ class Venta {
   final String vendedorId;
   final double totalUsd;
   final String estado;
+  final String frecuenciaPago;
   final List<DetalleVenta> detalles;
+  final List<CuotaAmortizacion> cuotas;
 
   Venta({
     required this.id,
@@ -37,7 +66,9 @@ class Venta {
     required this.vendedorId,
     required this.totalUsd,
     required this.estado,
+    required this.frecuenciaPago,
     required this.detalles,
+    required this.cuotas,
   });
 
   factory Venta.fromJson(Map<String, dynamic> j) => Venta(
@@ -46,8 +77,12 @@ class Venta {
         vendedorId: j['vendedor_id'],
         totalUsd: (j['total_usd'] as num).toDouble(),
         estado: j['estado'],
+        frecuenciaPago: j['frecuencia_pago'] ?? 'contado',
         detalles: (j['detalles'] as List? ?? [])
             .map((e) => DetalleVenta.fromJson(e))
+            .toList(),
+        cuotas: (j['cuotas'] as List? ?? [])
+            .map((e) => CuotaAmortizacion.fromJson(e))
             .toList(),
       );
 }
@@ -85,6 +120,16 @@ class VentasService {
     return data.map((e) => Venta.fromJson(e)).toList();
   }
 
+  Future<List<CuotaAmortizacion>> amortizacion(String ventaId) async {
+    final data = await _api.get('/ventas/$ventaId/amortizacion') as List;
+    return data.map((e) => CuotaAmortizacion.fromJson(e)).toList();
+  }
+
+  Future<Venta> aprobarBorrador(String ventaId) async {
+    final data = await _api.post('/ventas/$ventaId/aprobar', {});
+    return Venta.fromJson(data);
+  }
+
   Future<Venta> crearVenta({
     required String clienteId,
     required double totalUsd,
@@ -94,6 +139,9 @@ class VentasService {
     required List<ItemCarrito> items,
     String? almacenId,
     String? ventaId,
+    int? numeroCuotas,
+    String tipoTasaUsd = 'bcv',
+    bool esBorrador = false,
   }) async {
     final body = {
       'cliente_id': clienteId,
@@ -101,6 +149,9 @@ class VentasService {
       'tasa_usd_aplicada': tasaUsd,
       'tasa_eur_aplicada': tasaEur,
       'frecuencia_pago': frecuenciaPago,
+      'tipo_tasa_usd': tipoTasaUsd,
+      'es_borrador': esBorrador,
+      if (numeroCuotas != null) 'numero_cuotas': numeroCuotas,
       if (almacenId != null) 'almacen_id': almacenId,
       if (ventaId != null) 'id': ventaId,
       'detalles': items.map((i) => i.toDetalleJson()).toList(),

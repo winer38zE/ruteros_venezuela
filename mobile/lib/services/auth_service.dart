@@ -33,6 +33,8 @@ class Usuario {
       };
 
   bool get esDueno => rol == 'DUEÑO';
+  bool get esAdministrador => rol == 'ADMINISTRADOR';
+  bool get puedeOperaciones => esDueno || esAdministrador;
 }
 
 class AuthService {

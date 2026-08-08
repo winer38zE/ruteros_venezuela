@@ -32,7 +32,8 @@ class UsuariosService {
   final ApiClient _api;
 
   static const roles = [
-    ('DUEÑO', 'Administrador / Dueño'),
+    ('DUEÑO', 'Dueño / Propietario'),
+    ('ADMINISTRADOR', 'Jefe de Operaciones'),
     ('VENDEDOR', 'Vendedor en ruta'),
     ('COBRADOR', 'Cobrador'),
   ];

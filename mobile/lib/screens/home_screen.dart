@@ -17,6 +17,9 @@ import 'registrar_movimiento_screen.dart';
 import 'registrar_usuario_screen.dart';
 import 'usuarios_screen.dart';
 import 'clientes_list_screen.dart';
+import 'tasas_screen.dart';
+import 'panel_cobranza_screen.dart';
+import 'proveedores_screen.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -83,9 +86,18 @@ class HomeScreen extends StatelessWidget {
         screen: CobrosListScreen(),
         badge: 'FIELD',
       ));
+      modules.add(const _ModuleDef(
+        id: 'panel_cobranza',
+        icon: Icons.table_chart_rounded,
+        title: 'Panel Cobranza',
+        subtitle: 'Tabla estilo Excel con abonos rápidos',
+        color: AppColors.neonBlue,
+        screen: PanelCobranzaScreen(),
+        badge: 'EXCEL',
+      ));
     }
 
-    if (state.puedeVender || user.esDueno) {
+    if (state.puedeVender || user.puedeOperaciones) {
       modules.add(const _ModuleDef(
         id: 'clientes',
         icon: Icons.groups_2_rounded,
@@ -97,7 +109,7 @@ class HomeScreen extends StatelessWidget {
       ));
     }
 
-    if (state.puedeVender || user.esDueno) {
+    if (state.puedeVender || user.puedeOperaciones) {
       modules.add(const _ModuleDef(
         id: 'inventario',
         icon: Icons.inventory_2_rounded,
@@ -106,6 +118,30 @@ class HomeScreen extends StatelessWidget {
         color: AppColors.violet,
         screen: InventarioScreen(),
         badge: 'STOCK',
+      ));
+    }
+
+    if (user.puedeOperaciones) {
+      modules.add(const _ModuleDef(
+        id: 'proveedores',
+        icon: Icons.local_shipping_rounded,
+        title: 'Proveedores',
+        subtitle: 'Deudas y cuentas por pagar',
+        color: AppColors.violet,
+        screen: ProveedoresScreen(),
+        badge: 'CxP',
+      ));
+    }
+
+    if (user.esDueno) {
+      modules.add(const _ModuleDef(
+        id: 'tasas',
+        icon: Icons.currency_exchange_rounded,
+        title: 'Tasas de Cambio',
+        subtitle: 'BCV, paralelo y peso colombiano',
+        color: AppColors.amber,
+        screen: TasasScreen(),
+        badge: 'FX',
       ));
     }
 
@@ -162,7 +198,7 @@ class HomeScreen extends StatelessWidget {
           icon: Icons.receipt_long_rounded,
           color: AppColors.amber,
           screen: const RegistrarMovimientoScreen(soloGasto: true),
-          visible: state.esDueno,
+          visible: state.puedeOperaciones,
         ),
       ].where((a) => a.visible).toList();
 
@@ -346,7 +382,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (state.esDueno)
+              if (state.puedeConfigurar)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
