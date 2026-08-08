@@ -1,3 +1,4 @@
+"""Utilidades de deps.py"""
 from uuid import UUID
 from typing import Optional
 from fastapi import Depends, Header, HTTPException
@@ -23,9 +24,25 @@ def obtener_usuario_actual(
 
 def require_dueno(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
     if usuario.rol != RolUsuario.DUENO:
+        raise HTTPException(status_code=403, detail="Acceso restringido al rol DUEÑO")
+    return usuario
+
+
+def require_admin_o_dueno(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
+    if usuario.rol not in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
         raise HTTPException(
             status_code=403,
-            detail="Acceso restringido al rol DUEÑO",
+            detail="Acceso restringido a DUEÑO o ADMINISTRADOR",
+        )
+    return usuario
+
+
+def require_operaciones(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
+    """Dueño y Administrador: inventario, ventas, cobros, proveedores."""
+    if usuario.rol not in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso restringido a operaciones (DUEÑO o ADMINISTRADOR)",
         )
     return usuario
 
@@ -46,23 +63,28 @@ def obtener_usuario_opcional(
     return usuario
 
 
-def require_vendedor_o_dueno(
+def require_vendedor_o_superior(
     usuario: Usuario = Depends(obtener_usuario_actual),
 ) -> Usuario:
-    if usuario.rol not in (RolUsuario.VENDEDOR, RolUsuario.DUENO):
+    if usuario.rol not in (RolUsuario.VENDEDOR, RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
         raise HTTPException(
             status_code=403,
-            detail="Acceso restringido a VENDEDOR o DUEÑO",
+            detail="Acceso restringido a VENDEDOR, ADMINISTRADOR o DUEÑO",
         )
     return usuario
 
 
-def require_cobrador_o_dueno(
+def require_cobrador_o_superior(
     usuario: Usuario = Depends(obtener_usuario_actual),
 ) -> Usuario:
-    if usuario.rol not in (RolUsuario.COBRADOR, RolUsuario.DUENO):
+    if usuario.rol not in (RolUsuario.COBRADOR, RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
         raise HTTPException(
             status_code=403,
-            detail="Acceso restringido a COBRADOR o DUEÑO",
+            detail="Acceso restringido a COBRADOR, ADMINISTRADOR o DUEÑO",
         )
     return usuario
+
+
+# Alias retrocompatibles
+require_vendedor_o_dueno = require_vendedor_o_superior
+require_cobrador_o_dueno = require_cobrador_o_superior

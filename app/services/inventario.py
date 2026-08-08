@@ -180,6 +180,7 @@ def procesar_detalles_venta(
     detalles,
     almacen_id=None,
     tipo_cliente: TipoCliente = TipoCliente.DETAL,
+    descontar_inventario: bool = True,
 ) -> Decimal:
     total = Decimal("0")
     for item in detalles:
@@ -193,10 +194,11 @@ def procesar_detalles_venta(
 
         tipo = TipoCliente(item.tipo_precio) if item.tipo_precio else tipo_cliente
         precio = resolver_precio(db, producto, tipo)
-        descontar_stock(
-            db, venta.empresa_id, producto.id, item.cantidad, almacen_id,
-            referencia_tipo="venta", referencia_id=venta.id,
-        )
+        if descontar_inventario:
+            descontar_stock(
+                db, venta.empresa_id, producto.id, item.cantidad, almacen_id,
+                referencia_tipo="venta", referencia_id=venta.id,
+            )
 
         db.add(
             DetalleVenta(

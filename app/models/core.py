@@ -34,9 +34,14 @@ class GUID(TypeDecorator):
 
 # ---------- ENUMS ----------
 class RolUsuario(str, enum.Enum):
-    DUENO = "DUEÑO"       # <-- Corregido a mayúsculas
-    VENDEDOR = "VENDEDOR" # <-- Corregido a mayúsculas
-    COBRADOR = "COBRADOR" # <-- Corregido a mayúsculas
+    DUENO = "DUEÑO"
+    ADMINISTRADOR = "ADMINISTRADOR"
+    VENDEDOR = "VENDEDOR"
+    COBRADOR = "COBRADOR"
+
+class TipoTasaUsd(str, enum.Enum):
+    BCV = "bcv"
+    PARALELO = "paralelo"
 
 class FrecuenciaPago(str, enum.Enum):
     CONTADO = "contado"
@@ -45,6 +50,12 @@ class FrecuenciaPago(str, enum.Enum):
     MENSUAL = "mensual"
 
 class EstadoVenta(str, enum.Enum):
+    BORRADOR = "borrador"
+    PENDIENTE = "pendiente"
+    PARCIAL = "parcial"
+    PAGADA = "pagada"
+
+class EstadoCuota(str, enum.Enum):
     PENDIENTE = "pendiente"
     PARCIAL = "parcial"
     PAGADA = "pagada"
@@ -180,6 +191,7 @@ class Producto(Base):
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    proveedor_id = Column(GUID(), ForeignKey("proveedores.id"), nullable=True)
     nombre = Column(String, nullable=False)
     sku = Column(String, nullable=True)
     categoria = Column(String, nullable=True)
@@ -193,6 +205,7 @@ class Producto(Base):
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     empresa = relationship("Empresa", back_populates="productos")
+    proveedor = relationship("Proveedor", back_populates="productos")
     precios = relationship("PrecioProducto", back_populates="producto")
     lotes = relationship("LoteInventario", back_populates="producto")
 
@@ -238,6 +251,8 @@ class LoteInventario(Base):
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     producto_id = Column(GUID(), ForeignKey("productos.id"), nullable=False)
     almacen_id = Column(GUID(), ForeignKey("almacenes.id"), nullable=False)
+    proveedor_id = Column(GUID(), ForeignKey("proveedores.id"), nullable=True)
+    genera_deuda_proveedor = Column(Boolean, default=False)
     numero_lote = Column(String, nullable=False)
     cantidad = Column(Integer, nullable=False, default=0)
     costo_unitario_usd = Column(Numeric(10, 2), nullable=False, default=0)
@@ -312,9 +327,13 @@ class TasaCambio(Base):
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     fecha = Column(DateTime, default=datetime.utcnow)
-    momento = Column(String, nullable=False)  # "manana" o "tarde"
+    momento = Column(String, nullable=False, default="manana")
     usd_bs = Column(Numeric(12, 4), nullable=False)
-    eur_bs = Column(Numeric(12, 4), nullable=False)
+    usd_bcv_bs = Column(Numeric(12, 4), nullable=True)
+    usd_paralelo_bs = Column(Numeric(12, 4), nullable=True)
+    eur_bs = Column(Numeric(12, 4), nullable=False, default=0)
+    cop_usd = Column(Numeric(12, 4), nullable=True)
+    cop_ves = Column(Numeric(14, 4), nullable=True)
 
 
 # ---------- VENTA ----------
@@ -331,6 +350,8 @@ class Venta(Base):
 
     tasa_usd_aplicada = Column(Numeric(12, 4), nullable=False)
     tasa_eur_aplicada = Column(Numeric(12, 4), nullable=False)
+    tipo_tasa_usd = Column(Enum(TipoTasaUsd), default=TipoTasaUsd.BCV)
+    numero_cuotas = Column(Integer, nullable=True)
 
     frecuencia_pago = Column(Enum(FrecuenciaPago), nullable=False)
     estado = Column(Enum(EstadoVenta), default=EstadoVenta.PENDIENTE)
@@ -340,7 +361,22 @@ class Venta(Base):
 
     detalles = relationship("DetalleVenta", back_populates="venta")
     cobros = relationship("Cobro", back_populates="venta")
+    cuotas = relationship("CuotaAmortizacion", back_populates="venta", cascade="all, delete-orphan")
     cliente = relationship("Cliente")
+
+
+class CuotaAmortizacion(Base):
+    __tablename__ = "cuotas_amortizacion"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    venta_id = Column(GUID(), ForeignKey("ventas.id"), nullable=False)
+    numero_cuota = Column(Integer, nullable=False)
+    fecha_vencimiento = Column(DateTime, nullable=False)
+    monto_usd = Column(Numeric(10, 2), nullable=False)
+    monto_pagado_usd = Column(Numeric(10, 2), nullable=False, default=0)
+    estado = Column(Enum(EstadoCuota), default=EstadoCuota.PENDIENTE)
+
+    venta = relationship("Venta", back_populates="cuotas")
 
 
 class DetalleVenta(Base):
@@ -398,8 +434,11 @@ class Proveedor(Base):
     telefono = Column(String, nullable=True)
     rif = Column(String, nullable=True)
     notas = Column(Text, nullable=True)
+    saldo_deuda_usd = Column(Numeric(12, 2), nullable=False, default=0)
     activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    productos = relationship("Producto", back_populates="proveedor")
 
 
 class MovimientoFinanciero(Base):

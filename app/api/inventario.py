@@ -48,6 +48,9 @@ def listar_almacenes(db: Session = Depends(get_db)):
 
 @router.post("/lotes", response_model=LoteInventarioResponse)
 def registrar_lote(lote: LoteInventarioCreate, db: Session = Depends(get_db)):
+    from decimal import Decimal
+    from app.models.core import Proveedor
+
     empresa = obtener_empresa_tenant(db)
 
     producto = db.query(Producto).filter(
@@ -62,7 +65,18 @@ def registrar_lote(lote: LoteInventarioCreate, db: Session = Depends(get_db)):
     if not almacen:
         raise HTTPException(status_code=400, detail="Almacén no encontrado")
 
-    nuevo = LoteInventario(empresa_id=empresa.id, **lote.model_dump())
+    proveedor_id = lote.proveedor_id or producto.proveedor_id
+    nuevo = LoteInventario(
+        empresa_id=empresa.id,
+        producto_id=lote.producto_id,
+        almacen_id=lote.almacen_id,
+        proveedor_id=proveedor_id,
+        genera_deuda_proveedor=lote.genera_deuda_proveedor,
+        numero_lote=lote.numero_lote,
+        cantidad=lote.cantidad,
+        costo_unitario_usd=lote.costo_unitario_usd,
+        fecha_vencimiento=lote.fecha_vencimiento,
+    )
     db.add(nuevo)
     db.flush()
 
@@ -71,6 +85,12 @@ def registrar_lote(lote: LoteInventarioCreate, db: Session = Depends(get_db)):
         db, empresa.id, producto.id, almacen.id, nuevo.id,
         TipoMovimientoInventario.ENTRADA, lote.cantidad, "lote", nuevo.id,
     )
+
+    if lote.genera_deuda_proveedor and proveedor_id:
+        prov = db.query(Proveedor).filter(Proveedor.id == proveedor_id).first()
+        if prov:
+            monto_deuda = Decimal(str(lote.costo_unitario_usd)) * lote.cantidad
+            prov.saldo_deuda_usd = Decimal(str(prov.saldo_deuda_usd or 0)) + monto_deuda
 
     db.commit()
     db.refresh(nuevo)

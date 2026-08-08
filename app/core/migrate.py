@@ -41,6 +41,24 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("precio_cop", "NUMERIC(14, 2)"),
             ("costo_usd", "NUMERIC(10, 2) DEFAULT 0"),
             ("stock_minimo", "INTEGER DEFAULT 0"),
+            ("proveedor_id", "CHAR(36)"),
+        ],
+        "tasas_cambio": [
+            ("usd_bcv_bs", "NUMERIC(12, 4)"),
+            ("usd_paralelo_bs", "NUMERIC(12, 4)"),
+            ("cop_usd", "NUMERIC(12, 4)"),
+            ("cop_ves", "NUMERIC(14, 4)"),
+        ],
+        "ventas": [
+            ("tipo_tasa_usd", "VARCHAR(20) DEFAULT 'bcv'"),
+            ("numero_cuotas", "INTEGER"),
+        ],
+        "proveedores": [
+            ("saldo_deuda_usd", "NUMERIC(12, 2) DEFAULT 0"),
+        ],
+        "lotes_inventario": [
+            ("proveedor_id", "CHAR(36)"),
+            ("genera_deuda_proveedor", "BOOLEAN DEFAULT 0"),
         ],
     }
 

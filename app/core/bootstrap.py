@@ -12,6 +12,7 @@ DEFAULT_NOMBRE = "Administrador ED NET PRO"
 DEFAULT_EMPRESA = "ED NET PRO"
 
 DEMO_USUARIOS = [
+    ("admin", "Jefe de Operaciones", RolUsuario.ADMINISTRADOR, "123456"),
     ("vendedor", "Vendedor Demo", RolUsuario.VENDEDOR, "123456"),
     ("cobrador", "Cobrador Demo", RolUsuario.COBRADOR, "123456"),
 ]

@@ -20,7 +20,7 @@ class UsuarioCreate(BaseModel):
     nombre: str
     username: str
     password: str
-    rol: str = Field(pattern="^(DUEÑO|VENDEDOR|COBRADOR)$")
+    rol: str = Field(pattern="^(DUEÑO|ADMINISTRADOR|VENDEDOR|COBRADOR)$")
 
 class UsuarioResponse(BaseModel):
     id: UUID
@@ -138,6 +138,8 @@ class ProductoCreate(BaseModel):
     stock_minimo: int = 0
     precio_mayorista_usd: Optional[float] = None
     precio_detal_usd: Optional[float] = None
+    proveedor_id: Optional[UUID] = None
+    tipo_tasa_usd: Optional[str] = Field(default="bcv", pattern="^(bcv|paralelo)$")
 
 class ProductoUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -151,6 +153,8 @@ class ProductoUpdate(BaseModel):
     activo: Optional[bool] = None
     precio_mayorista_usd: Optional[float] = None
     precio_detal_usd: Optional[float] = None
+    proveedor_id: Optional[UUID] = None
+    tipo_tasa_usd: Optional[str] = Field(default=None, pattern="^(bcv|paralelo)$")
 
 class ProductoResponse(BaseModel):
     id: UUID
@@ -165,6 +169,10 @@ class ProductoResponse(BaseModel):
     stock: int
     stock_minimo: int = 0
     activo: bool = True
+    proveedor_id: Optional[UUID] = None
+    proveedor_nombre: Optional[str] = None
+    precio_ves_calculado: Optional[float] = None
+    precio_cop_calculado: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -191,6 +199,20 @@ class VentaCreate(BaseModel):
     id: Optional[str] = None
     detalles: Optional[List[DetalleVentaCreate]] = None
     almacen_id: Optional[UUID] = None
+    numero_cuotas: Optional[int] = Field(default=None, ge=1, le=60)
+    tipo_tasa_usd: Optional[str] = Field(default="bcv", pattern="^(bcv|paralelo)$")
+    es_borrador: bool = False
+
+class CuotaAmortizacionResponse(BaseModel):
+    id: UUID
+    venta_id: UUID
+    numero_cuota: int
+    fecha_vencimiento: datetime
+    monto_usd: float
+    monto_pagado_usd: float
+    estado: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 class VentaResponse(BaseModel):
     id: UUID
@@ -199,15 +221,21 @@ class VentaResponse(BaseModel):
     vendedor_id: UUID
     total_usd: float
     estado: str
+    frecuencia_pago: str = "contado"
+    tipo_tasa_usd: Optional[str] = "bcv"
+    numero_cuotas: Optional[int] = None
     detalles: List[DetalleVentaResponse] = []
+    cuotas: List[CuotaAmortizacionResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 
 # --- TASAS DE CAMBIO ---
 class TasaCambioCreate(BaseModel):
-    momento: str = Field(pattern="^(manana|tarde)$")
-    usd_bs: float
-    eur_bs: float
+    momento: str = Field(default="manana", pattern="^(manana|tarde)$")
+    usd_bcv_bs: float
+    usd_paralelo_bs: float
+    cop_usd: float = Field(gt=0, description="Pesos colombianos por 1 USD")
+    eur_bs: float = 0.0
 
 class TasaCambioResponse(BaseModel):
     id: UUID
@@ -215,9 +243,27 @@ class TasaCambioResponse(BaseModel):
     fecha: datetime
     momento: str
     usd_bs: float
+    usd_bcv_bs: Optional[float] = None
+    usd_paralelo_bs: Optional[float] = None
     eur_bs: float
+    cop_usd: Optional[float] = None
+    cop_ves: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class ConversionMonedaRequest(BaseModel):
+    monto: float = Field(gt=0)
+    moneda_origen: str = Field(pattern="^(usd|ves|cop)$")
+    moneda_destino: str = Field(pattern="^(usd|ves|cop)$")
+    tipo_tasa_usd: str = Field(default="bcv", pattern="^(bcv|paralelo)$")
+
+class ConversionMonedaResponse(BaseModel):
+    monto_origen: float
+    moneda_origen: str
+    monto_destino: float
+    moneda_destino: str
+    tipo_tasa_usd: str
+    tasas_aplicadas: dict
 
 # --- COBROS ---
 class CobroCreate(BaseModel):
@@ -251,10 +297,19 @@ class VentaPendienteResponse(BaseModel):
     id: UUID
     cliente_id: UUID
     cliente_nombre: str
+    productos_resumen: str = "—"
+    costo_total_usd: float = 0.0
     total_usd: float
     cobrado_usd: float
     saldo_pendiente_usd: float
+    frecuencia_pago: str = "contado"
+    tipo_credito: str = "—"
     estado: str
+    estado_cuenta: str = "Al día"
+    proximo_pago: Optional[datetime] = None
+    monto_proxima_cuota_usd: float = 0.0
+    cuotas_pagadas: int = 0
+    cuotas_totales: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -347,6 +402,8 @@ class LoteInventarioCreate(BaseModel):
     cantidad: int = Field(ge=0)
     costo_unitario_usd: float = 0.0
     fecha_vencimiento: Optional[datetime] = None
+    proveedor_id: Optional[UUID] = None
+    genera_deuda_proveedor: bool = False
 
 class LoteInventarioResponse(BaseModel):
     id: UUID
@@ -538,6 +595,15 @@ class ProveedorCreate(BaseModel):
     telefono: Optional[str] = None
     rif: Optional[str] = None
     notas: Optional[str] = None
+    contacto: Optional[str] = None
+
+class ProveedorUpdate(BaseModel):
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+    rif: Optional[str] = None
+    notas: Optional[str] = None
+    contacto: Optional[str] = None
+    activo: Optional[bool] = None
 
 class ProveedorResponse(BaseModel):
     id: UUID
@@ -546,6 +612,11 @@ class ProveedorResponse(BaseModel):
     telefono: Optional[str] = None
     rif: Optional[str] = None
     notas: Optional[str] = None
+    saldo_deuda_usd: float = 0.0
     activo: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+class PagoProveedorRequest(BaseModel):
+    monto_usd: float = Field(gt=0)
+    descripcion: Optional[str] = None
