@@ -130,10 +130,25 @@ async def obtener_cop_por_usd(client: httpx.AsyncClient) -> tuple[float, str]:
 
 async def obtener_tasas_externas() -> TasasExternas:
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json, text/html;q=0.9"}
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers=headers, follow_redirects=True) as client:
-        bcv, src_bcv = await obtener_tasa_bcv(client)
-        paralelo, src_paralelo = await obtener_tasa_paralelo(client)
-        cop, src_cop = await obtener_cop_por_usd(client)
+    try:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers=headers, follow_redirects=True) as client:
+            bcv, src_bcv = await obtener_tasa_bcv(client)
+            paralelo, src_paralelo = await obtener_tasa_paralelo(client)
+            cop, src_cop = await obtener_cop_por_usd(client)
+    except Exception as exc:
+        logger.exception("Error de red obteniendo tasas externas: %s", exc)
+        return TasasExternas(
+            usd_bcv_bs=FALLBACK_BCV,
+            usd_paralelo_bs=FALLBACK_PARALELO,
+            cop_usd=FALLBACK_COP_USD,
+            fuentes={
+                "usd_bcv": "fallback_error_red",
+                "usd_paralelo": "fallback_error_red",
+                "cop_usd": "fallback_error_red",
+                "error": str(exc),
+                "obtenido_en": datetime.utcnow().isoformat(),
+            },
+        )
 
     return TasasExternas(
         usd_bcv_bs=bcv,
@@ -143,6 +158,40 @@ async def obtener_tasas_externas() -> TasasExternas:
             "usd_bcv": src_bcv,
             "usd_paralelo": src_paralelo,
             "cop_usd": src_cop,
+            "obtenido_en": datetime.utcnow().isoformat(),
+        },
+    )
+
+
+def tasas_desde_ultima_db(db: Session, empresa_id=None) -> TasasExternas:
+    """Usa la última tasa guardada o valores por defecto."""
+    query = db.query(TasaCambio).order_by(TasaCambio.fecha.desc())
+    if empresa_id:
+        query = query.filter(TasaCambio.empresa_id == empresa_id)
+    ultima = query.first()
+    if ultima:
+        bcv = float(ultima.usd_bcv_bs or ultima.usd_bs or FALLBACK_BCV)
+        paralelo = float(ultima.usd_paralelo_bs or bcv * 1.1)
+        cop = float(ultima.cop_usd or FALLBACK_COP_USD)
+        return TasasExternas(
+            usd_bcv_bs=bcv,
+            usd_paralelo_bs=paralelo,
+            cop_usd=cop,
+            fuentes={
+                "usd_bcv": "ultima_db",
+                "usd_paralelo": "ultima_db",
+                "cop_usd": "ultima_db",
+                "obtenido_en": datetime.utcnow().isoformat(),
+            },
+        )
+    return TasasExternas(
+        usd_bcv_bs=FALLBACK_BCV,
+        usd_paralelo_bs=FALLBACK_PARALELO,
+        cop_usd=FALLBACK_COP_USD,
+        fuentes={
+            "usd_bcv": "fallback_default",
+            "usd_paralelo": "fallback_default",
+            "cop_usd": "fallback_default",
             "obtenido_en": datetime.utcnow().isoformat(),
         },
     )
@@ -202,15 +251,37 @@ async def sincronizar_tasas_automaticas(
     db: Session,
     momento: Optional[str] = None,
     empresa_id=None,
-) -> tuple[list[TasaCambio], TasasExternas]:
-    tasas = await obtener_tasas_externas()
-    creadas = persistir_tasas_sincronizadas(db, tasas, momento=momento, empresa_id=empresa_id)
+) -> tuple[list[TasaCambio], TasasExternas, bool]:
+    """Retorna (tasas_creadas, datos_externos, uso_fallback)."""
+    uso_fallback = False
+    try:
+        tasas = await obtener_tasas_externas()
+        if any(
+            str(v).startswith("fallback") for v in tasas.fuentes.values() if isinstance(v, str)
+        ):
+            uso_fallback = True
+    except Exception as exc:
+        logger.exception("Scraper falló por completo, usando DB/default: %s", exc)
+        tasas = tasas_desde_ultima_db(db, empresa_id)
+        tasas.fuentes["error"] = str(exc)
+        uso_fallback = True
+
+    try:
+        creadas = persistir_tasas_sincronizadas(db, tasas, momento=momento, empresa_id=empresa_id)
+    except Exception as exc:
+        logger.exception("No se pudo persistir tasas: %s", exc)
+        db.rollback()
+        creadas = []
+        tasas.fuentes["persistencia"] = f"error: {exc}"
+        uso_fallback = True
+
     logger.info(
-        "Tasas sincronizadas (%s): BCV=%.4f Paralelo=%.4f COP/USD=%.2f empresas=%d",
+        "Tasas sincronizadas (%s): BCV=%.4f Paralelo=%.4f COP/USD=%.2f empresas=%d fallback=%s",
         momento or momento_actual(),
         tasas.usd_bcv_bs,
         tasas.usd_paralelo_bs,
         tasas.cop_usd,
         len(creadas),
+        uso_fallback,
     )
-    return creadas, tasas
+    return creadas, tasas, uso_fallback

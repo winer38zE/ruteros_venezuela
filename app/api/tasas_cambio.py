@@ -16,7 +16,11 @@ from app.schemas.core import (
     ConversionMonedaResponse,
     TasaSincronizacionResponse,
 )
-from app.services.tasas_scraper import sincronizar_tasas_automaticas, momento_actual
+from app.services.tasas_scraper import (
+    sincronizar_tasas_automaticas,
+    momento_actual,
+    tasas_desde_ultima_db,
+)
 from app.services.tasas_cambio import (
     obtener_ultima_tasa,
     convertir_usd_a_ves,
@@ -31,6 +35,60 @@ from app.models.core import TipoTasaUsd
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.post("/sincronizar-auto", response_model=TasaSincronizacionResponse)
+async def sincronizar_tasas_auto(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_admin_o_dueno),
+):
+    """Fuerza la obtención automática de tasas (BCV, paralelo, COP) vía scraper/API."""
+    momento = momento_actual()
+    empresa = obtener_empresa_tenant(db)
+
+    try:
+        creadas, externas, uso_fallback = await sincronizar_tasas_automaticas(
+            db,
+            momento=momento,
+            empresa_id=empresa.id,
+        )
+    except Exception as exc:
+        logger.exception("Sincronización manual de tasas falló por completo")
+        externas = tasas_desde_ultima_db(db, empresa.id)
+        externas.fuentes["error"] = str(exc)
+        creadas = []
+        uso_fallback = True
+
+    tasa_empresa = next(
+        (t for t in creadas if t.empresa_id == usuario.empresa_id),
+        creadas[0] if creadas else obtener_ultima_tasa(db, usuario.empresa_id),
+    )
+
+    if uso_fallback and not creadas:
+        mensaje = (
+            "No se pudieron obtener tasas en vivo; se devolvieron valores de respaldo "
+            f"(BCV={externas.usd_bcv_bs:.2f}, Paralelo={externas.usd_paralelo_bs:.2f}, "
+            f"COP/USD={externas.cop_usd:.2f})."
+        )
+        exito = False
+    elif uso_fallback:
+        mensaje = "Tasas sincronizadas con valores parciales o de respaldo."
+        exito = True
+    else:
+        mensaje = "Tasas sincronizadas y marcadas como activas del día."
+        exito = True
+
+    return TasaSincronizacionResponse(
+        exito=exito,
+        momento=momento,
+        empresas_actualizadas=len(creadas),
+        usd_bcv_bs=externas.usd_bcv_bs,
+        usd_paralelo_bs=externas.usd_paralelo_bs,
+        cop_usd=externas.cop_usd,
+        fuentes=externas.fuentes,
+        mensaje=mensaje,
+        tasa=tasa_empresa,
+    )
 
 
 @router.post("/", response_model=TasaCambioResponse)
@@ -131,36 +189,4 @@ def convertir_moneda(
         moneda_destino=destino,
         tipo_tasa_usd=body.tipo_tasa_usd,
         tasas_aplicadas=calcular_precios_equivalentes(Decimal("1"), tasa, tipo),
-    )
-
-
-@router.post("/sincronizar-auto", response_model=TasaSincronizacionResponse)
-async def sincronizar_tasas_auto(
-    db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_admin_o_dueno),
-):
-    """Fuerza la obtención automática de tasas (BCV, paralelo, COP) vía scraper/API."""
-    momento = momento_actual()
-    try:
-        creadas, externas = await sincronizar_tasas_automaticas(db, momento=momento)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("Sincronización manual de tasas falló")
-        raise HTTPException(
-            status_code=502,
-            detail=f"No se pudieron obtener las tasas externas: {exc}",
-        )
-
-    tasa_empresa = next((t for t in creadas if t.empresa_id == usuario.empresa_id), creadas[0])
-    return TasaSincronizacionResponse(
-        exito=True,
-        momento=momento,
-        empresas_actualizadas=len(creadas),
-        usd_bcv_bs=externas.usd_bcv_bs,
-        usd_paralelo_bs=externas.usd_paralelo_bs,
-        cop_usd=externas.cop_usd,
-        fuentes=externas.fuentes,
-        mensaje="Tasas sincronizadas y marcadas como activas del día.",
-        tasa=tasa_empresa,
     )
