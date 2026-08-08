@@ -54,6 +54,43 @@ class ConversionResult {
       );
 }
 
+class TasaSincronizacionResult {
+  final bool exito;
+  final String momento;
+  final int empresasActualizadas;
+  final double usdBcvBs;
+  final double usdParaleloBs;
+  final double copUsd;
+  final Map<String, dynamic> fuentes;
+  final String mensaje;
+  final TasaCambioDetalle? tasa;
+
+  TasaSincronizacionResult({
+    required this.exito,
+    required this.momento,
+    required this.empresasActualizadas,
+    required this.usdBcvBs,
+    required this.usdParaleloBs,
+    required this.copUsd,
+    required this.fuentes,
+    required this.mensaje,
+    this.tasa,
+  });
+
+  factory TasaSincronizacionResult.fromJson(Map<String, dynamic> j) =>
+      TasaSincronizacionResult(
+        exito: j['exito'] ?? true,
+        momento: j['momento'] ?? 'manana',
+        empresasActualizadas: j['empresas_actualizadas'] ?? 0,
+        usdBcvBs: (j['usd_bcv_bs'] as num).toDouble(),
+        usdParaleloBs: (j['usd_paralelo_bs'] as num).toDouble(),
+        copUsd: (j['cop_usd'] as num).toDouble(),
+        fuentes: Map<String, dynamic>.from(j['fuentes'] ?? {}),
+        mensaje: j['mensaje'] ?? 'Sincronizado',
+        tasa: j['tasa'] != null ? TasaCambioDetalle.fromJson(j['tasa']) : null,
+      );
+}
+
 class TasasService {
   TasasService(this._api);
   final ApiClient _api;
@@ -98,5 +135,10 @@ class TasasService {
       'tipo_tasa_usd': tipoTasaUsd,
     });
     return ConversionResult.fromJson(data);
+  }
+
+  Future<TasaSincronizacionResult> sincronizarAuto() async {
+    final data = await _api.post('/tasas-cambio/sincronizar-auto', {});
+    return TasaSincronizacionResult.fromJson(data);
   }
 }

@@ -334,6 +334,8 @@ class TasaCambio(Base):
     eur_bs = Column(Numeric(12, 4), nullable=False, default=0)
     cop_usd = Column(Numeric(12, 4), nullable=True)
     cop_ves = Column(Numeric(14, 4), nullable=True)
+    activa = Column(Boolean, default=True)
+    origen = Column(String, nullable=True, default="manual")
 
 
 # ---------- VENTA ----------

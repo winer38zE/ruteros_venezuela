@@ -5,7 +5,6 @@ import '../providers/app_state.dart';
 import '../services/cobros_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
-import '../widgets/glass_container.dart';
 
 class PanelCobranzaScreen extends StatefulWidget {
   const PanelCobranzaScreen({super.key});

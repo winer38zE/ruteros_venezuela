@@ -48,6 +48,8 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("usd_paralelo_bs", "NUMERIC(12, 4)"),
             ("cop_usd", "NUMERIC(12, 4)"),
             ("cop_ves", "NUMERIC(14, 4)"),
+            ("activa", "BOOLEAN DEFAULT 1"),
+            ("origen", "VARCHAR(20) DEFAULT 'manual'"),
         ],
         "ventas": [
             ("tipo_tasa_usd", "VARCHAR(20) DEFAULT 'bcv'"),

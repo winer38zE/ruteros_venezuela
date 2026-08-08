@@ -5,6 +5,7 @@ class AppColors {
   static const bgDeep = Color(0xFF030712);
   static const bgSurface = Color(0xFF0B0F19);
   static const bgElevated = Color(0xFF111827);
+  static const bgCard = Color(0xFF1A2234);
 
   static const neonCyan = Color(0xFF00F2FE);
   static const neonBlue = Color(0xFF38BDF8);

@@ -7,6 +7,7 @@ from app.models.core import Base
 from app.core.db import engine
 from app.core.migrate import aplicar_migraciones_sqlite
 from app.core.bootstrap import asegurar_usuario_admin
+from app.core.scheduler import iniciar_scheduler, detener_scheduler
 
 # Importamos todas tus rutas organizadas
 from app.api import (
@@ -29,7 +30,12 @@ async def lifespan(app: FastAPI):
         asegurar_usuario_admin()
     except Exception:
         logger.exception("Bootstrap de admin falló; el servidor continuará arrancando.")
+    try:
+        iniciar_scheduler()
+    except Exception:
+        logger.exception("Scheduler de tasas no pudo iniciarse.")
     yield
+    detener_scheduler()
 
 
 app = FastAPI(

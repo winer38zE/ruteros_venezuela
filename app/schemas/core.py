@@ -248,8 +248,21 @@ class TasaCambioResponse(BaseModel):
     eur_bs: float
     cop_usd: Optional[float] = None
     cop_ves: Optional[float] = None
+    activa: bool = True
+    origen: Optional[str] = "manual"
 
     model_config = ConfigDict(from_attributes=True)
+
+class TasaSincronizacionResponse(BaseModel):
+    exito: bool
+    momento: str
+    empresas_actualizadas: int
+    usd_bcv_bs: float
+    usd_paralelo_bs: float
+    cop_usd: float
+    fuentes: dict
+    mensaje: str
+    tasa: Optional[TasaCambioResponse] = None
 
 class ConversionMonedaRequest(BaseModel):
     monto: float = Field(gt=0)

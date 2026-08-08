@@ -133,12 +133,12 @@ class HomeScreen extends StatelessWidget {
       ));
     }
 
-    if (user.esDueno) {
+    if (state.puedeOperaciones) {
       modules.add(const _ModuleDef(
         id: 'tasas',
         icon: Icons.currency_exchange_rounded,
         title: 'Tasas de Cambio',
-        subtitle: 'BCV, paralelo y peso colombiano',
+        subtitle: 'BCV, paralelo y sincronización auto',
         color: AppColors.amber,
         screen: TasasScreen(),
         badge: 'FX',

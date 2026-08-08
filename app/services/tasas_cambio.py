@@ -12,6 +12,14 @@ def _d(val) -> Decimal:
 
 
 def obtener_ultima_tasa(db: Session, empresa_id) -> Optional[TasaCambio]:
+    activa = (
+        db.query(TasaCambio)
+        .filter(TasaCambio.empresa_id == empresa_id, TasaCambio.activa.is_(True))
+        .order_by(TasaCambio.fecha.desc())
+        .first()
+    )
+    if activa:
+        return activa
     return (
         db.query(TasaCambio)
         .filter(TasaCambio.empresa_id == empresa_id)

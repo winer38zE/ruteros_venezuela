@@ -26,6 +26,8 @@ class _TasasScreenState extends State<TasasScreen> {
   String _tipoTasa = 'bcv';
   ConversionResult? _conversion;
   bool _guardando = false;
+  bool _sincronizando = false;
+  Map<String, dynamic>? _ultimasFuentes;
 
   @override
   void initState() {
@@ -92,6 +94,41 @@ class _TasasScreenState extends State<TasasScreen> {
     }
   }
 
+  Future<void> _sincronizarAuto() async {
+    setState(() => _sincronizando = true);
+    try {
+      final result = await context.read<AppState>().tasas.sincronizarAuto();
+      if (result.tasa != null) {
+        _ultima = result.tasa;
+        _bcvCtrl.text = _ultima!.usdBcvBs.toString();
+        _paraleloCtrl.text = _ultima!.usdParaleloBs.toString();
+        _copCtrl.text = _ultima!.copUsd.toString();
+      } else {
+        await _cargar();
+      }
+      _ultimasFuentes = result.fuentes;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Tasas actualizadas (${result.momento}): BCV ${result.usdBcvBs.toStringAsFixed(2)}',
+            ),
+            backgroundColor: AppColors.emerald,
+          ),
+        );
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sincronizando = false);
+    }
+  }
+
   Future<void> _probarConversion() async {
     final monto = double.tryParse(_montoConvCtrl.text.replaceAll(',', '.'));
     if (monto == null) return;
@@ -115,12 +152,28 @@ class _TasasScreenState extends State<TasasScreen> {
   @override
   Widget build(BuildContext context) {
     final fmt = NumberFormat('#,##0.00');
-    final esDueno = context.watch<AppState>().esDueno;
+    final state = context.watch<AppState>();
+    final esDueno = state.esDueno;
+    final puedeSincronizar = state.puedeOperaciones;
 
     return FuturisticScaffold(
       title: 'Tasas de Cambio',
       accentColor: AppColors.amber,
-      actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _cargar)],
+      actions: [
+        if (puedeSincronizar)
+          IconButton(
+            icon: _sincronizando
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_sync_rounded),
+            tooltip: 'Sincronizar tasas',
+            onPressed: _sincronizando ? null : _sincronizarAuto,
+          ),
+        IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _cargar),
+      ],
       body: _cargando
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -138,10 +191,44 @@ class _TasasScreenState extends State<TasasScreen> {
                         Text('BCV: ${fmt.format(_ultima!.usdBcvBs)} Bs/USD'),
                         Text('Paralelo: ${fmt.format(_ultima!.usdParaleloBs)} Bs/USD'),
                         Text('COP/USD: ${fmt.format(_ultima!.copUsd)}'),
+                        Text('Momento: ${_ultima!.momento}'),
                         Text('Actualizada: ${_ultima!.fecha.substring(0, 16)}'),
                       ],
                     ),
                   ),
+                if (puedeSincronizar) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _sincronizando ? null : _sincronizarAuto,
+                      icon: _sincronizando
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cloud_download_rounded),
+                      label: Text(
+                        _sincronizando ? 'Obteniendo tasas...' : 'Sincronizar tasas automáticamente',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.neonBlue,
+                        foregroundColor: AppColors.bgDeep,
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                  ),
+                  if (_ultimasFuentes != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Fuentes: BCV=${_ultimasFuentes!['usd_bcv']}, '
+                      'Paralelo=${_ultimasFuentes!['usd_paralelo']}, '
+                      'COP=${_ultimasFuentes!['cop_usd']}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!, style: const TextStyle(color: Colors.red)),
