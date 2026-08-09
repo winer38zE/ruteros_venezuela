@@ -161,12 +161,14 @@ class BotonesRutaCliente extends StatelessWidget {
     this.lngResidencia,
     this.latTrabajo,
     this.lngTrabajo,
+    this.destacados = false,
   });
 
   final double? latResidencia;
   final double? lngResidencia;
   final double? latTrabajo;
   final double? lngTrabajo;
+  final bool destacados;
 
   Future<void> _abrir(BuildContext context, double lat, double lng, String tipo) async {
     final ok = await abrirRutaGoogleMaps(latitud: lat, longitud: lng);
@@ -183,6 +185,41 @@ class BotonesRutaCliente extends StatelessWidget {
     final domicilioOk = coordenadasValidas(latResidencia, lngResidencia);
     final trabajoOk = coordenadasValidas(latTrabajo, lngTrabajo);
 
+    if (destacados) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.icon(
+            onPressed: domicilioOk
+                ? () => _abrir(context, latResidencia!, lngResidencia!, 'domicilio')
+                : null,
+            icon: const Text('🏠', style: TextStyle(fontSize: 18)),
+            label: const Text('Ruta Domicilio'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.neonCyan,
+              foregroundColor: AppColors.bgDeep,
+              minimumSize: const Size(double.infinity, 48),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: trabajoOk
+                ? () => _abrir(context, latTrabajo!, lngTrabajo!, 'trabajo')
+                : null,
+            icon: const Text('💼', style: TextStyle(fontSize: 18)),
+            label: const Text('Ruta Trabajo'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.amber,
+              foregroundColor: AppColors.bgDeep,
+              minimumSize: const Size(double.infinity, 48),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Row(
       children: [
         Expanded(
@@ -190,8 +227,8 @@ class BotonesRutaCliente extends StatelessWidget {
             onPressed: domicilioOk
                 ? () => _abrir(context, latResidencia!, lngResidencia!, 'domicilio')
                 : null,
-            icon: const Text('🚪', style: TextStyle(fontSize: 16)),
-            label: const Text('Ruta a Domicilio'),
+            icon: const Text('🏠', style: TextStyle(fontSize: 16)),
+            label: const Text('Ruta Domicilio'),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.neonCyan,
               side: BorderSide(color: AppColors.neonCyan.withValues(alpha: 0.5)),
@@ -206,7 +243,7 @@ class BotonesRutaCliente extends StatelessWidget {
                 ? () => _abrir(context, latTrabajo!, lngTrabajo!, 'trabajo')
                 : null,
             icon: const Text('💼', style: TextStyle(fontSize: 16)),
-            label: const Text('Ruta a Trabajo'),
+            label: const Text('Ruta Trabajo'),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.amber,
               side: BorderSide(color: AppColors.amber.withValues(alpha: 0.5)),

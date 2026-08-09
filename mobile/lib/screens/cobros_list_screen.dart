@@ -6,6 +6,7 @@ import '../services/cobros_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_list_tile.dart';
+import '../widgets/enviar_recibo_button.dart';
 import 'nuevo_cobro_screen.dart';
 import 'panel_cobranza_screen.dart';
 
@@ -130,6 +131,14 @@ class _CobrosListScreenState extends State<CobrosListScreen> {
                                   style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                                 ),
                               ),
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                                  child: EnviarReciboButton(
+                                    onEnviar: () => context.read<AppState>().cobros.enviarRecibo(c.id),
+                                  ),
+                                ),
+                              ],
                             );
                           }),
                         ],

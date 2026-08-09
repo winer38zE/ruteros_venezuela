@@ -58,5 +58,9 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https" android:host="www.google.com"/>
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="google.navigation"/>
+        </intent>
     </queries>
 </manifest>

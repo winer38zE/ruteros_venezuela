@@ -38,8 +38,12 @@ def _serializar_cliente(c: Cliente) -> ClienteResponse:
         telefono_secundario=c.telefono_secundario,
         direccion=c.direccion,
         punto_referencia=c.punto_referencia,
+        latitud_residencia=float(c.latitud_residencia) if c.latitud_residencia is not None else None,
+        longitud_residencia=float(c.longitud_residencia) if c.longitud_residencia is not None else None,
         empresa_trabajo=c.empresa_trabajo,
         direccion_laboral=c.direccion_laboral,
+        latitud_trabajo=float(c.latitud_trabajo) if c.latitud_trabajo is not None else None,
+        longitud_trabajo=float(c.longitud_trabajo) if c.longitud_trabajo is not None else None,
         ref_familiar_nombre=c.ref_familiar_nombre,
         ref_familiar_parentesco=c.ref_familiar_parentesco,
         ref_familiar_telefono=c.ref_familiar_telefono,
@@ -70,8 +74,12 @@ def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
         telefono_secundario=cliente.telefono_secundario,
         direccion=cliente.direccion,
         punto_referencia=cliente.punto_referencia,
+        latitud_residencia=cliente.latitud_residencia,
+        longitud_residencia=cliente.longitud_residencia,
         empresa_trabajo=cliente.empresa_trabajo,
         direccion_laboral=cliente.direccion_laboral,
+        latitud_trabajo=cliente.latitud_trabajo,
+        longitud_trabajo=cliente.longitud_trabajo,
         ref_familiar_nombre=cliente.ref_familiar_nombre,
         ref_familiar_parentesco=cliente.ref_familiar_parentesco,
         ref_familiar_telefono=cliente.ref_familiar_telefono,
@@ -188,6 +196,14 @@ def actualizar_cliente(
         cliente.empresa_trabajo = body.empresa_trabajo
     if body.direccion_laboral is not None:
         cliente.direccion_laboral = body.direccion_laboral
+    if body.latitud_residencia is not None:
+        cliente.latitud_residencia = body.latitud_residencia
+    if body.longitud_residencia is not None:
+        cliente.longitud_residencia = body.longitud_residencia
+    if body.latitud_trabajo is not None:
+        cliente.latitud_trabajo = body.latitud_trabajo
+    if body.longitud_trabajo is not None:
+        cliente.longitud_trabajo = body.longitud_trabajo
     if body.ref_familiar_nombre is not None:
         cliente.ref_familiar_nombre = body.ref_familiar_nombre
     if body.ref_familiar_parentesco is not None:

@@ -8,6 +8,7 @@ import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
 import '../widgets/gps_location_capture.dart';
+import '../widgets/asistente_ruta_widget.dart';
 import '../widgets/score_badge.dart';
 import 'cliente_form_screen.dart';
 
@@ -131,11 +132,19 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        AsistenteRutaWidget(
+                          latResidencia: _cliente!.latitudResidencia,
+                          lngResidencia: _cliente!.longitudResidencia,
+                          latTrabajo: _cliente!.latitudTrabajo,
+                          lngTrabajo: _cliente!.longitudTrabajo,
+                        ),
+                        const SizedBox(height: 10),
                         BotonesRutaCliente(
                           latResidencia: _cliente!.latitudResidencia,
                           lngResidencia: _cliente!.longitudResidencia,
                           latTrabajo: _cliente!.latitudTrabajo,
                           lngTrabajo: _cliente!.longitudTrabajo,
+                          destacados: true,
                         ),
                         const SizedBox(height: 16),
                         const SectionTitle(title: 'Datos de contacto'),

@@ -7,14 +7,22 @@ from app.models.core import (
     Cobro, Venta, Usuario, MonedaPago, EstadoVenta, RolUsuario,
     Producto, DetalleVenta, EstadoCuota,
 )
-from app.schemas.core import CobroCreate, CobroResponse, VentaPendienteResponse
+from app.schemas.core import CobroCreate, CobroResponse, VentaPendienteResponse, CuotaAmortizacionResponse, EnvioReciboResponse
 from typing import List, Optional
 from datetime import datetime
 from decimal import Decimal
 import uuid
 from app.services.contabilidad import generar_asiento_cobro
 from app.services.buro_credito import actualizar_score_por_cobro
-from app.services.amortizacion import aplicar_abono_a_cuotas, proxima_cuota_pendiente
+from app.services.amortizacion import (
+    aplicar_abono_a_cuotas,
+    proxima_cuota_pendiente,
+    serializar_cuota,
+)
+from app.services.recibos_email import enviar_recibo_cobro
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -95,21 +103,40 @@ def _estado_cuenta(proxima_fecha: Optional[datetime]) -> str:
     return "Al día"
 
 
-def _build_panel_item(db: Session, v: Venta) -> VentaPendienteResponse:
+def _puede_ver_costos(usuario: Usuario) -> bool:
+    return usuario.rol in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR)
+
+
+def _build_panel_item(db: Session, v: Venta, usuario: Usuario) -> VentaPendienteResponse:
     cobrado = sum(Decimal(str(c.monto_usd)) for c in v.cobros)
     saldo = Decimal(str(v.total_usd)) - cobrado
     productos, costo = _productos_resumen(db, v)
     proxima = proxima_cuota_pendiente(db, v.id)
-    cuotas_totales = len(v.cuotas) if v.cuotas else 0
-    cuotas_pagadas = sum(1 for c in (v.cuotas or []) if c.estado == EstadoCuota.PAGADA)
+    cuotas_ordenadas = sorted(v.cuotas or [], key=lambda c: c.numero_cuota)
+    cuotas_pagadas = sum(1 for c in cuotas_ordenadas if c.estado == EstadoCuota.PAGADA)
     freq = v.frecuencia_pago.value if v.frecuencia_pago else "contado"
+    frecuencia_enum = v.frecuencia_pago
+    ver_costos = _puede_ver_costos(usuario)
+    margen = float(Decimal(str(v.total_usd)) - Decimal(str(costo))) if ver_costos else None
+
+    cuotas_resp = [
+        CuotaAmortizacionResponse(**serializar_cuota(c, frecuencia_enum))
+        for c in cuotas_ordenadas
+    ]
 
     return VentaPendienteResponse(
         id=v.id,
         cliente_id=v.cliente_id,
         cliente_nombre=v.cliente.nombre if v.cliente else "—",
+        cliente_telefono=v.cliente.telefono if v.cliente else None,
+        cliente_email=v.cliente.email if v.cliente else None,
+        latitud_residencia=float(v.cliente.latitud_residencia) if v.cliente and v.cliente.latitud_residencia is not None else None,
+        longitud_residencia=float(v.cliente.longitud_residencia) if v.cliente and v.cliente.longitud_residencia is not None else None,
+        latitud_trabajo=float(v.cliente.latitud_trabajo) if v.cliente and v.cliente.latitud_trabajo is not None else None,
+        longitud_trabajo=float(v.cliente.longitud_trabajo) if v.cliente and v.cliente.longitud_trabajo is not None else None,
         productos_resumen=productos,
-        costo_total_usd=costo,
+        costo_total_usd=costo if ver_costos else None,
+        margen_usd=margen,
         total_usd=float(v.total_usd),
         cobrado_usd=float(cobrado),
         saldo_pendiente_usd=float(saldo),
@@ -120,7 +147,8 @@ def _build_panel_item(db: Session, v: Venta) -> VentaPendienteResponse:
         proximo_pago=proxima.fecha_vencimiento if proxima else None,
         monto_proxima_cuota_usd=float(proxima.monto_usd - proxima.monto_pagado_usd) if proxima else 0.0,
         cuotas_pagadas=cuotas_pagadas,
-        cuotas_totales=cuotas_totales,
+        cuotas_totales=len(cuotas_ordenadas),
+        cuotas=cuotas_resp,
     )
 
 
@@ -144,7 +172,7 @@ def panel_cobranza(
         .order_by(Venta.fecha.desc())
         .all()
     )
-    return [_build_panel_item(db, v) for v in ventas if Decimal(str(v.total_usd)) - sum(Decimal(str(c.monto_usd)) for c in v.cobros) > 0]
+    return [_build_panel_item(db, v, usuario) for v in ventas if Decimal(str(v.total_usd)) - sum(Decimal(str(c.monto_usd)) for c in v.cobros) > 0]
 
 
 @router.get("/ventas-pendientes", response_model=List[VentaPendienteResponse])
@@ -227,8 +255,41 @@ def registrar_cobro(
     generar_asiento_cobro(db, nuevo_cobro)
     db.commit()
     db.refresh(nuevo_cobro)
+    db.refresh(venta, attribute_names=["cliente", "cobros", "cuotas"])
+    try:
+        enviar_recibo_cobro(db, venta, nuevo_cobro)
+    except Exception:
+        logger.exception("No se pudo enviar recibo de cobro por correo")
 
     return nuevo_cobro
+
+
+@router.post("/{cobro_id}/enviar-recibo", response_model=EnvioReciboResponse)
+def enviar_recibo_cobro_manual(
+    cobro_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_cobrador_o_superior),
+):
+    cobro = (
+        db.query(Cobro)
+        .filter(Cobro.id == cobro_id, Cobro.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not cobro:
+        raise HTTPException(status_code=404, detail="Cobro no encontrado")
+    venta = (
+        db.query(Venta)
+        .options(joinedload(Venta.cliente), joinedload(Venta.cobros), joinedload(Venta.cuotas))
+        .filter(Venta.id == cobro.venta_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    exito, mensaje = enviar_recibo_cobro(db, venta, cobro)
+    email = venta.cliente.email if venta.cliente else None
+    if not exito:
+        raise HTTPException(status_code=400, detail=mensaje)
+    return EnvioReciboResponse(exito=exito, mensaje=mensaje, email=email)
 
 
 @router.get("/", response_model=List[CobroResponse])

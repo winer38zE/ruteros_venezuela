@@ -8,14 +8,18 @@ from app.models.core import (
     Venta, Cliente, Usuario, FrecuenciaPago, EstadoVenta, TipoCliente,
     RolUsuario, TipoTasaUsd, Producto, DetalleVenta,
 )
-from app.schemas.core import VentaCreate, VentaResponse, CuotaAmortizacionResponse
+from app.schemas.core import VentaCreate, VentaResponse, CuotaAmortizacionResponse, EnvioReciboResponse
+from app.services.recibos_email import enviar_recibo_venta
 from app.services.contabilidad import generar_asiento_venta
 from app.services.inventario import procesar_detalles_venta, calcular_total_detalles
 from app.services.buro_credito import validar_venta_credito
-from app.services.amortizacion import generar_plan_amortizacion, puede_aprobar_venta
+from app.services.amortizacion import generar_plan_amortizacion, puede_aprobar_venta, serializar_cuota
 from datetime import datetime
 from typing import List, Optional
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -67,6 +71,11 @@ def _resolver_vendedor(
 
 
 def _venta_a_response(venta: Venta) -> VentaResponse:
+    frecuencia = venta.frecuencia_pago or FrecuenciaPago.CONTADO
+    cuotas_enriquecidas = [
+        CuotaAmortizacionResponse(**serializar_cuota(c, frecuencia))
+        for c in sorted(venta.cuotas or [], key=lambda x: x.numero_cuota)
+    ]
     return VentaResponse(
         id=venta.id,
         empresa_id=venta.empresa_id,
@@ -74,12 +83,23 @@ def _venta_a_response(venta: Venta) -> VentaResponse:
         vendedor_id=venta.vendedor_id,
         total_usd=float(venta.total_usd),
         estado=venta.estado.value,
-        frecuencia_pago=venta.frecuencia_pago.value,
+        frecuencia_pago=frecuencia.value,
         tipo_tasa_usd=venta.tipo_tasa_usd.value if venta.tipo_tasa_usd else "bcv",
         numero_cuotas=venta.numero_cuotas,
         detalles=venta.detalles or [],
-        cuotas=venta.cuotas or [],
+        cuotas=cuotas_enriquecidas,
     )
+
+
+def _actualizar_ubicacion_cliente(cliente: Cliente, venta: VentaCreate) -> None:
+    if venta.latitud_residencia is not None:
+        cliente.latitud_residencia = venta.latitud_residencia
+    if venta.longitud_residencia is not None:
+        cliente.longitud_residencia = venta.longitud_residencia
+    if venta.latitud_trabajo is not None:
+        cliente.latitud_trabajo = venta.latitud_trabajo
+    if venta.longitud_trabajo is not None:
+        cliente.longitud_trabajo = venta.longitud_trabajo
 
 
 @router.post("/", response_model=VentaResponse)
@@ -106,6 +126,8 @@ def crear_venta(
 
     if not es_borrador:
         validar_venta_credito(cliente_actual, frecuencia)
+
+    _actualizar_ubicacion_cliente(cliente_actual, venta)
 
     tipo_cliente = cliente_actual.tipo_cliente or TipoCliente.DETAL
     total_venta = Decimal(str(venta.total_usd))
@@ -161,12 +183,23 @@ def crear_venta(
 
     db.commit()
     db.refresh(nueva_venta)
-    return _venta_a_response(
+    venta_final = (
         db.query(Venta)
-        .options(joinedload(Venta.detalles), joinedload(Venta.cuotas))
+        .options(
+            joinedload(Venta.detalles),
+            joinedload(Venta.cuotas),
+            joinedload(Venta.cliente),
+            joinedload(Venta.cobros),
+        )
         .filter(Venta.id == nueva_venta.id)
         .first()
     )
+    if not es_borrador and venta_final:
+        try:
+            enviar_recibo_venta(db, venta_final)
+        except Exception:
+            logger.exception("No se pudo enviar comprobante de venta por correo")
+    return _venta_a_response(venta_final)
 
 
 @router.post("/{venta_id}/aprobar", response_model=VentaResponse)
@@ -202,8 +235,23 @@ def aprobar_venta_borrador(
 
     generar_asiento_venta(db, venta)
     db.commit()
-    db.refresh(venta)
-    return _venta_a_response(venta)
+    venta_final = (
+        db.query(Venta)
+        .options(
+            joinedload(Venta.detalles),
+            joinedload(Venta.cuotas),
+            joinedload(Venta.cliente),
+            joinedload(Venta.cobros),
+        )
+        .filter(Venta.id == venta.id)
+        .first()
+    )
+    if venta_final:
+        try:
+            enviar_recibo_venta(db, venta_final)
+        except Exception:
+            logger.exception("No se pudo enviar comprobante de venta por correo")
+    return _venta_a_response(venta_final)
 
 
 @router.get("/{venta_id}/amortizacion", response_model=List[CuotaAmortizacionResponse])
@@ -220,7 +268,37 @@ def obtener_amortizacion(
     )
     if not venta:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
-    return sorted(venta.cuotas, key=lambda c: c.numero_cuota)
+    frecuencia = venta.frecuencia_pago or FrecuenciaPago.CONTADO
+    return [
+        CuotaAmortizacionResponse(**serializar_cuota(c, frecuencia))
+        for c in sorted(venta.cuotas, key=lambda x: x.numero_cuota)
+    ]
+
+
+@router.post("/{venta_id}/enviar-recibo", response_model=EnvioReciboResponse)
+def enviar_recibo_venta_manual(
+    venta_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_vendedor_o_superior),
+):
+    venta = (
+        db.query(Venta)
+        .options(
+            joinedload(Venta.detalles),
+            joinedload(Venta.cuotas),
+            joinedload(Venta.cliente),
+            joinedload(Venta.cobros),
+        )
+        .filter(Venta.id == venta_id, Venta.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    exito, mensaje = enviar_recibo_venta(db, venta)
+    email = venta.cliente.email if venta.cliente else None
+    if not exito:
+        raise HTTPException(status_code=400, detail=mensaje)
+    return EnvioReciboResponse(exito=exito, mensaje=mensaje, email=email)
 
 
 @router.get("/mis-ventas", response_model=List[VentaResponse])

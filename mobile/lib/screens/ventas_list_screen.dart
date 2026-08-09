@@ -6,6 +6,7 @@ import '../services/ventas_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_list_tile.dart';
+import '../widgets/enviar_recibo_button.dart';
 import 'nueva_venta_screen.dart';
 
 class VentasListScreen extends StatefulWidget {
@@ -132,6 +133,12 @@ class _VentasListScreenState extends State<VentasListScreen> {
                                       ),
                                     ),
                                   ),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                                  child: EnviarReciboButton(
+                                    onEnviar: () => context.read<AppState>().ventas.enviarRecibo(v.id),
+                                  ),
+                                ),
                               ],
                             );
                           }),

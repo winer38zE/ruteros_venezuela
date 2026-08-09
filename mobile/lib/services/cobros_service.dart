@@ -6,6 +6,7 @@ class FilaCobranza {
   final String clienteId;
   final String clienteNombre;
   final String? clienteTelefono;
+  final String? clienteEmail;
   final double? latitudResidencia;
   final double? longitudResidencia;
   final double? latitudTrabajo;
@@ -31,6 +32,7 @@ class FilaCobranza {
     required this.clienteId,
     required this.clienteNombre,
     this.clienteTelefono,
+    this.clienteEmail,
     this.latitudResidencia,
     this.longitudResidencia,
     this.latitudTrabajo,
@@ -57,7 +59,7 @@ class FilaCobranza {
         clienteId: j['cliente_id'],
         clienteNombre: j['cliente_nombre'] ?? '—',
         clienteTelefono: j['cliente_telefono'],
-        clienteTelefono: j['cliente_telefono'],
+        clienteEmail: j['cliente_email'],
         latitudResidencia: (j['latitud_residencia'] as num?)?.toDouble(),
         longitudResidencia: (j['longitud_residencia'] as num?)?.toDouble(),
         latitudTrabajo: (j['latitud_trabajo'] as num?)?.toDouble(),
@@ -187,5 +189,10 @@ class CobrosService {
     };
     final data = await _api.post('/cobros/', body);
     return Cobro.fromJson(data);
+  }
+
+  Future<String> enviarRecibo(String cobroId) async {
+    final data = await _api.post('/cobros/$cobroId/enviar-recibo', {});
+    return data['mensaje'] as String? ?? 'Recibo enviado';
   }
 }

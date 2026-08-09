@@ -177,4 +177,9 @@ class VentasService {
     final data = await _api.post('/ventas/', body);
     return Venta.fromJson(data);
   }
+
+  Future<String> enviarRecibo(String ventaId) async {
+    final data = await _api.post('/ventas/$ventaId/enviar-recibo', {});
+    return data['mensaje'] as String? ?? 'Comprobante enviado';
+  }
 }

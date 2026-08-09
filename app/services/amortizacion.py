@@ -26,6 +26,12 @@ DIAS_FRECUENCIA = {
     FrecuenciaPago.MENSUAL: 30,
 }
 
+ETIQUETA_PERIODO = {
+    FrecuenciaPago.SEMANAL: "Semana",
+    FrecuenciaPago.QUINCENAL: "Quincena",
+    FrecuenciaPago.MENSUAL: "Mes",
+}
+
 
 def _d(val) -> Decimal:
     return Decimal(str(val))
@@ -33,6 +39,45 @@ def _d(val) -> Decimal:
 
 def cuotas_por_defecto(frecuencia: FrecuenciaPago) -> int:
     return CUOTAS_DEFAULT.get(frecuencia, 6)
+
+
+def etiqueta_periodo(frecuencia: FrecuenciaPago, numero_cuota: int) -> str:
+    prefijo = ETIQUETA_PERIODO.get(frecuencia, "Cuota")
+    return f"{prefijo} {numero_cuota}"
+
+
+def estado_cuota_display(cuota: CuotaAmortizacion, referencia: Optional[datetime] = None) -> str:
+    if cuota.estado == EstadoCuota.PAGADA:
+        return "Pagado"
+    hoy = (referencia or datetime.utcnow()).date()
+    if cuota.fecha_vencimiento.date() < hoy and cuota.estado in (
+        EstadoCuota.PENDIENTE,
+        EstadoCuota.PARCIAL,
+    ):
+        return "Vencido"
+    if cuota.estado == EstadoCuota.PARCIAL:
+        return "Parcial"
+    return "Pendiente"
+
+
+def monto_pendiente_cuota(cuota: CuotaAmortizacion) -> float:
+    pendiente = _d(cuota.monto_usd) - _d(cuota.monto_pagado_usd)
+    return float(max(Decimal("0"), pendiente))
+
+
+def serializar_cuota(cuota: CuotaAmortizacion, frecuencia: FrecuenciaPago) -> dict:
+    return {
+        "id": cuota.id,
+        "venta_id": cuota.venta_id,
+        "numero_cuota": cuota.numero_cuota,
+        "fecha_vencimiento": cuota.fecha_vencimiento,
+        "monto_usd": float(cuota.monto_usd),
+        "monto_pagado_usd": float(cuota.monto_pagado_usd),
+        "estado": cuota.estado.value if cuota.estado else "pendiente",
+        "etiqueta_periodo": etiqueta_periodo(frecuencia, cuota.numero_cuota),
+        "estado_display": estado_cuota_display(cuota),
+        "monto_pendiente_usd": monto_pendiente_cuota(cuota),
+    }
 
 
 def generar_plan_amortizacion(

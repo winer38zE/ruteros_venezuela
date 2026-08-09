@@ -26,6 +26,10 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("ref_familiar_telefono", "VARCHAR(32)"),
             ("email", "VARCHAR(255)"),
             ("score_credito", "INTEGER DEFAULT 70"),
+            ("latitud_residencia", "NUMERIC(10, 7)"),
+            ("longitud_residencia", "NUMERIC(10, 7)"),
+            ("latitud_trabajo", "NUMERIC(10, 7)"),
+            ("longitud_trabajo", "NUMERIC(10, 7)"),
         ],
         "movimientos_financieros": [
             ("monto_original", "NUMERIC(14, 2)"),

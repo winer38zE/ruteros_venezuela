@@ -10,6 +10,8 @@ import '../utils/conversion_helper.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/gps_location_capture.dart';
+import '../widgets/asistente_ruta_widget.dart';
+import '../widgets/enviar_recibo_button.dart';
 
 class PanelCobranzaScreen extends StatefulWidget {
   const PanelCobranzaScreen({super.key});
@@ -224,229 +226,254 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
       margin: const EdgeInsets.only(bottom: 14),
       accentColor: enMora ? Colors.red : AppColors.neonCyan,
       padding: const EdgeInsets.all(0),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          leading: CircleAvatar(
-            backgroundColor: AppColors.neonCyan.withValues(alpha: 0.15),
-            child: Text(
-              fila.clienteNombre.isNotEmpty ? fila.clienteNombre[0].toUpperCase() : '?',
-              style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.neonCyan),
-            ),
-          ),
-          title: Text(
-            fila.clienteNombre,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (telefono != null && telefono.isNotEmpty)
-                Row(
-                  children: [
-                    Icon(Icons.phone_outlined, size: 14, color: AppColors.textMuted),
-                    const SizedBox(width: 4),
-                    Text(telefono, style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => _llamar(telefono),
-                      child: Icon(Icons.call_rounded, size: 18, color: AppColors.emerald.withValues(alpha: 0.9)),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => _whatsapp(telefono),
-                      child: Icon(Icons.chat_rounded, size: 18, color: AppColors.emerald.withValues(alpha: 0.9)),
-                    ),
-                  ],
-                ),
-              Text(
-                fila.productosResumen,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _fmt.format(fila.saldoPendienteUsd),
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: enMora ? Colors.red : AppColors.amber,
-                  fontSize: 15,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              leading: CircleAvatar(
+                backgroundColor: AppColors.neonCyan.withValues(alpha: 0.15),
+                child: Text(
+                  fila.clienteNombre.isNotEmpty ? fila.clienteNombre[0].toUpperCase() : '?',
+                  style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.neonCyan),
                 ),
               ),
-              Text(
-                fila.estadoCuenta,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: enMora ? Colors.red : AppColors.emerald,
-                ),
+              title: Text(
+                fila.clienteNombre,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
               ),
-            ],
-          ),
-          children: [
-            Row(
-              children: [
-                _resumenChip('Deuda total', _fmt.format(fila.totalUsd), AppColors.textPrimary),
-                const SizedBox(width: 8),
-                _resumenChip('Abonado', _fmt.format(fila.cobradoUsd), AppColors.emerald),
-                const SizedBox(width: 8),
-                _resumenChip('Pendiente', _fmt.format(fila.saldoPendienteUsd), AppColors.amber),
-              ],
-            ),
-            if (verCostos && fila.costoTotalUsd != null) ...[
-              const SizedBox(height: 8),
-              Row(
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _resumenChip('Costo', _fmt.format(fila.costoTotalUsd!), AppColors.textMuted),
-                  const SizedBox(width: 8),
-                  _resumenChip(
-                    'Margen',
-                    _fmt.format(fila.margenUsd ?? (fila.totalUsd - fila.costoTotalUsd!)),
-                    AppColors.violet,
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 12),
-            BotonesRutaCliente(
-              latResidencia: fila.latitudResidencia,
-              lngResidencia: fila.longitudResidencia,
-              latTrabajo: fila.latitudTrabajo,
-              lngTrabajo: fila.longitudTrabajo,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: (enMora ? Colors.red : AppColors.neonCyan).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: (enMora ? Colors.red : AppColors.neonCyan).withValues(alpha: 0.35),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.event_rounded,
-                    color: enMora ? Colors.red : AppColors.neonCyan,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  if (telefono != null && telefono.isNotEmpty)
+                    Row(
                       children: [
-                        Text(
-                          'Próximo cobro',
-                          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                        Icon(Icons.phone_outlined, size: 14, color: AppColors.textMuted),
+                        const SizedBox(width: 4),
+                        Text(telefono, style: Theme.of(context).textTheme.bodySmall),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => _llamar(telefono),
+                          child: Icon(Icons.call_rounded, size: 18, color: AppColors.emerald.withValues(alpha: 0.9)),
                         ),
-                        Text(
-                          proximo,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18,
-                            color: enMora ? Colors.red : AppColors.neonCyan,
-                          ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => _whatsapp(telefono),
+                          child: Icon(Icons.chat_rounded, size: 18, color: AppColors.emerald.withValues(alpha: 0.9)),
                         ),
-                        if (fila.montoProximaCuotaUsd > 0)
-                          Text(
-                            'Cuota: ${_fmt.format(fila.montoProximaCuotaUsd)} · '
-                            '${fila.tipoCredito} · ${fila.cuotasPagadas}/${fila.cuotasTotales}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
                       ],
                     ),
+                  Text(
+                    fila.productosResumen,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  FilledButton.icon(
-                    onPressed: () => _abonoRapido(fila),
-                    icon: const Icon(Icons.price_check_rounded, size: 18),
-                    label: const Text('Abonar'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.neonCyan,
-                      foregroundColor: AppColors.bgDeep,
+                ],
+              ),
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _fmt.format(fila.saldoPendienteUsd),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: enMora ? Colors.red : AppColors.amber,
+                      fontSize: 15,
+                    ),
+                  ),
+                  Text(
+                    fila.estadoCuenta,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: enMora ? Colors.red : AppColors.emerald,
                     ),
                   ),
                 ],
               ),
-            ),
-            if (fila.cuotas.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Tabla de amortización',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              ...fila.cuotas.map((c) {
-                final fecha = _fmtFecha.format(DateTime.parse(c.fechaVencimiento));
-                final color = _colorEstadoCuota(c.estadoDisplay);
-                final montoCobrar = c.montoPendienteUsd > 0 ? c.montoPendienteUsd : c.montoUsd;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              children: [
+                Row(
+                  children: [
+                    _resumenChip('Deuda total', _fmt.format(fila.totalUsd), AppColors.textPrimary),
+                    const SizedBox(width: 8),
+                    _resumenChip('Abonado', _fmt.format(fila.cobradoUsd), AppColors.emerald),
+                    const SizedBox(width: 8),
+                    _resumenChip('Pendiente', _fmt.format(fila.saldoPendienteUsd), AppColors.amber),
+                  ],
+                ),
+                if (verCostos && fila.costoTotalUsd != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _resumenChip('Costo', _fmt.format(fila.costoTotalUsd!), AppColors.textMuted),
+                      const SizedBox(width: 8),
+                      _resumenChip(
+                        'Margen',
+                        _fmt.format(fila.margenUsd ?? (fila.totalUsd - fila.costoTotalUsd!)),
+                        AppColors.violet,
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.bgElevated.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: color.withValues(alpha: 0.25)),
+                    color: (enMora ? Colors.red : AppColors.neonCyan).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: (enMora ? Colors.red : AppColors.neonCyan).withValues(alpha: 0.35),
+                    ),
                   ),
                   child: Row(
                     children: [
+                      Icon(
+                        Icons.event_rounded,
+                        color: enMora ? Colors.red : AppColors.neonCyan,
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
-                        flex: 2,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              c.etiquetaPeriodo,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
+                              'Próximo cobro',
+                              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                             ),
-                            Text(fecha, style: Theme.of(context).textTheme.bodySmall),
+                            Text(
+                              proximo,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 18,
+                                color: enMora ? Colors.red : AppColors.neonCyan,
+                              ),
+                            ),
+                            if (fila.montoProximaCuotaUsd > 0)
+                              Text(
+                                'Cuota: ${_fmt.format(fila.montoProximaCuotaUsd)} · '
+                                '${fila.tipoCredito} · ${fila.cuotasPagadas}/${fila.cuotasTotales}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                           ],
                         ),
                       ),
-                      Expanded(
-                        child: Text(
-                          _fmt.format(montoCobrar),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                          textAlign: TextAlign.center,
+                      FilledButton.icon(
+                        onPressed: () => _abonoRapido(fila),
+                        icon: const Icon(Icons.price_check_rounded, size: 18),
+                        label: const Text('Abonar'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.neonCyan,
+                          foregroundColor: AppColors.bgDeep,
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          c.estadoDisplay,
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
-                        ),
-                      ),
-                      if (c.estadoDisplay != 'Pagado') ...[
-                        const SizedBox(width: 6),
-                        IconButton(
-                          icon: const Icon(Icons.payments_outlined, color: AppColors.emerald, size: 22),
-                          tooltip: 'Registrar abono',
-                          onPressed: () => _abonoRapido(
-                            fila,
-                            montoSugeridoUsd: c.montoPendienteUsd > 0 ? c.montoPendienteUsd : c.montoUsd,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
-                );
-              }),
-            ],
-          ],
-        ),
+                ),
+                if (fila.cuotas.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Tabla de amortización',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  ...fila.cuotas.map((c) {
+                    final fecha = _fmtFecha.format(DateTime.parse(c.fechaVencimiento));
+                    final color = _colorEstadoCuota(c.estadoDisplay);
+                    final montoCobrar = c.montoPendienteUsd > 0 ? c.montoPendienteUsd : c.montoUsd;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgElevated.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: color.withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  c.etiquetaPeriodo,
+                                  style: const TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                                Text(fecha, style: Theme.of(context).textTheme.bodySmall),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              _fmt.format(montoCobrar),
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              c.estadoDisplay,
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
+                            ),
+                          ),
+                          if (c.estadoDisplay != 'Pagado') ...[
+                            const SizedBox(width: 6),
+                            IconButton(
+                              icon: const Icon(Icons.payments_outlined, color: AppColors.emerald, size: 22),
+                              tooltip: 'Registrar abono',
+                              onPressed: () => _abonoRapido(
+                                fila,
+                                montoSugeridoUsd: c.montoPendienteUsd > 0 ? c.montoPendienteUsd : c.montoUsd,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AsistenteRutaWidget(
+                  latResidencia: fila.latitudResidencia,
+                  lngResidencia: fila.longitudResidencia,
+                  latTrabajo: fila.latitudTrabajo,
+                  lngTrabajo: fila.longitudTrabajo,
+                ),
+                const SizedBox(height: 10),
+                BotonesRutaCliente(
+                  latResidencia: fila.latitudResidencia,
+                  lngResidencia: fila.longitudResidencia,
+                  latTrabajo: fila.latitudTrabajo,
+                  lngTrabajo: fila.longitudTrabajo,
+                  destacados: true,
+                ),
+                const SizedBox(height: 10),
+                EnviarReciboButton(
+                  email: fila.clienteEmail,
+                  onEnviar: () => context.read<AppState>().ventas.enviarRecibo(fila.id),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

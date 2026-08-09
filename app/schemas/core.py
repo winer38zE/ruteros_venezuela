@@ -48,8 +48,12 @@ class ClienteCreate(BaseModel):
     telefono_secundario: Optional[str] = None
     direccion: Optional[str] = None
     punto_referencia: Optional[str] = None
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
     empresa_trabajo: Optional[str] = None
     direccion_laboral: Optional[str] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
     ref_familiar_nombre: Optional[str] = None
     ref_familiar_parentesco: Optional[str] = None
     ref_familiar_telefono: Optional[str] = None
@@ -63,8 +67,12 @@ class ClienteUpdate(BaseModel):
     telefono_secundario: Optional[str] = None
     direccion: Optional[str] = None
     punto_referencia: Optional[str] = None
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
     empresa_trabajo: Optional[str] = None
     direccion_laboral: Optional[str] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
     ref_familiar_nombre: Optional[str] = None
     ref_familiar_parentesco: Optional[str] = None
     ref_familiar_telefono: Optional[str] = None
@@ -80,8 +88,12 @@ class ClienteResponse(BaseModel):
     telefono_secundario: Optional[str] = None
     direccion: Optional[str] = None
     punto_referencia: Optional[str] = None
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
     empresa_trabajo: Optional[str] = None
     direccion_laboral: Optional[str] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
     ref_familiar_nombre: Optional[str] = None
     ref_familiar_parentesco: Optional[str] = None
     ref_familiar_telefono: Optional[str] = None
@@ -113,8 +125,12 @@ class ClienteAutocompletadoResponse(BaseModel):
     telefono_secundario: Optional[str] = None
     direccion: Optional[str] = None
     punto_referencia: Optional[str] = None
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
     empresa_trabajo: Optional[str] = None
     direccion_laboral: Optional[str] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
     ref_familiar_nombre: Optional[str] = None
     ref_familiar_parentesco: Optional[str] = None
     ref_familiar_telefono: Optional[str] = None
@@ -202,6 +218,10 @@ class VentaCreate(BaseModel):
     numero_cuotas: Optional[int] = Field(default=None, ge=1, le=60)
     tipo_tasa_usd: Optional[str] = Field(default="bcv", pattern="^(bcv|paralelo)$")
     es_borrador: bool = False
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
 
 class CuotaAmortizacionResponse(BaseModel):
     id: UUID
@@ -211,6 +231,9 @@ class CuotaAmortizacionResponse(BaseModel):
     monto_usd: float
     monto_pagado_usd: float
     estado: str
+    etiqueta_periodo: str = ""
+    estado_display: str = "Pendiente"
+    monto_pendiente_usd: float = 0.0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -310,8 +333,15 @@ class VentaPendienteResponse(BaseModel):
     id: UUID
     cliente_id: UUID
     cliente_nombre: str
+    cliente_telefono: Optional[str] = None
+    cliente_email: Optional[str] = None
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
     productos_resumen: str = "—"
-    costo_total_usd: float = 0.0
+    costo_total_usd: Optional[float] = None
+    margen_usd: Optional[float] = None
     total_usd: float
     cobrado_usd: float
     saldo_pendiente_usd: float
@@ -323,8 +353,14 @@ class VentaPendienteResponse(BaseModel):
     monto_proxima_cuota_usd: float = 0.0
     cuotas_pagadas: int = 0
     cuotas_totales: int = 0
+    cuotas: List[CuotaAmortizacionResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+class EnvioReciboResponse(BaseModel):
+    exito: bool
+    mensaje: str
+    email: Optional[str] = None
 
 # --- CONFIGURACIÓN FISCAL ---
 class ConfiguracionFiscalCreate(BaseModel):
