@@ -7,6 +7,9 @@ class CuotaAmortizacion {
   final double montoUsd;
   final double montoPagadoUsd;
   final String estado;
+  final String etiquetaPeriodo;
+  final String estadoDisplay;
+  final double montoPendienteUsd;
 
   CuotaAmortizacion({
     required this.id,
@@ -15,6 +18,9 @@ class CuotaAmortizacion {
     required this.montoUsd,
     required this.montoPagadoUsd,
     required this.estado,
+    this.etiquetaPeriodo = '',
+    this.estadoDisplay = 'Pendiente',
+    this.montoPendienteUsd = 0,
   });
 
   factory CuotaAmortizacion.fromJson(Map<String, dynamic> j) => CuotaAmortizacion(
@@ -24,6 +30,10 @@ class CuotaAmortizacion {
         montoUsd: (j['monto_usd'] as num).toDouble(),
         montoPagadoUsd: (j['monto_pagado_usd'] as num).toDouble(),
         estado: j['estado'],
+        etiquetaPeriodo: j['etiqueta_periodo'] ?? 'Cuota ${j['numero_cuota']}',
+        estadoDisplay: j['estado_display'] ?? j['estado'] ?? 'Pendiente',
+        montoPendienteUsd: (j['monto_pendiente_usd'] as num?)?.toDouble() ??
+            ((j['monto_usd'] as num).toDouble() - (j['monto_pagado_usd'] as num).toDouble()),
       );
 }
 
@@ -142,6 +152,10 @@ class VentasService {
     int? numeroCuotas,
     String tipoTasaUsd = 'bcv',
     bool esBorrador = false,
+    double? latitudResidencia,
+    double? longitudResidencia,
+    double? latitudTrabajo,
+    double? longitudTrabajo,
   }) async {
     final body = {
       'cliente_id': clienteId,
@@ -154,6 +168,10 @@ class VentasService {
       if (numeroCuotas != null) 'numero_cuotas': numeroCuotas,
       if (almacenId != null) 'almacen_id': almacenId,
       if (ventaId != null) 'id': ventaId,
+      if (latitudResidencia != null) 'latitud_residencia': latitudResidencia,
+      if (longitudResidencia != null) 'longitud_residencia': longitudResidencia,
+      if (latitudTrabajo != null) 'latitud_trabajo': latitudTrabajo,
+      if (longitudTrabajo != null) 'longitud_trabajo': longitudTrabajo,
       'detalles': items.map((i) => i.toDetalleJson()).toList(),
     };
     final data = await _api.post('/ventas/', body);

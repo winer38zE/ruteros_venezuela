@@ -1,11 +1,18 @@
 import '../services/api_client.dart';
+import 'ventas_service.dart';
 
 class FilaCobranza {
   final String id;
   final String clienteId;
   final String clienteNombre;
+  final String? clienteTelefono;
+  final double? latitudResidencia;
+  final double? longitudResidencia;
+  final double? latitudTrabajo;
+  final double? longitudTrabajo;
   final String productosResumen;
-  final double costoTotalUsd;
+  final double? costoTotalUsd;
+  final double? margenUsd;
   final double totalUsd;
   final double cobradoUsd;
   final double saldoPendienteUsd;
@@ -17,13 +24,20 @@ class FilaCobranza {
   final double montoProximaCuotaUsd;
   final int cuotasPagadas;
   final int cuotasTotales;
+  final List<CuotaAmortizacion> cuotas;
 
   FilaCobranza({
     required this.id,
     required this.clienteId,
     required this.clienteNombre,
+    this.clienteTelefono,
+    this.latitudResidencia,
+    this.longitudResidencia,
+    this.latitudTrabajo,
+    this.longitudTrabajo,
     required this.productosResumen,
-    required this.costoTotalUsd,
+    this.costoTotalUsd,
+    this.margenUsd,
     required this.totalUsd,
     required this.cobradoUsd,
     required this.saldoPendienteUsd,
@@ -35,14 +49,22 @@ class FilaCobranza {
     required this.montoProximaCuotaUsd,
     required this.cuotasPagadas,
     required this.cuotasTotales,
+    this.cuotas = const [],
   });
 
   factory FilaCobranza.fromJson(Map<String, dynamic> j) => FilaCobranza(
         id: j['id'],
         clienteId: j['cliente_id'],
         clienteNombre: j['cliente_nombre'] ?? '—',
+        clienteTelefono: j['cliente_telefono'],
+        clienteTelefono: j['cliente_telefono'],
+        latitudResidencia: (j['latitud_residencia'] as num?)?.toDouble(),
+        longitudResidencia: (j['longitud_residencia'] as num?)?.toDouble(),
+        latitudTrabajo: (j['latitud_trabajo'] as num?)?.toDouble(),
+        longitudTrabajo: (j['longitud_trabajo'] as num?)?.toDouble(),
         productosResumen: j['productos_resumen'] ?? '—',
-        costoTotalUsd: (j['costo_total_usd'] as num?)?.toDouble() ?? 0,
+        costoTotalUsd: (j['costo_total_usd'] as num?)?.toDouble(),
+        margenUsd: (j['margen_usd'] as num?)?.toDouble(),
         totalUsd: (j['total_usd'] as num).toDouble(),
         cobradoUsd: (j['cobrado_usd'] as num).toDouble(),
         saldoPendienteUsd: (j['saldo_pendiente_usd'] as num).toDouble(),
@@ -54,6 +76,9 @@ class FilaCobranza {
         montoProximaCuotaUsd: (j['monto_proxima_cuota_usd'] as num?)?.toDouble() ?? 0,
         cuotasPagadas: j['cuotas_pagadas'] ?? 0,
         cuotasTotales: j['cuotas_totales'] ?? 0,
+        cuotas: (j['cuotas'] as List? ?? [])
+            .map((e) => CuotaAmortizacion.fromJson(e))
+            .toList(),
       );
 }
 
@@ -114,6 +139,12 @@ class Cobro {
 class CobrosService {
   CobrosService(this._api);
   final ApiClient _api;
+
+  static const monedasAbono = [
+    ('usd', 'Dólares (USD)'),
+    ('ves', 'Bolívares (VES)'),
+    ('cop', 'Pesos (COP)'),
+  ];
 
   static const monedas = [
     ('bolivar', 'Bolívares'),

@@ -8,8 +8,12 @@ class ClienteDetalle {
   final String? telefonoSecundario;
   final String? direccion;
   final String? puntoReferencia;
+  final double? latitudResidencia;
+  final double? longitudResidencia;
   final String? empresaTrabajo;
   final String? direccionLaboral;
+  final double? latitudTrabajo;
+  final double? longitudTrabajo;
   final String? refFamiliarNombre;
   final String? refFamiliarParentesco;
   final String? refFamiliarTelefono;
@@ -27,8 +31,12 @@ class ClienteDetalle {
     this.telefonoSecundario,
     this.direccion,
     this.puntoReferencia,
+    this.latitudResidencia,
+    this.longitudResidencia,
     this.empresaTrabajo,
     this.direccionLaboral,
+    this.latitudTrabajo,
+    this.longitudTrabajo,
     this.refFamiliarNombre,
     this.refFamiliarParentesco,
     this.refFamiliarTelefono,
@@ -47,8 +55,12 @@ class ClienteDetalle {
         telefonoSecundario: j['telefono_secundario'],
         direccion: j['direccion'],
         puntoReferencia: j['punto_referencia'],
+        latitudResidencia: (j['latitud_residencia'] as num?)?.toDouble(),
+        longitudResidencia: (j['longitud_residencia'] as num?)?.toDouble(),
         empresaTrabajo: j['empresa_trabajo'],
         direccionLaboral: j['direccion_laboral'],
+        latitudTrabajo: (j['latitud_trabajo'] as num?)?.toDouble(),
+        longitudTrabajo: (j['longitud_trabajo'] as num?)?.toDouble(),
         refFamiliarNombre: j['ref_familiar_nombre'],
         refFamiliarParentesco: j['ref_familiar_parentesco'],
         refFamiliarTelefono: j['ref_familiar_telefono'],

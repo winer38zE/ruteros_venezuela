@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/score_badge.dart';
+import '../widgets/gps_location_capture.dart';
 
 class ClienteFormScreen extends StatefulWidget {
   const ClienteFormScreen({super.key, this.cliente});
@@ -37,6 +38,10 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
   bool _verificando = false;
   String? _buroMsg;
   int? _scorePreview;
+  double? _latRes;
+  double? _lngRes;
+  double? _latTrab;
+  double? _lngTrab;
 
   @override
   void initState() {
@@ -57,6 +62,10 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
       _emailCtrl.text = c.email ?? '';
       _tipoCliente = c.tipoCliente;
       _scorePreview = c.scoreCredito;
+      _latRes = c.latitudResidencia;
+      _lngRes = c.longitudResidencia;
+      _latTrab = c.latitudTrabajo;
+      _lngTrab = c.longitudTrabajo;
     } else {
       _parentesco = ClientesService.parentescos.first;
     }
@@ -113,8 +122,12 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
         'telefono_secundario': _tel2Ctrl.text.trim().isEmpty ? null : _tel2Ctrl.text.trim(),
         'direccion': _dirCtrl.text.trim().isEmpty ? null : _dirCtrl.text.trim(),
         'punto_referencia': _refDirCtrl.text.trim().isEmpty ? null : _refDirCtrl.text.trim(),
+        'latitud_residencia': _latRes,
+        'longitud_residencia': _lngRes,
         'empresa_trabajo': _empresaCtrl.text.trim().isEmpty ? null : _empresaCtrl.text.trim(),
         'direccion_laboral': _dirLabCtrl.text.trim().isEmpty ? null : _dirLabCtrl.text.trim(),
+        'latitud_trabajo': _latTrab,
+        'longitud_trabajo': _lngTrab,
         'ref_familiar_nombre': _refNombreCtrl.text.trim().isEmpty ? null : _refNombreCtrl.text.trim(),
         'ref_familiar_parentesco': _parentesco,
         'ref_familiar_telefono': _refTelCtrl.text.trim().isEmpty ? null : _refTelCtrl.text.trim(),
@@ -248,11 +261,33 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
               children: [
                 TextField(controller: _dirCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Dirección de residencia', prefixIcon: Icon(Icons.home_rounded))),
                 const SizedBox(height: 12),
+                GpsLocationCapture(
+                  etiqueta: 'Domicilio',
+                  latitud: _latRes,
+                  longitud: _lngRes,
+                  color: AppColors.neonBlue,
+                  onCoordsChanged: (c) => setState(() {
+                    _latRes = c.latitud;
+                    _lngRes = c.longitud;
+                  }),
+                ),
+                const SizedBox(height: 12),
                 TextField(controller: _refDirCtrl, decoration: const InputDecoration(labelText: 'Punto de referencia', prefixIcon: Icon(Icons.place_rounded))),
                 const SizedBox(height: 12),
                 TextField(controller: _empresaCtrl, decoration: const InputDecoration(labelText: 'Empresa / Trabajo actual', prefixIcon: Icon(Icons.business_rounded))),
                 const SizedBox(height: 12),
                 TextField(controller: _dirLabCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Dirección laboral', prefixIcon: Icon(Icons.location_city_rounded))),
+                const SizedBox(height: 12),
+                GpsLocationCapture(
+                  etiqueta: 'Trabajo',
+                  latitud: _latTrab,
+                  longitud: _lngTrab,
+                  color: AppColors.amber,
+                  onCoordsChanged: (c) => setState(() {
+                    _latTrab = c.latitud;
+                    _lngTrab = c.longitud;
+                  }),
+                ),
               ],
             ),
           ),

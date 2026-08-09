@@ -3,9 +3,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../providers/app_state.dart';
-import '../services/catalogo_service.dart';
 import '../services/cobros_service.dart';
+import '../services/tasas_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/conversion_helper.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
@@ -19,19 +20,21 @@ class NuevoCobroScreen extends StatefulWidget {
 
 class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
   List<VentaPendiente> _pendientes = [];
-  TasaCambio? _tasa;
+  TasaCambioDetalle? _tasa;
 
   VentaPendiente? _venta;
-  String _moneda = 'dolar';
+  String _moneda = 'usd';
   final _montoCtrl = TextEditingController();
   bool _cargando = true;
   bool _guardando = false;
 
   final _fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  final _fmtNum = NumberFormat('#,##0.00');
 
   @override
   void initState() {
     super.initState();
+    _montoCtrl.addListener(() => setState(() {}));
     _cargar();
   }
 
@@ -41,18 +44,31 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
     super.dispose();
   }
 
+  double get _montoIngresado =>
+      double.tryParse(_montoCtrl.text.replaceAll(',', '.')) ?? 0;
+
+  double get _montoUsdEquivalente {
+    if (_tasa == null || _montoIngresado <= 0) return 0;
+    return abonoAMontoUsd(
+      monto: _montoIngresado,
+      moneda: _moneda,
+      tasaBcv: _tasa!.usdBcvBs,
+      copPorUsd: _tasa!.copUsd,
+    );
+  }
+
   Future<void> _cargar() async {
     final state = context.read<AppState>();
     try {
       final results = await Future.wait([
         state.cobros.ventasPendientes(),
-        state.catalogo.ultimaTasa(),
+        state.tasas.ultima(),
       ]);
       _pendientes = results[0] as List<VentaPendiente>;
-      _tasa = results[1] as TasaCambio;
+      _tasa = results[1] as TasaCambioDetalle;
       if (_pendientes.isNotEmpty) {
         _venta = _pendientes.first;
-        _montoCtrl.text = _venta!.saldoPendienteUsd.toStringAsFixed(2);
+        _actualizarMontoSugerido();
       }
     } catch (e) {
       if (mounted) {
@@ -65,27 +81,50 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
     }
   }
 
+  void _actualizarMontoSugerido() {
+    if (_venta == null || _tasa == null) return;
+    final saldoUsd = _venta!.saldoPendienteUsd;
+    switch (_moneda) {
+      case 'ves':
+        _montoCtrl.text = (saldoUsd * _tasa!.usdBcvBs).toStringAsFixed(2);
+      case 'cop':
+        _montoCtrl.text = (saldoUsd * _tasa!.copUsd).toStringAsFixed(0);
+      default:
+        _montoCtrl.text = saldoUsd.toStringAsFixed(2);
+    }
+  }
+
   void _onVentaChanged(VentaPendiente? v) {
     setState(() {
       _venta = v;
-      if (v != null) {
-        _montoCtrl.text = v.saldoPendienteUsd.toStringAsFixed(2);
-      }
+      _actualizarMontoSugerido();
+    });
+  }
+
+  void _onMonedaChanged(String? v) {
+    setState(() {
+      _moneda = v ?? 'usd';
+      _actualizarMontoSugerido();
     });
   }
 
   Future<void> _registrar() async {
     if (_venta == null || _tasa == null) return;
-    final monto = double.tryParse(_montoCtrl.text);
-    if (monto == null || monto <= 0) {
+    final montoUsd = _montoUsdEquivalente;
+    if (montoUsd <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa un monto válido')),
       );
       return;
     }
-    if (monto > _venta!.saldoPendienteUsd + 0.01) {
+    if (montoUsd > _venta!.saldoPendienteUsd + 0.01) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Máximo: ${_fmt.format(_venta!.saldoPendienteUsd)}')),
+        SnackBar(
+          content: Text(
+            'El abono equivale a ${_fmt.format(montoUsd)} USD. '
+            'Máximo saldo: ${_fmt.format(_venta!.saldoPendienteUsd)}',
+          ),
+        ),
       );
       return;
     }
@@ -94,15 +133,20 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
     try {
       await context.read<AppState>().cobros.registrarCobro(
             ventaId: _venta!.id,
-            montoUsd: monto,
-            monedaPago: _moneda,
-            tasaUsd: _tasa!.usdBs,
+            montoUsd: montoUsd,
+            monedaPago: monedaPagoBackend(_moneda),
+            tasaUsd: _tasa!.usdBcvBs,
             tasaEur: _tasa!.eurBs,
             cobroId: const Uuid().v4(),
           );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cobro registrado: ${_fmt.format(monto)}')),
+        SnackBar(
+          content: Text(
+            'Cobro registrado: ${_fmt.format(montoUsd)} USD '
+            '(${_fmtNum.format(_montoIngresado)} ${etiquetaMoneda(_moneda)})',
+          ),
+        ),
       );
       Navigator.pop(context, true);
     } catch (e) {
@@ -175,32 +219,72 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                 GlassContainer(
                   accentColor: AppColors.neonCyan,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextField(
-                        controller: _montoCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        style: const TextStyle(color: AppColors.textPrimary),
-                        decoration: InputDecoration(
-                          labelText: 'Monto USD',
-                          prefixIcon: const Icon(Icons.attach_money_rounded),
-                          helperText: _venta != null
-                              ? 'Saldo pendiente: ${_fmt.format(_venta!.saldoPendienteUsd)}'
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
                         value: _moneda,
                         decoration: const InputDecoration(
-                          labelText: 'Moneda de pago',
+                          labelText: 'Moneda del abono',
                           prefixIcon: Icon(Icons.currency_exchange_rounded),
                         ),
                         dropdownColor: AppColors.bgElevated,
-                        items: CobrosService.monedas
+                        items: CobrosService.monedasAbono
                             .map((m) => DropdownMenuItem(value: m.$1, child: Text(m.$2)))
                             .toList(),
-                        onChanged: (v) => setState(() => _moneda = v!),
+                        onChanged: _onMonedaChanged,
                       ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _montoCtrl,
+                        enabled: true,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 18),
+                        decoration: InputDecoration(
+                          labelText: 'Monto en ${etiquetaMoneda(_moneda)}',
+                          prefixIcon: const Icon(Icons.attach_money_rounded),
+                          helperText: _venta != null
+                              ? 'Saldo pendiente: ${_fmt.format(_venta!.saldoPendienteUsd)} USD'
+                              : null,
+                          filled: true,
+                          fillColor: AppColors.bgElevated.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      if (_montoIngresado > 0 && _tasa != null) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppColors.emerald.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.emerald.withValues(alpha: 0.35)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Equivalencia para el crédito',
+                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '≈ ${_fmt.format(_montoUsdEquivalente)} USD se restarán del saldo',
+                                style: const TextStyle(
+                                  color: AppColors.emerald,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              if (_moneda != 'usd')
+                                Text(
+                                  'Tasa BCV: ${_fmtNum.format(_tasa!.usdBcvBs)} Bs/USD · '
+                                  'COP/USD: ${_fmtNum.format(_tasa!.copUsd)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -224,14 +308,18 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text('Tasa del día', style: TextStyle(fontWeight: FontWeight.w700)),
-                              Text('USD/Bs: ${_tasa!.usdBs} · EUR/Bs: ${_tasa!.eurBs}'),
+                              Text(
+                                'BCV: ${_fmtNum.format(_tasa!.usdBcvBs)} · '
+                                'Paralelo: ${_fmtNum.format(_tasa!.usdParaleloBs)} · '
+                                'COP/USD: ${_fmtNum.format(_tasa!.copUsd)}',
+                              ),
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                if (_moneda == 'dolar' || _moneda == 'euro')
+                if (_moneda == 'usd')
                   Padding(
                     padding: const EdgeInsets.only(top: 14),
                     child: GlassContainer(
