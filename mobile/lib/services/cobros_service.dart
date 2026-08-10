@@ -7,6 +7,8 @@ class FilaCobranza {
   final String clienteNombre;
   final String? clienteTelefono;
   final String? clienteEmail;
+  final String? clienteDireccion;
+  final String? clienteDireccionLaboral;
   final double? latitudResidencia;
   final double? longitudResidencia;
   final double? latitudTrabajo;
@@ -33,6 +35,8 @@ class FilaCobranza {
     required this.clienteNombre,
     this.clienteTelefono,
     this.clienteEmail,
+    this.clienteDireccion,
+    this.clienteDireccionLaboral,
     this.latitudResidencia,
     this.longitudResidencia,
     this.latitudTrabajo,
@@ -60,6 +64,8 @@ class FilaCobranza {
         clienteNombre: j['cliente_nombre'] ?? '—',
         clienteTelefono: j['cliente_telefono'],
         clienteEmail: j['cliente_email'],
+        clienteDireccion: j['cliente_direccion'],
+        clienteDireccionLaboral: j['cliente_direccion_laboral'],
         latitudResidencia: (j['latitud_residencia'] as num?)?.toDouble(),
         longitudResidencia: (j['longitud_residencia'] as num?)?.toDouble(),
         latitudTrabajo: (j['latitud_trabajo'] as num?)?.toDouble(),

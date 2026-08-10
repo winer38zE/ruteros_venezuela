@@ -335,6 +335,8 @@ class VentaPendienteResponse(BaseModel):
     cliente_nombre: str
     cliente_telefono: Optional[str] = None
     cliente_email: Optional[str] = None
+    cliente_direccion: Optional[str] = None
+    cliente_direccion_laboral: Optional[str] = None
     latitud_residencia: Optional[float] = None
     longitud_residencia: Optional[float] = None
     latitud_trabajo: Optional[float] = None

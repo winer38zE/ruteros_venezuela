@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
+import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import '../utils/maps_navigation.dart';
+import '../screens/cliente_form_screen.dart';
 
 class GpsCoords {
   const GpsCoords({required this.latitud, required this.longitud});
@@ -153,14 +156,16 @@ class _GpsLocationCaptureState extends State<GpsLocationCapture> {
   }
 }
 
-/// Botones de ruta a domicilio / trabajo para cobradores.
-class BotonesRutaCliente extends StatelessWidget {
+/// Botones de ruta a domicilio / trabajo para cobradores.class BotonesRutaCliente extends StatelessWidget {
   const BotonesRutaCliente({
     super.key,
     this.latResidencia,
     this.lngResidencia,
     this.latTrabajo,
     this.lngTrabajo,
+    this.direccionResidencia,
+    this.direccionTrabajo,
+    this.clienteId,
     this.destacados = false,
   });
 
@@ -168,52 +173,174 @@ class BotonesRutaCliente extends StatelessWidget {
   final double? lngResidencia;
   final double? latTrabajo;
   final double? lngTrabajo;
+  final String? direccionResidencia;
+  final String? direccionTrabajo;
+  final String? clienteId;
   final bool destacados;
 
-  Future<void> _abrir(BuildContext context, double lat, double lng, String tipo) async {
-    final ok = await abrirRutaGoogleMaps(latitud: lat, longitud: lng);
+  Future<void> _iniciarRuta(
+    BuildContext context, {
+    required String tipo,
+    required String emoji,
+    double? lat,
+    double? lng,
+    String? direccion,
+  }) async {
+    if (coordenadasValidas(lat, lng)) {
+      final ok = await abrirRutaGoogleMaps(latitud: lat!, longitud: lng!);
+      if (!context.mounted) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir Google Maps ($tipo)')),
+        );
+      }
+      return;
+    }
+
+    final dir = direccion?.trim() ?? '';
     if (!context.mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo abrir Google Maps ($tipo)')),
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        title: Text('$emoji Sin GPS — $tipo'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              dir.isNotEmpty
+                  ? 'Este cliente aún no tiene coordenadas GPS registradas para $tipo.'
+                  : 'No hay coordenadas GPS ni dirección de texto para $tipo.',
+              style: const TextStyle(height: 1.4),
+            ),
+            if (dir.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Dirección registrada:', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+              const SizedBox(height: 4),
+              Text(dir, style: const TextStyle(fontWeight: FontWeight.w700)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          if (dir.isNotEmpty)
+            FilledButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final ok = await abrirRutaPorDireccion(dir);
+                if (!context.mounted) return;
+                if (!ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('No se pudo abrir Maps con la dirección de $tipo')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.map_outlined, size: 18),
+              label: const Text('Usar dirección'),
+            ),
+          if (clienteId != null)
+            OutlinedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  final detalle = await context.read<AppState>().clientes.obtener(clienteId!);
+                  if (!context.mounted) return;
+                  final ok = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ClienteFormScreen(cliente: detalle),
+                    ),
+                  );
+                  if (ok == true && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Cliente actualizado — vuelve a intentar la ruta')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('$e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+              label: const Text('Marcar en mapa'),
+            ),        ],
+      ),
+    );
+  }
+
+  Widget _boton({
+    required BuildContext context,
+    required String emoji,
+    required String label,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    if (destacados) {
+      return FilledButton.icon(
+        onPressed: onPressed,
+        icon: Text(emoji, style: const TextStyle(fontSize: 18)),
+        label: Text(label),
+        style: FilledButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: AppColors.bgDeep,
+          minimumSize: const Size(double.infinity, 48),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
       );
     }
+
+    return Expanded(
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Text(emoji, style: const TextStyle(fontSize: 16)),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color,
+          side: BorderSide(color: color.withValues(alpha: 0.5)),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final domicilioOk = coordenadasValidas(latResidencia, lngResidencia);
-    final trabajoOk = coordenadasValidas(latTrabajo, lngTrabajo);
-
     if (destacados) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FilledButton.icon(
-            onPressed: domicilioOk
-                ? () => _abrir(context, latResidencia!, lngResidencia!, 'domicilio')
-                : null,
-            icon: const Text('🏠', style: TextStyle(fontSize: 18)),
-            label: const Text('Ruta Domicilio'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.neonCyan,
-              foregroundColor: AppColors.bgDeep,
-              minimumSize: const Size(double.infinity, 48),
-              padding: const EdgeInsets.symmetric(vertical: 14),
+          _boton(
+            context: context,
+            emoji: '🏠',
+            label: 'Ruta Domicilio',
+            color: AppColors.neonCyan,
+            onPressed: () => _iniciarRuta(
+              context,
+              tipo: 'domicilio',
+              emoji: '🏠',
+              lat: latResidencia,
+              lng: lngResidencia,
+              direccion: direccionResidencia,
             ),
           ),
           const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed: trabajoOk
-                ? () => _abrir(context, latTrabajo!, lngTrabajo!, 'trabajo')
-                : null,
-            icon: const Text('💼', style: TextStyle(fontSize: 18)),
-            label: const Text('Ruta Trabajo'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.amber,
-              foregroundColor: AppColors.bgDeep,
-              minimumSize: const Size(double.infinity, 48),
-              padding: const EdgeInsets.symmetric(vertical: 14),
+          _boton(
+            context: context,
+            emoji: '💼',
+            label: 'Ruta Trabajo',
+            color: AppColors.amber,
+            onPressed: () => _iniciarRuta(
+              context,
+              tipo: 'trabajo',
+              emoji: '💼',
+              lat: latTrabajo,
+              lng: lngTrabajo,
+              direccion: direccionTrabajo,
             ),
           ),
         ],
@@ -222,33 +349,33 @@ class BotonesRutaCliente extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: domicilioOk
-                ? () => _abrir(context, latResidencia!, lngResidencia!, 'domicilio')
-                : null,
-            icon: const Text('🏠', style: TextStyle(fontSize: 16)),
-            label: const Text('Ruta Domicilio'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.neonCyan,
-              side: BorderSide(color: AppColors.neonCyan.withValues(alpha: 0.5)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+        _boton(
+          context: context,
+          emoji: '🏠',
+          label: 'Ruta Domicilio',
+          color: AppColors.neonCyan,
+          onPressed: () => _iniciarRuta(
+            context,
+            tipo: 'domicilio',
+            emoji: '🏠',
+            lat: latResidencia,
+            lng: lngResidencia,
+            direccion: direccionResidencia,
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: trabajoOk
-                ? () => _abrir(context, latTrabajo!, lngTrabajo!, 'trabajo')
-                : null,
-            icon: const Text('💼', style: TextStyle(fontSize: 16)),
-            label: const Text('Ruta Trabajo'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.amber,
-              side: BorderSide(color: AppColors.amber.withValues(alpha: 0.5)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+        _boton(
+          context: context,
+          emoji: '💼',
+          label: 'Ruta Trabajo',
+          color: AppColors.amber,
+          onPressed: () => _iniciarRuta(
+            context,
+            tipo: 'trabajo',
+            emoji: '💼',
+            lat: latTrabajo,
+            lng: lngTrabajo,
+            direccion: direccionTrabajo,
           ),
         ),
       ],

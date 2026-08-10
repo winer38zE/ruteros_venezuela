@@ -130,6 +130,8 @@ def _build_panel_item(db: Session, v: Venta, usuario: Usuario) -> VentaPendiente
         cliente_nombre=v.cliente.nombre if v.cliente else "—",
         cliente_telefono=v.cliente.telefono if v.cliente else None,
         cliente_email=v.cliente.email if v.cliente else None,
+        cliente_direccion=v.cliente.direccion if v.cliente else None,
+        cliente_direccion_laboral=v.cliente.direccion_laboral if v.cliente else None,
         latitud_residencia=float(v.cliente.latitud_residencia) if v.cliente and v.cliente.latitud_residencia is not None else None,
         longitud_residencia=float(v.cliente.longitud_residencia) if v.cliente and v.cliente.longitud_residencia is not None else None,
         latitud_trabajo=float(v.cliente.latitud_trabajo) if v.cliente and v.cliente.latitud_trabajo is not None else None,

@@ -229,73 +229,116 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              leading: CircleAvatar(
-                backgroundColor: AppColors.neonCyan.withValues(alpha: 0.15),
-                child: Text(
-                  fila.clienteNombre.isNotEmpty ? fila.clienteNombre[0].toUpperCase() : '?',
-                  style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.neonCyan),
-                ),
-              ),
-              title: Text(
-                fila.clienteNombre,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (telefono != null && telefono.isNotEmpty)
-                    Row(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: AppColors.neonCyan.withValues(alpha: 0.15),
+                      child: Text(
+                        fila.clienteNombre.isNotEmpty ? fila.clienteNombre[0].toUpperCase() : '?',
+                        style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.neonCyan),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fila.clienteNombre,
+                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                          ),
+                          if (telefono != null && telefono.isNotEmpty)
+                            Text(telefono, style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Icon(Icons.phone_outlined, size: 14, color: AppColors.textMuted),
-                        const SizedBox(width: 4),
-                        Text(telefono, style: Theme.of(context).textTheme.bodySmall),
-                        const SizedBox(width: 8),
-                        InkWell(
-                          onTap: () => _llamar(telefono),
-                          child: Icon(Icons.call_rounded, size: 18, color: AppColors.emerald.withValues(alpha: 0.9)),
+                        Text(
+                          _fmt.format(fila.saldoPendienteUsd),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: enMora ? Colors.red : AppColors.amber,
+                            fontSize: 15,
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        InkWell(
-                          onTap: () => _whatsapp(telefono),
-                          child: Icon(Icons.chat_rounded, size: 18, color: AppColors.emerald.withValues(alpha: 0.9)),
+                        Text(
+                          fila.estadoCuenta,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: enMora ? Colors.red : AppColors.emerald,
+                          ),
                         ),
                       ],
                     ),
-                  Text(
-                    fila.productosResumen,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Navegación al cliente',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                AsistenteRutaWidget(
+                  latResidencia: fila.latitudResidencia,
+                  lngResidencia: fila.longitudResidencia,
+                  latTrabajo: fila.latitudTrabajo,
+                  lngTrabajo: fila.longitudTrabajo,
+                ),
+                const SizedBox(height: 10),
+                BotonesRutaCliente(
+                  latResidencia: fila.latitudResidencia,
+                  lngResidencia: fila.longitudResidencia,
+                  latTrabajo: fila.latitudTrabajo,
+                  lngTrabajo: fila.longitudTrabajo,
+                  direccionResidencia: fila.clienteDireccion,
+                  direccionTrabajo: fila.clienteDireccionLaboral,
+                  clienteId: fila.clienteId,
+                  destacados: true,
+                ),
+              ],
+            ),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              leading: const Icon(Icons.receipt_long_rounded, color: AppColors.neonCyan),
+              title: const Text(
+                'Detalle de crédito',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    _fmt.format(fila.saldoPendienteUsd),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: enMora ? Colors.red : AppColors.amber,
-                      fontSize: 15,
-                    ),
-                  ),
-                  Text(
-                    fila.estadoCuenta,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: enMora ? Colors.red : AppColors.emerald,
-                    ),
-                  ),
-                ],
+              subtitle: Text(
+                fila.productosResumen,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
+              trailing: telefono != null && telefono.isNotEmpty
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.call_rounded, color: AppColors.emerald, size: 20),
+                          onPressed: () => _llamar(telefono),
+                          tooltip: 'Llamar',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chat_rounded, color: AppColors.emerald, size: 20),
+                          onPressed: () => _whatsapp(telefono),
+                          tooltip: 'WhatsApp',
+                        ),
+                      ],
+                    )
+                  : null,
               children: [
                 Row(
                   children: [
@@ -448,29 +491,9 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AsistenteRutaWidget(
-                  latResidencia: fila.latitudResidencia,
-                  lngResidencia: fila.longitudResidencia,
-                  latTrabajo: fila.latitudTrabajo,
-                  lngTrabajo: fila.longitudTrabajo,
-                ),
-                const SizedBox(height: 10),
-                BotonesRutaCliente(
-                  latResidencia: fila.latitudResidencia,
-                  lngResidencia: fila.longitudResidencia,
-                  latTrabajo: fila.latitudTrabajo,
-                  lngTrabajo: fila.longitudTrabajo,
-                  destacados: true,
-                ),
-                const SizedBox(height: 10),
-                EnviarReciboButton(
-                  email: fila.clienteEmail,
-                  onEnviar: () => context.read<AppState>().ventas.enviarRecibo(fila.id),
-                ),
-              ],
+            child: EnviarReciboButton(
+              email: fila.clienteEmail,
+              onEnviar: () => context.read<AppState>().ventas.enviarRecibo(fila.id),
             ),
           ),
         ],

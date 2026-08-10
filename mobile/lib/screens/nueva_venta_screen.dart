@@ -38,6 +38,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
   final _nombreCtrl = TextEditingController();
   final _cedulaCtrl = TextEditingController();
+  final _telCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _dirCtrl = TextEditingController();
+  final _dirLabCtrl = TextEditingController();
   final _cantidadCtrl = TextEditingController(text: '1');
   final _montoManualCtrl = TextEditingController();
   final _cuotasCtrl = TextEditingController(text: '12');
@@ -63,6 +67,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   void dispose() {
     _nombreCtrl.dispose();
     _cedulaCtrl.dispose();
+    _telCtrl.dispose();
+    _emailCtrl.dispose();
+    _dirCtrl.dispose();
+    _dirLabCtrl.dispose();
     _cantidadCtrl.dispose();
     _montoManualCtrl.dispose();
     _cuotasCtrl.dispose();
@@ -96,8 +104,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
       _almacen = _almacenes.where((a) => a.esPrincipal).firstOrNull ??
           (_almacenes.isNotEmpty ? _almacenes.first : null);
       if (_cliente != null) {
-        _nombreCtrl.text = _cliente!.nombre;
-        _cedulaCtrl.text = _cliente!.identificacion;
+        _llenarDatosCliente(
+          nombre: _cliente!.nombre,
+          identificacion: _cliente!.identificacion,
+        );
       }
       _montoManualCtrl.text = '0.00';
     } catch (e) {
@@ -123,15 +133,57 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
   int get _numeroCuotas => int.tryParse(_cuotasCtrl.text) ?? 12;
 
-  void _onClienteExistenteChanged(Cliente? c) {
+  void _llenarDatosCliente({
+    required String nombre,
+    required String identificacion,
+    String? telefono,
+    String? email,
+    String? direccion,
+    String? direccionLaboral,
+    double? latRes,
+    double? lngRes,
+    double? latTrab,
+    double? lngTrab,
+  }) {
+    _nombreCtrl.text = nombre;
+    _cedulaCtrl.text = identificacion;
+    _telCtrl.text = telefono ?? '';
+    _emailCtrl.text = email ?? '';
+    _dirCtrl.text = direccion ?? '';
+    _dirLabCtrl.text = direccionLaboral ?? '';
+    _latRes = latRes;
+    _lngRes = lngRes;
+    _latTrab = latTrab;
+    _lngTrab = lngTrab;
+  }
+
+  Future<void> _onClienteExistenteChanged(Cliente? c) async {
     setState(() {
       _cliente = c;
       if (c != null) {
-        _nombreCtrl.text = c.nombre;
-        _cedulaCtrl.text = c.identificacion;
+        _llenarDatosCliente(nombre: c.nombre, identificacion: c.identificacion);
         if (c.bloqueadoCredito) _esCredito = false;
       }
     });
+    if (c == null) return;
+    try {
+      final detalle = await context.read<AppState>().clientes.obtener(c.id);
+      if (!mounted) return;
+      setState(() {
+        _llenarDatosCliente(
+          nombre: detalle.nombre,
+          identificacion: detalle.identificacion,
+          telefono: detalle.telefono,
+          email: detalle.email,
+          direccion: detalle.direccion,
+          direccionLaboral: detalle.direccionLaboral,
+          latRes: detalle.latitudResidencia,
+          lngRes: detalle.longitudResidencia,
+          latTrab: detalle.latitudTrabajo,
+          lngTrab: detalle.longitudTrabajo,
+        );
+      });
+    } catch (_) {}
   }
 
   Future<double> _precioParaProducto(Producto p) async {
@@ -181,8 +233,12 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
     final nombre = _nombreCtrl.text.trim();
     final cedula = _cedulaCtrl.text.trim();
+    final telefono = _telCtrl.text.trim();
     if (nombre.isEmpty || cedula.length < 5) {
       throw Exception('Ingresa nombre y cédula/DNI del cliente (mín. 5 caracteres)');
+    }
+    if (telefono.isEmpty) {
+      throw Exception('El teléfono del cliente es obligatorio');
     }
 
     final existente = _clientes.where((c) => c.identificacion == cedula).firstOrNull;
@@ -191,6 +247,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     final creado = await context.read<AppState>().clientes.crear({
       'nombre_completo': nombre,
       'identificacion': cedula,
+      'telefono': telefono,
+      if (_emailCtrl.text.trim().isNotEmpty) 'email': _emailCtrl.text.trim(),
+      if (_dirCtrl.text.trim().isNotEmpty) 'direccion': _dirCtrl.text.trim(),
+      if (_dirLabCtrl.text.trim().isNotEmpty) 'direccion_laboral': _dirLabCtrl.text.trim(),
       if (_latRes != null) 'latitud_residencia': _latRes,
       if (_lngRes != null) 'longitud_residencia': _lngRes,
       if (_latTrab != null) 'latitud_trabajo': _latTrab,
@@ -212,6 +272,12 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     if (_total <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa un monto total o agrega productos al carrito')),
+      );
+      return;
+    }
+    if (!_usarClienteExistente && _telCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El teléfono del cliente es obligatorio')),
       );
       return;
     }
@@ -435,6 +501,42 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   readOnly: false,
                   style: const TextStyle(color: AppColors.textPrimary),
                   decoration: _input('Cédula / DNI', icon: Icons.fingerprint),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _telCtrl,
+                  enabled: true,
+                  keyboardType: TextInputType.phone,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: _input('Teléfono *', icon: Icons.phone_rounded, helper: 'Obligatorio'),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _emailCtrl,
+                  enabled: true,
+                  keyboardType: TextInputType.emailAddress,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: _input('Correo Electrónico', icon: Icons.email_rounded, helper: 'Para recibos digitales'),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _dirCtrl,
+                  enabled: true,
+                  maxLines: 2,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: _input('Dirección de Domicilio', icon: Icons.home_outlined),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _dirLabCtrl,
+                  enabled: true,
+                  maxLines: 2,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: _input('Dirección de Trabajo', icon: Icons.business_outlined),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),

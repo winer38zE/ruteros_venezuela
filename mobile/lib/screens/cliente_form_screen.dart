@@ -118,7 +118,7 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
   Map<String, dynamic> _body() => {
         'nombre_completo': _nombreCtrl.text.trim(),
         'identificacion': _identCtrl.text.trim(),
-        'telefono': _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'telefono': _telCtrl.text.trim(),
         'telefono_secundario': _tel2Ctrl.text.trim().isEmpty ? null : _tel2Ctrl.text.trim(),
         'direccion': _dirCtrl.text.trim().isEmpty ? null : _dirCtrl.text.trim(),
         'punto_referencia': _refDirCtrl.text.trim().isEmpty ? null : _refDirCtrl.text.trim(),
@@ -139,6 +139,12 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
     if (_nombreCtrl.text.trim().isEmpty || _identCtrl.text.trim().length < 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nombre e identificación (mín. 5 caracteres) son obligatorios')),
+      );
+      return;
+    }
+    if (_telCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El teléfono es obligatorio')),
       );
       return;
     }
@@ -234,11 +240,37 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                TextField(controller: _telCtrl, decoration: const InputDecoration(labelText: 'Teléfono principal', prefixIcon: Icon(Icons.phone_rounded))),
+                TextField(
+                  controller: _telCtrl,
+                  enabled: true,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Teléfono *',
+                    hintText: 'Obligatorio',
+                    prefixIcon: Icon(Icons.phone_rounded),
+                  ),
+                ),
                 const SizedBox(height: 12),
-                TextField(controller: _tel2Ctrl, decoration: const InputDecoration(labelText: 'Teléfono secundario', prefixIcon: Icon(Icons.phone_android_rounded))),
+                TextField(
+                  controller: _tel2Ctrl,
+                  enabled: true,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Teléfono secundario',
+                    prefixIcon: Icon(Icons.phone_android_rounded),
+                  ),
+                ),
                 const SizedBox(height: 12),
-                TextField(controller: _emailCtrl, decoration: const InputDecoration(labelText: 'Correo (opcional)', prefixIcon: Icon(Icons.email_rounded))),
+                TextField(
+                  controller: _emailCtrl,
+                  enabled: true,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Correo Electrónico',
+                    hintText: 'Para recibos digitales',
+                    prefixIcon: Icon(Icons.email_rounded),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: _tipoCliente,
@@ -259,7 +291,15 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
             accentColor: AppColors.neonBlue,
             child: Column(
               children: [
-                TextField(controller: _dirCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Dirección de residencia', prefixIcon: Icon(Icons.home_rounded))),
+                TextField(
+                  controller: _dirCtrl,
+                  enabled: true,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Dirección de Domicilio',
+                    prefixIcon: Icon(Icons.home_rounded),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 GpsLocationCapture(
                   etiqueta: 'Domicilio',
@@ -276,7 +316,15 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
                 const SizedBox(height: 12),
                 TextField(controller: _empresaCtrl, decoration: const InputDecoration(labelText: 'Empresa / Trabajo actual', prefixIcon: Icon(Icons.business_rounded))),
                 const SizedBox(height: 12),
-                TextField(controller: _dirLabCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Dirección laboral', prefixIcon: Icon(Icons.location_city_rounded))),
+                TextField(
+                  controller: _dirLabCtrl,
+                  enabled: true,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Dirección de Trabajo',
+                    prefixIcon: Icon(Icons.location_city_rounded),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 GpsLocationCapture(
                   etiqueta: 'Trabajo',
