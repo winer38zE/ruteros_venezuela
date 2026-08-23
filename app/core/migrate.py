@@ -30,6 +30,9 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("longitud_residencia", "NUMERIC(10, 7)"),
             ("latitud_trabajo", "NUMERIC(10, 7)"),
             ("longitud_trabajo", "NUMERIC(10, 7)"),
+            ("dia_visita", "VARCHAR(20)"),
+            ("orden_secuencial", "INTEGER"),
+            ("tipo_visita_ruta", "VARCHAR(20) DEFAULT 'frecuente'"),
         ],
         "movimientos_financieros": [
             ("monto_original", "NUMERIC(14, 2)"),

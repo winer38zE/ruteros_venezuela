@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.core.db import get_db
 from app.core.tenant import obtener_empresa_tenant
-from app.models.core import Cliente, TipoCliente
+from app.models.core import Cliente, TipoCliente, DiaVisita, TipoVisitaRuta
 from app.schemas.core import (
     ClienteCreate,
     ClienteUpdate,
@@ -21,6 +21,13 @@ from app.services.buro_credito import (
     datos_autocompletado_buro,
     sincronizar_score_inicial,
 )
+from app.services.rutas import (
+    dia_actual,
+    normalizar_dia,
+    siguiente_orden_secuencial,
+)
+from app.core.deps import obtener_usuario_opcional
+from app.models.core import Usuario
 from typing import List, Optional
 
 router = APIRouter()
@@ -52,11 +59,23 @@ def _serializar_cliente(c: Cliente) -> ClienteResponse:
         nivel_riesgo=nivel,
         estado_credito=etiqueta_estado(score),
         tipo_cliente=c.tipo_cliente.value if hasattr(c.tipo_cliente, "value") else (c.tipo_cliente or "detal"),
+        vendedor_id=c.vendedor_id,
+        dia_visita=c.dia_visita.value if hasattr(c.dia_visita, "value") else c.dia_visita,
+        orden_secuencial=c.orden_secuencial,
+        tipo_visita_ruta=(
+            c.tipo_visita_ruta.value
+            if hasattr(c.tipo_visita_ruta, "value")
+            else (c.tipo_visita_ruta or "frecuente")
+        ),
     )
 
 
 @router.post("/", response_model=ClienteResponse)
-def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
+def crear_cliente(
+    cliente: ClienteCreate,
+    db: Session = Depends(get_db),
+    usuario: Optional[Usuario] = Depends(obtener_usuario_opcional),
+):
     empresa_actual = obtener_empresa_tenant(db)
     ident = normalizar_identificacion(cliente.identificacion)
 
@@ -66,6 +85,23 @@ def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
             status_code=400,
             detail="Esta identificación ya está registrada en la red Ruteros. Use buró para verificar.",
         )
+
+    vendedor_id = cliente.vendedor_id
+    if vendedor_id is None and usuario is not None:
+        vendedor_id = usuario.id
+
+    dia_visita = None
+    if cliente.dia_visita:
+        try:
+            dia_visita = normalizar_dia(cliente.dia_visita)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    elif vendedor_id is not None:
+        dia_visita = dia_actual()
+
+    orden = cliente.orden_secuencial
+    if orden is None and vendedor_id is not None and dia_visita is not None:
+        orden = siguiente_orden_secuencial(db, vendedor_id, dia_visita, empresa_actual.id)
 
     nuevo_cliente = Cliente(
         nombre=cliente.nombre_completo,
@@ -85,6 +121,10 @@ def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
         ref_familiar_telefono=cliente.ref_familiar_telefono,
         email=cliente.email,
         tipo_cliente=TipoCliente(cliente.tipo_cliente or "detal"),
+        vendedor_id=vendedor_id,
+        dia_visita=dia_visita,
+        orden_secuencial=orden,
+        tipo_visita_ruta=TipoVisitaRuta.NUEVO if vendedor_id else TipoVisitaRuta.FRECUENTE,
         empresa_id=empresa_actual.id,
     )
     sincronizar_score_inicial(db, nuevo_cliente)
@@ -214,6 +254,17 @@ def actualizar_cliente(
         cliente.email = body.email
     if body.tipo_cliente is not None:
         cliente.tipo_cliente = TipoCliente(body.tipo_cliente)
+    if body.vendedor_id is not None:
+        cliente.vendedor_id = body.vendedor_id
+    if body.dia_visita is not None:
+        try:
+            cliente.dia_visita = normalizar_dia(body.dia_visita)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    if body.orden_secuencial is not None:
+        cliente.orden_secuencial = body.orden_secuencial
+    if body.tipo_visita_ruta is not None:
+        cliente.tipo_visita_ruta = TipoVisitaRuta(body.tipo_visita_ruta)
 
     db.commit()
     db.refresh(cliente)

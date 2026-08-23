@@ -85,6 +85,23 @@ def require_cobrador_o_superior(
     return usuario
 
 
+def require_ruta_o_superior(
+    usuario: Usuario = Depends(obtener_usuario_actual),
+) -> Usuario:
+    """Vendedores y cobradores en calle consultan rutas diarias."""
+    if usuario.rol not in (
+        RolUsuario.VENDEDOR,
+        RolUsuario.COBRADOR,
+        RolUsuario.DUENO,
+        RolUsuario.ADMINISTRADOR,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso restringido a VENDEDOR, COBRADOR, ADMINISTRADOR o DUEÑO",
+        )
+    return usuario
+
+
 # Alias retrocompatibles
 require_vendedor_o_dueno = require_vendedor_o_superior
 require_cobrador_o_dueno = require_cobrador_o_superior

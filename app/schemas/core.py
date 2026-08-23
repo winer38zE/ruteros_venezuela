@@ -59,6 +59,12 @@ class ClienteCreate(BaseModel):
     ref_familiar_telefono: Optional[str] = None
     email: Optional[str] = None
     tipo_cliente: Optional[str] = Field(default="detal", pattern="^(mayorista|detal)$")
+    vendedor_id: Optional[UUID] = None
+    dia_visita: Optional[str] = Field(
+        default=None,
+        pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
+    )
+    orden_secuencial: Optional[int] = Field(default=None, ge=1)
 
 class ClienteUpdate(BaseModel):
     nombre_completo: Optional[str] = None
@@ -78,6 +84,13 @@ class ClienteUpdate(BaseModel):
     ref_familiar_telefono: Optional[str] = None
     email: Optional[str] = None
     tipo_cliente: Optional[str] = Field(default=None, pattern="^(mayorista|detal)$")
+    vendedor_id: Optional[UUID] = None
+    dia_visita: Optional[str] = Field(
+        default=None,
+        pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
+    )
+    orden_secuencial: Optional[int] = Field(default=None, ge=1)
+    tipo_visita_ruta: Optional[str] = Field(default=None, pattern="^(frecuente|nuevo)$")
 
 class ClienteResponse(BaseModel):
     id: UUID
@@ -102,8 +115,35 @@ class ClienteResponse(BaseModel):
     nivel_riesgo: str = "bueno"
     estado_credito: str = "Bueno"
     tipo_cliente: str = "detal"
+    vendedor_id: Optional[UUID] = None
+    dia_visita: Optional[str] = None
+    orden_secuencial: Optional[int] = None
+    tipo_visita_ruta: str = "frecuente"
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RutaClienteResponse(BaseModel):
+    id: UUID
+    vendedor_id: Optional[UUID] = None
+    nombre: str
+    direccion: Optional[str] = None
+    dia_visita: str
+    orden_secuencial: int
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    tipo_visita_ruta: str
+    telefono: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RutasDiaResponse(BaseModel):
+    vendedor_id: UUID
+    dia: str
+    total_clientes: int
+    clientes: List["RutaClienteResponse"] = []
+
 
 class HistorialBuroItem(BaseModel):
     fecha: str

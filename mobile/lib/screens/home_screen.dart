@@ -20,6 +20,7 @@ import 'clientes_list_screen.dart';
 import 'tasas_screen.dart';
 import 'panel_cobranza_screen.dart';
 import 'proveedores_screen.dart';
+import 'rutas_list_screen.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -94,6 +95,18 @@ class HomeScreen extends StatelessWidget {
         color: AppColors.neonBlue,
         screen: PanelCobranzaScreen(),
         badge: 'EXCEL',
+      ));
+    }
+
+    if (state.puedeCobrar || state.puedeVender) {
+      modules.add(const _ModuleDef(
+        id: 'rutas',
+        icon: Icons.route_rounded,
+        title: 'Ruta del Día',
+        subtitle: 'Clientes ordenados con navegación GPS',
+        color: AppColors.amber,
+        screen: RutasListScreen(),
+        badge: 'GPS',
       ));
     }
 

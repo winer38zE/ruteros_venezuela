@@ -71,6 +71,21 @@ class TipoCliente(str, enum.Enum):
     MAYORISTA = "mayorista"
     DETAL = "detal"
 
+
+class DiaVisita(str, enum.Enum):
+    LUNES = "LUNES"
+    MARTES = "MARTES"
+    MIERCOLES = "MIERCOLES"
+    JUEVES = "JUEVES"
+    VIERNES = "VIERNES"
+    SABADO = "SABADO"
+    DOMINGO = "DOMINGO"
+
+
+class TipoVisitaRuta(str, enum.Enum):
+    FRECUENTE = "frecuente"
+    NUEVO = "nuevo"
+
 class TipoReferenciaAsiento(str, enum.Enum):
     VENTA = "venta"
     COBRO = "cobro"
@@ -172,6 +187,9 @@ class Cliente(Base):
     email = Column(String, nullable=True)
     score_credito = Column(Integer, nullable=False, default=70)
     tipo_cliente = Column(Enum(TipoCliente), default=TipoCliente.DETAL)
+    dia_visita = Column(Enum(DiaVisita), nullable=True)
+    orden_secuencial = Column(Integer, nullable=True)
+    tipo_visita_ruta = Column(Enum(TipoVisitaRuta), default=TipoVisitaRuta.FRECUENTE)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     empresa = relationship("Empresa", back_populates="clientes")
