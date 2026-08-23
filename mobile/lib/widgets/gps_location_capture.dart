@@ -156,7 +156,8 @@ class _GpsLocationCaptureState extends State<GpsLocationCapture> {
   }
 }
 
-/// Botones de ruta a domicilio / trabajo para cobradores.class BotonesRutaCliente extends StatelessWidget {
+/// Botones de ruta a domicilio / trabajo para cobradores.
+class BotonesRutaCliente extends StatelessWidget {
   const BotonesRutaCliente({
     super.key,
     this.latResidencia,
