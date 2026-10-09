@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../config/api_config.dart';
+import '../services/biometric_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_background.dart';
 import '../widgets/glass_container.dart';
@@ -14,24 +15,116 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _controller = TextEditingController(text: 'dueno');
+  final _correoCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _bio = BiometricService();
+
+  bool _recordar = true;
+  bool _ocultarPassword = true;
+  bool _tieneSesionGuardada = false;
+  bool _biometriaDisponible = false;
+  bool _ofreciendoBiometria = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prepararBiometria());
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _correoCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _prepararBiometria() async {
+    final credenciales = await _bio.leerCredenciales();
+    final soporta = await _bio.soportaBiometria();
+    if (!mounted) return;
+    setState(() {
+      _tieneSesionGuardada = credenciales != null;
+      _biometriaDisponible = soporta;
+    });
+    if (credenciales != null && soporta) {
+      await _dialogoHuella();
+    }
+  }
+
+  Future<void> _dialogoHuella() async {
+    if (_ofreciendoBiometria || !mounted) return;
+    _ofreciendoBiometria = true;
+    final aceptar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        title: const Text('Sesión guardada'),
+        content: const Text('Ingresar con Huella Dactilar'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Usar contraseña')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.fingerprint_rounded),
+            label: const Text('Ingresar con Huella Dactilar'),
+          ),
+        ],
+      ),
+    );
+    if (aceptar == true) {
+      await _ingresarConBiometria();
+    }
+  }
+
+  Future<void> _ingresarConBiometria() async {
+    final ok = await _bio.autenticar();
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo confirmar la huella o el rostro')),
+      );
+      return;
+    }
+    final credenciales = await _bio.leerCredenciales();
+    if (!mounted || credenciales == null) return;
+    await context.read<AppState>().login(
+          credenciales.correo,
+          credenciales.password,
+          recordar: true,
+        );
+  }
+
+  Future<void> _login() async {
+    final correo = _correoCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    if (correo.isEmpty || password.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa usuario y contraseña (mínimo 4 caracteres)')),
+      );
+      return;
+    }
+    await context.read<AppState>().login(correo, password, recordar: _recordar);
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final mostrarHuella = _tieneSesionGuardada && _biometriaDisponible;
 
     return Scaffold(
+      floatingActionButton: mostrarHuella
+          ? FloatingActionButton.extended(
+              onPressed: state.cargando ? null : _ingresarConBiometria,
+              backgroundColor: AppColors.neonCyan,
+              foregroundColor: AppColors.bgDeep,
+              icon: const Icon(Icons.fingerprint_rounded),
+              label: const Text('Ingresar con Huella Dactilar'),
+            )
+          : null,
       body: FuturisticBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
@@ -83,15 +176,42 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Column(
                         children: [
                           TextField(
-                            controller: _controller,
+                            controller: _correoCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
                             style: const TextStyle(color: AppColors.textPrimary),
                             decoration: const InputDecoration(
-                              labelText: 'Usuario (username)',
-                              prefixIcon: Icon(Icons.person_outline),
+                              labelText: 'Correo o usuario',
+                              prefixIcon: Icon(Icons.alternate_email_rounded),
                             ),
-                            onSubmitted: (_) => _login(state),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _passwordCtrl,
+                            obscureText: _ocultarPassword,
+                            style: const TextStyle(color: AppColors.textPrimary),
+                            decoration: InputDecoration(
+                              labelText: 'Contraseña',
+                              prefixIcon: const Icon(Icons.lock_outline_rounded),
+                              suffixIcon: IconButton(
+                                onPressed: () => setState(() => _ocultarPassword = !_ocultarPassword),
+                                icon: Icon(
+                                  _ocultarPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                                ),
+                              ),
+                            ),
+                            onSubmitted: (_) => _login(),
+                          ),
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: _recordar,
+                            activeColor: AppColors.neonCyan,
+                            title: const Text('Recordar sesión'),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            onChanged: state.cargando
+                                ? null
+                                : (v) => setState(() => _recordar = v ?? false),
+                          ),
                           if (state.error != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 12),
@@ -104,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
-                              onPressed: state.cargando ? null : () => _login(state),
+                              onPressed: state.cargando ? null : _login,
                               icon: state.cargando
                                   ? const SizedBox(
                                       width: 18,
@@ -126,10 +246,5 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
-  }
-
-  void _login(AppState state) {
-    final user = _controller.text.trim();
-    if (user.isNotEmpty) state.login(user);
   }
 }

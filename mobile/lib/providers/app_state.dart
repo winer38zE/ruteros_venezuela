@@ -60,6 +60,8 @@ class AppState extends ChangeNotifier {
   bool get puedeVender => esVendedor || puedeOperaciones;
   bool get puedeCobrar => esCobrador || puedeOperaciones;
   bool get puedeConfigurar => esDueno;
+  String get rolAcceso => usuario?.rolAcceso ?? 'employee';
+  bool get esOwner => usuario?.esOwner ?? false;
 
   Future<void> _inicializar() async {
     try {
@@ -72,12 +74,16 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String username) async {
+  Future<void> login(
+    String correo,
+    String password, {
+    bool recordar = true,
+  }) async {
     cargando = true;
     error = null;
     notifyListeners();
     try {
-      usuario = await auth.login(username);
+      usuario = await auth.login(correo, password, recordar: recordar);
     } catch (e) {
       error = e.toString();
       usuario = null;
