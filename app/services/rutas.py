@@ -1,12 +1,20 @@
 """Lógica de rutas diarias por vendedor/cobrador."""
-from datetime import datetime
+from datetime import datetime, date
 from uuid import UUID
 from typing import Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.models.core import Cliente, DiaVisita, TipoVisitaRuta
+from app.models.core import (
+    Cliente,
+    Usuario,
+    VisitaDiaria,
+    DiaVisita,
+    TipoVisitaRuta,
+    EstadoVisita,
+    RolUsuario,
+)
 
 DIAS_SEMANA = [
     DiaVisita.LUNES,
@@ -25,11 +33,23 @@ def dia_actual() -> DiaVisita:
     return DIAS_SEMANA[datetime.now().weekday()]
 
 
+def fecha_actual() -> date:
+    return date.today()
+
+
 def normalizar_dia(dia: str) -> DiaVisita:
     clave = dia.strip().upper()
     if clave not in MAPA_DIA:
         raise ValueError(f"Día inválido: {dia}. Use LUNES..DOMINGO")
     return MAPA_DIA[clave]
+
+
+def puede_gestionar_ruta(usuario: Usuario, vendedor_id: UUID) -> bool:
+    if usuario.rol in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
+        return True
+    if usuario.rol in (RolUsuario.VENDEDOR, RolUsuario.COBRADOR):
+        return usuario.id == vendedor_id
+    return False
 
 
 def siguiente_orden_secuencial(
@@ -57,7 +77,6 @@ def asignar_cliente_a_ruta(
     dia: Optional[DiaVisita] = None,
     es_nuevo: bool = True,
 ) -> None:
-    """Integra un cliente en la secuencia del día (al final si es nuevo)."""
     dia_obj = dia or dia_actual()
     cliente.vendedor_id = vendedor_id
     cliente.dia_visita = dia_obj
@@ -88,7 +107,32 @@ def obtener_ruta_dia(
     )
 
 
-def serializar_cliente_ruta(cliente: Cliente) -> dict:
+def mapa_visitas_dia(
+    db: Session,
+    vendedor_id: UUID,
+    fecha: date,
+    cliente_ids: list[UUID],
+    empresa_id: UUID,
+) -> dict[UUID, VisitaDiaria]:
+    if not cliente_ids:
+        return {}
+    visitas = (
+        db.query(VisitaDiaria)
+        .filter(
+            VisitaDiaria.empresa_id == empresa_id,
+            VisitaDiaria.vendedor_id == vendedor_id,
+            VisitaDiaria.fecha == fecha,
+            VisitaDiaria.cliente_id.in_(cliente_ids),
+        )
+        .all()
+    )
+    return {v.cliente_id: v for v in visitas}
+
+
+def serializar_cliente_ruta(
+    cliente: Cliente,
+    visita: Optional[VisitaDiaria] = None,
+) -> dict:
     lat = cliente.latitud_residencia
     lng = cliente.longitud_residencia
     if lat is None and lng is None:
@@ -103,6 +147,12 @@ def serializar_cliente_ruta(cliente: Cliente) -> dict:
     if hasattr(dia, "value"):
         dia = dia.value
 
+    estado = EstadoVisita.PENDIENTE.value
+    marcado_en = None
+    if visita:
+        estado = visita.estado.value if hasattr(visita.estado, "value") else visita.estado
+        marcado_en = visita.marcado_en
+
     return {
         "id": cliente.id,
         "vendedor_id": cliente.vendedor_id,
@@ -114,4 +164,215 @@ def serializar_cliente_ruta(cliente: Cliente) -> dict:
         "longitud": float(lng) if lng is not None else None,
         "tipo_visita_ruta": tipo or "frecuente",
         "telefono": cliente.telefono,
+        "estado_visita": estado,
+        "marcado_en": marcado_en,
+    }
+
+
+def construir_ruta_dia_response(
+    db: Session,
+    vendedor_id: UUID,
+    dia: DiaVisita,
+    empresa_id: UUID,
+    fecha: Optional[date] = None,
+) -> dict:
+    fecha_obj = fecha or fecha_actual()
+    clientes = obtener_ruta_dia(db, vendedor_id, dia, empresa_id)
+    ids = [c.id for c in clientes]
+    visitas = mapa_visitas_dia(db, vendedor_id, fecha_obj, ids, empresa_id)
+
+    items = [
+        serializar_cliente_ruta(c, visitas.get(c.id))
+        for c in clientes
+    ]
+    visitados = sum(1 for i in items if i["estado_visita"] == EstadoVisita.VISITADO.value)
+    no_enc = sum(1 for i in items if i["estado_visita"] == EstadoVisita.NO_ENCONTRADO.value)
+    pendientes = len(items) - visitados - no_enc
+
+    return {
+        "vendedor_id": vendedor_id,
+        "dia": dia.value,
+        "fecha": fecha_obj,
+        "total_clientes": len(items),
+        "visitados": visitados,
+        "pendientes": pendientes,
+        "clientes": items,
+    }
+
+
+def reordenar_ruta_dia(
+    db: Session,
+    vendedor_id: UUID,
+    dia: DiaVisita,
+    orden_items: list[dict],
+    empresa_id: UUID,
+) -> dict:
+    clientes_ruta = obtener_ruta_dia(db, vendedor_id, dia, empresa_id)
+    ids_ruta = {c.id for c in clientes_ruta}
+    ids_payload = {item["cliente_id"] for item in orden_items}
+
+    if ids_ruta != ids_payload:
+        raise ValueError("El orden debe incluir exactamente los clientes de la ruta del día")
+
+    ordenes = sorted(item["orden_secuencial"] for item in orden_items)
+    esperado = list(range(1, len(ordenes) + 1))
+    if ordenes != esperado:
+        raise ValueError("Los órdenes deben ser consecutivos desde 1 hasta N sin duplicados")
+
+    mapa = {c.id: c for c in clientes_ruta}
+    for item in orden_items:
+        mapa[item["cliente_id"]].orden_secuencial = item["orden_secuencial"]
+
+    db.commit()
+    return construir_ruta_dia_response(db, vendedor_id, dia, empresa_id)
+
+
+def registrar_visita(
+    db: Session,
+    cliente_id: UUID,
+    vendedor_id: UUID,
+    empresa_id: UUID,
+    estado: str,
+    fecha: Optional[date] = None,
+    notas: Optional[str] = None,
+    latitud_visita: Optional[float] = None,
+    longitud_visita: Optional[float] = None,
+) -> VisitaDiaria:
+    fecha_obj = fecha or fecha_actual()
+    estado_enum = EstadoVisita(estado)
+
+    cliente = (
+        db.query(Cliente)
+        .filter(Cliente.id == cliente_id, Cliente.empresa_id == empresa_id)
+        .first()
+    )
+    if not cliente:
+        raise ValueError("Cliente no encontrado")
+
+    existente = (
+        db.query(VisitaDiaria)
+        .filter(
+            VisitaDiaria.cliente_id == cliente_id,
+            VisitaDiaria.vendedor_id == vendedor_id,
+            VisitaDiaria.fecha == fecha_obj,
+        )
+        .first()
+    )
+
+    if existente:
+        existente.estado = estado_enum
+        existente.notas = notas
+        existente.latitud_visita = latitud_visita
+        existente.longitud_visita = longitud_visita
+        existente.marcado_en = datetime.utcnow()
+        db.commit()
+        db.refresh(existente)
+        return existente
+
+    visita = VisitaDiaria(
+        empresa_id=empresa_id,
+        cliente_id=cliente_id,
+        vendedor_id=vendedor_id,
+        fecha=fecha_obj,
+        estado=estado_enum,
+        notas=notas,
+        latitud_visita=latitud_visita,
+        longitud_visita=longitud_visita,
+    )
+    db.add(visita)
+    db.commit()
+    db.refresh(visita)
+    return visita
+
+
+def registrar_visitas_lote(
+    db: Session,
+    visitas_data: list[dict],
+    vendedor_id: UUID,
+    empresa_id: UUID,
+) -> list[VisitaDiaria]:
+    resultados = []
+    for item in visitas_data:
+        visita = registrar_visita(
+            db=db,
+            cliente_id=item["cliente_id"],
+            vendedor_id=vendedor_id,
+            empresa_id=empresa_id,
+            estado=item.get("estado", "visitado"),
+            fecha=item.get("fecha"),
+            notas=item.get("notas"),
+            latitud_visita=item.get("latitud_visita"),
+            longitud_visita=item.get("longitud_visita"),
+        )
+        resultados.append(visita)
+    return resultados
+
+
+def serializar_visita(v: VisitaDiaria) -> dict:
+    estado = v.estado.value if hasattr(v.estado, "value") else v.estado
+    return {
+        "id": v.id,
+        "cliente_id": v.cliente_id,
+        "vendedor_id": v.vendedor_id,
+        "fecha": v.fecha,
+        "estado": estado,
+        "notas": v.notas,
+        "latitud_visita": float(v.latitud_visita) if v.latitud_visita is not None else None,
+        "longitud_visita": float(v.longitud_visita) if v.longitud_visita is not None else None,
+        "marcado_en": v.marcado_en,
+    }
+
+
+def resumen_rutas_dia(
+    db: Session,
+    empresa_id: UUID,
+    fecha: Optional[date] = None,
+    dia: Optional[DiaVisita] = None,
+) -> dict:
+    fecha_obj = fecha or fecha_actual()
+    dia_obj = dia or dia_actual()
+
+    vendedores = (
+        db.query(Usuario)
+        .filter(
+            Usuario.empresa_id == empresa_id,
+            Usuario.activo.is_(True),
+            Usuario.rol.in_([RolUsuario.VENDEDOR, RolUsuario.COBRADOR]),
+        )
+        .all()
+    )
+
+    resumen = []
+    for vendedor in vendedores:
+        clientes = obtener_ruta_dia(db, vendedor.id, dia_obj, empresa_id)
+        if not clientes:
+            continue
+        ids = [c.id for c in clientes]
+        visitas = mapa_visitas_dia(db, vendedor.id, fecha_obj, ids, empresa_id)
+        visitados = sum(
+            1 for vid in visitas.values()
+            if (vid.estado.value if hasattr(vid.estado, "value") else vid.estado) == EstadoVisita.VISITADO.value
+        )
+        no_enc = sum(
+            1 for vid in visitas.values()
+            if (vid.estado.value if hasattr(vid.estado, "value") else vid.estado) == EstadoVisita.NO_ENCONTRADO.value
+        )
+        total = len(clientes)
+        pendientes = total - visitados - no_enc
+        pct = round((visitados / total) * 100, 1) if total else 0.0
+
+        resumen.append({
+            "vendedor_id": vendedor.id,
+            "vendedor_nombre": vendedor.nombre,
+            "total_clientes": total,
+            "visitados": visitados,
+            "pendientes": pendientes,
+            "no_encontrados": no_enc,
+            "porcentaje_avance": pct,
+        })
+
+    return {
+        "fecha": fecha_obj,
+        "dia": dia_obj.value,
+        "vendedores": resumen,
     }
