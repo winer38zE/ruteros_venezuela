@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_state.dart';
-import '../theme/app_theme.dart';
-import '../widgets/futuristic_background.dart';
+import 'providers/app_state.dart';
+import 'theme/app_theme.dart';
+import 'widgets/futuristic_background.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 
