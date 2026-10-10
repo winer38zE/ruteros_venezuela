@@ -14,6 +14,7 @@ import '../services/clientes_service.dart';
 import '../services/tasas_service.dart';
 import '../services/rutas_service.dart';
 import '../services/empresa_service.dart';
+import '../services/whatsapp_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
@@ -31,6 +32,7 @@ class AppState extends ChangeNotifier {
     tasas = TasasService(api);
     rutas = RutasService(api);
     empresas = EmpresaService(api);
+    whatsapp = WhatsappService(api);
     _inicializar();
   }
 
@@ -49,6 +51,7 @@ class AppState extends ChangeNotifier {
   late final TasasService tasas;
   late final RutasService rutas;
   late final EmpresaService empresas;
+  late final WhatsappService whatsapp;
 
   Usuario? usuario;
   bool inicializado = false;

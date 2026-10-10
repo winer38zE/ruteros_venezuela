@@ -162,6 +162,34 @@ class ApiService {
     }
   }
 
+  Future<dynamic> postMultipart(
+    String path,
+    Map<String, String> fields, {
+    required String fileField,
+    required List<int> bytes,
+    required String filename,
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
+    try {
+      final request = http.MultipartRequest('POST', _uri(path));
+      request.headers.addAll(_headers);
+      request.headers.remove('Content-Type');
+      request.fields.addAll(fields);
+      request.files.add(http.MultipartFile.fromBytes(fileField, bytes, filename: filename));
+      final streamed = await _client.send(request).timeout(timeout);
+      final res = await http.Response.fromStream(streamed);
+      return _decode(res);
+    } on SocketException {
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
+    } on TimeoutException {
+      throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(0, 'Error de red: $e');
+    }
+  }
+
   Future<dynamic> put(String path, Map<String, dynamic> body) async {
     try {
       final res = await _client

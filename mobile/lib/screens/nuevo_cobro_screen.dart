@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -26,10 +29,17 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
   VentaPendiente? _venta;
   String _moneda = 'usd';
   String _canalCobro = 'efectivo';
+
+  bool get _pagoElectronico => _canalCobro == 'transferencia' || _canalCobro == 'pago_movil';
+
+  bool get _tieneFotoComprobante =>
+      _comprobanteBytes != null && _comprobanteBytes!.isNotEmpty;
   String? _cuentaBancariaId;
   final _montoCtrl = TextEditingController();
   final _referenciaCtrl = TextEditingController();
   String? _comprobanteBase64;
+  Uint8List? _comprobanteBytes;
+  String? _comprobanteNombre;
   bool _cargando = true;
   bool _guardando = false;
 
@@ -52,6 +62,15 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
 
   double get _montoIngresado =>
       double.tryParse(_montoCtrl.text.replaceAll(',', '.')) ?? 0;
+
+  String _captionComprobante() {
+    final cliente = _venta?.clienteNombre.trim();
+    final nombre = (cliente == null || cliente.isEmpty) ? 'Cliente' : cliente;
+    final medio = _canalCobro == 'pago_movil' ? 'pago móvil' : 'transferencia';
+    final ref = _referenciaCtrl.text.trim();
+    final referencia = ref.isEmpty ? '' : ' - Referencia: $ref';
+    return 'Pago por $medio - Cliente: $nombre - Monto: ${_fmt.format(_montoUsdEquivalente)} USD$referencia';
+  }
 
   double get _montoUsdEquivalente {
     if (_tasa == null || _montoIngresado <= 0) return 0;
@@ -115,6 +134,12 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
   }
 
   Future<void> _registrar() async {
+    if (_pagoElectronico && !_tieneFotoComprobante) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor adjunta el comprobante antes de continuar')),
+      );
+      return;
+    }
     if (_venta == null || _tasa == null) return;
     final montoUsd = _montoUsdEquivalente;
     if (montoUsd <= 0) {
@@ -198,15 +223,19 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton.icon(
-            onPressed: _guardando || _venta == null ? null : _registrar,
+            onPressed: _guardando || _venta == null || (_pagoElectronico && !_tieneFotoComprobante)
+                ? null
+                : _registrar,
             icon: _guardando
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check_circle_rounded),
             label: Text(_guardando ? 'Registrando...' : 'Registrar Cobro'),
             style: FilledButton.styleFrom(
               minimumSize: const Size(double.infinity, 52),
-              backgroundColor: AppColors.neonCyan,
-              foregroundColor: AppColors.bgDeep,
+              backgroundColor: _pagoElectronico && !_tieneFotoComprobante ? Colors.grey : AppColors.neonCyan,
+              foregroundColor: _pagoElectronico && !_tieneFotoComprobante ? Colors.white70 : AppColors.bgDeep,
+              disabledBackgroundColor: Colors.grey,
+              disabledForegroundColor: Colors.white70,
             ),
           ),
         ),
@@ -320,6 +349,9 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                         onChanged: (v) => setState(() {
                           _canalCobro = v ?? 'efectivo';
                           _cuentaBancariaId = null;
+                          _comprobanteBase64 = null;
+                          _comprobanteBytes = null;
+                          _comprobanteNombre = null;
                         }),
                       ),
                       if (_canalCobro != 'efectivo') ...[
@@ -330,8 +362,21 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                               ? _venta!.tipoCredito
                               : null,
                           referenciaCtrl: _referenciaCtrl,
-                          onComprobante: (base64, _) => _comprobanteBase64 = base64,
+                          onComprobante: (base64, nombre) {
+                            setState(() {
+                              _comprobanteBase64 = base64;
+                              _comprobanteNombre = nombre;
+                              _comprobanteBytes =
+                                  (base64 == null || base64.isEmpty) ? null : base64Decode(base64);
+                            });
+                          },
                           onCuentaChanged: (cuenta) => _cuentaBancariaId = cuenta?.id,
+                        ),
+                        const SizedBox(height: 12),
+                        BotonEnviarComprobanteWhatsapp(
+                          imagen: _comprobanteBytes,
+                          nombreArchivo: _comprobanteNombre,
+                          caption: _captionComprobante(),
                         ),
                       ],
                     ],

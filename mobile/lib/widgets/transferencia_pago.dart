@@ -483,3 +483,83 @@ Future<void> mostrarEnvioComprobanteWhatsapp({
     },
   );
 }
+
+/// Botón de la pantalla de pago: sube la foto y el texto al backend.
+class BotonEnviarComprobanteWhatsapp extends StatelessWidget {
+  const BotonEnviarComprobanteWhatsapp({
+    super.key,
+    required this.imagen,
+    required this.caption,
+    this.telefono = '',
+    this.nombreArchivo,
+  });
+
+  final Uint8List? imagen;
+  final String caption;
+  final String telefono;
+  final String? nombreArchivo;
+
+  Future<void> _enviar(BuildContext context) async {
+    final foto = imagen;
+    if (foto == null || foto.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor adjunta el comprobante antes de continuar')),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final mensaje = await context.read<AppState>().whatsapp.enviarComprobanteServidor(
+            telefono,
+            caption,
+            foto,
+            nombreArchivo: (nombreArchivo == null || nombreArchivo!.trim().isEmpty)
+                ? 'comprobante.jpg'
+                : nombreArchivo!.trim(),
+          );
+      if (context.mounted) Navigator.pop(context);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(mensaje.isEmpty ? '¡Comprobante enviado por WhatsApp con éxito!' : mensaje),
+          backgroundColor: AppColors.emerald,
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) Navigator.pop(context);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al enviar el comprobante: $e'),
+          backgroundColor: const Color(0xFFEF4444),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lista = imagen != null && imagen!.isNotEmpty;
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: lista ? () => _enviar(context) : null,
+        icon: const Icon(Icons.send),
+        label: const Text('Enviar Comprobante por WhatsApp'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: lista ? Colors.green : Colors.grey,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: Colors.grey,
+          disabledForegroundColor: Colors.white70,
+          minimumSize: const Size(double.infinity, 48),
+        ),
+      ),
+    );
+  }
+}
