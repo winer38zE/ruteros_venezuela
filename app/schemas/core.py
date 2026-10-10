@@ -160,6 +160,7 @@ class ClienteResponse(BaseModel):
     total_pagos: int = 0
     monto_pagos_usd: float = 0
     estado_morosidad: str = "al_dia"
+    es_moroso: bool = False
     tipo_cliente: str = "detal"
     vendedor_id: Optional[UUID] = None
     dia_visita: Optional[str] = None

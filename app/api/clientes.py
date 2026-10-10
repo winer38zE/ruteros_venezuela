@@ -71,6 +71,7 @@ def _serializar_cliente(c: Cliente) -> ClienteResponse:
         total_pagos=int(c.total_pagos or 0),
         monto_pagos_usd=float(c.monto_pagos_usd or 0),
         estado_morosidad=c.estado_morosidad or "al_dia",
+        es_moroso=en_mora,
         tipo_cliente=c.tipo_cliente.value if hasattr(c.tipo_cliente, "value") else (c.tipo_cliente or "detal"),
         vendedor_id=c.vendedor_id,
         dia_visita=c.dia_visita.value if hasattr(c.dia_visita, "value") else c.dia_visita,

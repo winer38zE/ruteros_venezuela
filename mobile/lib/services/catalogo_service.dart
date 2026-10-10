@@ -9,6 +9,7 @@ class Cliente {
   final String identificacion;
   final String clasificacionCredito;
   final String estadoMorosidad;
+  final bool esMoroso;
 
   Cliente({
     required this.id,
@@ -19,25 +20,36 @@ class Cliente {
     this.identificacion = '',
     this.clasificacionCredito = 'Bueno',
     this.estadoMorosidad = 'al_dia',
+    this.esMoroso = false,
   });
 
-  factory Cliente.fromJson(Map<String, dynamic> j) => Cliente(
-        id: j['id'],
-        nombre: j['nombre'],
-        tipoCliente: j['tipo_cliente'] ?? 'detal',
-        scoreCredito: j['score_credito'] ?? 70,
-        nivelRiesgo: j['nivel_riesgo'] ?? 'bueno',
-        identificacion: j['identificacion'] ?? '',
-        clasificacionCredito: j['clasificacion_credito'] ?? j['estado_credito'] ?? 'Bueno',
-        estadoMorosidad: j['estado_morosidad'] ?? 'al_dia',
-      );
+  /// Score tal como viene en `score_credito`.
+  int get score => scoreCredito;
 
-  bool get esMoroso =>
-      estadoMorosidad == 'moroso' || clasificacionCredito.toLowerCase().contains('moroso');
+  factory Cliente.fromJson(Map<String, dynamic> j) {
+    final estado = (j['estado_morosidad'] ?? 'al_dia').toString();
+    return Cliente(
+      id: j['id'].toString(),
+      nombre: j['nombre'] ?? '',
+      tipoCliente: j['tipo_cliente'] ?? 'detal',
+      scoreCredito: _entero(j['score_credito'] ?? j['score'], 70),
+      nivelRiesgo: j['nivel_riesgo'] ?? 'bueno',
+      identificacion: j['identificacion'] ?? '',
+      clasificacionCredito: j['clasificacion_credito'] ?? j['estado_credito'] ?? 'Bueno',
+      estadoMorosidad: estado,
+      esMoroso: j['es_moroso'] == true || estado == 'moroso',
+    );
+  }
 
-  bool get bloqueadoCredito => scoreCredito < 50;
+  bool get bloqueadoCredito => score < 50;
 
   bool get soloContado => bloqueadoCredito || esMoroso;
+}
+
+int _entero(dynamic valor, int porDefecto) {
+  if (valor is num) return valor.toInt();
+  if (valor is String) return int.tryParse(valor) ?? porDefecto;
+  return porDefecto;
 }
 
 class Producto {
@@ -105,7 +117,7 @@ class CatalogoService {
 
   Future<List<Cliente>> listarClientes() async {
     final data = await _api.get('/clientes/') as List;
-    return data.map((e) => Cliente.fromJson(e)).toList();
+    return parsearClientes(data);
   }
 
   Future<List<Producto>> listarProductos() async {
@@ -127,4 +139,10 @@ class CatalogoService {
     final data = await _api.get('/tasas-cambio/ultima');
     return TasaCambio.fromJson(data);
   }
+}
+
+List<Cliente> parsearClientes(List<dynamic> respuestaJson) {
+  return respuestaJson
+      .map((json) => Cliente.fromJson(Map<String, dynamic>.from(json as Map)))
+      .toList();
 }
