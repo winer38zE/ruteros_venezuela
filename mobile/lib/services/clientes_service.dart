@@ -22,6 +22,14 @@ class ClienteDetalle {
   final String nivelRiesgo;
   final String estadoCredito;
   final String tipoCliente;
+  final String? diaRuta;
+  final int? ordenRuta;
+  final String clasificacionCredito;
+  final int totalCompras;
+  final double montoComprasUsd;
+  final int totalPagos;
+  final double montoPagosUsd;
+  final String estadoMorosidad;
 
   ClienteDetalle({
     required this.id,
@@ -45,6 +53,14 @@ class ClienteDetalle {
     required this.nivelRiesgo,
     required this.estadoCredito,
     required this.tipoCliente,
+    this.diaRuta,
+    this.ordenRuta,
+    this.clasificacionCredito = 'Bueno',
+    this.totalCompras = 0,
+    this.montoComprasUsd = 0,
+    this.totalPagos = 0,
+    this.montoPagosUsd = 0,
+    this.estadoMorosidad = 'al_dia',
   });
 
   factory ClienteDetalle.fromJson(Map<String, dynamic> j) => ClienteDetalle(
@@ -69,10 +85,23 @@ class ClienteDetalle {
         nivelRiesgo: j['nivel_riesgo'] ?? 'bueno',
         estadoCredito: j['estado_credito'] ?? 'Bueno',
         tipoCliente: j['tipo_cliente'] ?? 'detal',
+        diaRuta: j['dia_ruta'] as String?,
+        ordenRuta: (j['orden_ruta'] as num?)?.toInt() ?? (j['orden_secuencial'] as num?)?.toInt(),
+        clasificacionCredito: j['clasificacion_credito'] ?? j['estado_credito'] ?? 'Bueno',
+        totalCompras: (j['total_compras'] as num?)?.toInt() ?? 0,
+        montoComprasUsd: (j['monto_compras_usd'] as num?)?.toDouble() ?? 0,
+        totalPagos: (j['total_pagos'] as num?)?.toInt() ?? 0,
+        montoPagosUsd: (j['monto_pagos_usd'] as num?)?.toDouble() ?? 0,
+        estadoMorosidad: j['estado_morosidad'] ?? 'al_dia',
       );
 
   bool get bloqueadoCredito => scoreCredito <= 35;
   bool get creditoExcelente => scoreCredito >= 85;
+  bool get soloContado =>
+      bloqueadoCredito ||
+      estadoMorosidad == 'moroso' ||
+      clasificacionCredito.toLowerCase().contains('moroso') ||
+      nivelRiesgo == 'malo';
 }
 
 class HistorialBuroItem {

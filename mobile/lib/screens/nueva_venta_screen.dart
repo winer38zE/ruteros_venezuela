@@ -31,6 +31,8 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   Almacen? _almacen;
   bool _usarClienteExistente = true;
   bool _esCredito = true;
+  bool _creditoBloqueado = false;
+  String _clasificacionCredito = '';
   String _frecuencia = 'semanal';
   String _tipoTasa = 'bcv';
   bool _usarMontoManual = false;
@@ -108,12 +110,19 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           nombre: _cliente!.nombre,
           identificacion: _cliente!.identificacion,
         );
+        _aplicarRestriccionCredito(
+          soloContado: _cliente!.soloContado,
+          clasificacion: _cliente!.clasificacionCredito,
+        );
       }
       _montoManualCtrl.text = '0.00';
     } catch (e) {
       _error = e.toString();
     } finally {
       if (mounted) setState(() => _cargando = false);
+    }
+    if (_cliente != null && mounted) {
+      await _onClienteExistenteChanged(_cliente);
     }
   }
 
@@ -157,12 +166,27 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     _lngTrab = lngTrab;
   }
 
+  void _aplicarRestriccionCredito({
+    required bool soloContado,
+    required String clasificacion,
+  }) {
+    _creditoBloqueado = soloContado;
+    _clasificacionCredito = clasificacion;
+    if (soloContado) _esCredito = false;
+  }
+
   Future<void> _onClienteExistenteChanged(Cliente? c) async {
     setState(() {
       _cliente = c;
       if (c != null) {
         _llenarDatosCliente(nombre: c.nombre, identificacion: c.identificacion);
-        if (c.bloqueadoCredito) _esCredito = false;
+        _aplicarRestriccionCredito(
+          soloContado: c.soloContado,
+          clasificacion: c.clasificacionCredito,
+        );
+      } else {
+        _creditoBloqueado = false;
+        _clasificacionCredito = '';
       }
     });
     if (c == null) return;
@@ -181,6 +205,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           lngRes: detalle.longitudResidencia,
           latTrab: detalle.latitudTrabajo,
           lngTrab: detalle.longitudTrabajo,
+        );
+        _aplicarRestriccionCredito(
+          soloContado: detalle.soloContado,
+          clasificacion: detalle.clasificacionCredito,
         );
       });
     } catch (_) {}
@@ -228,6 +256,16 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     });
   }
 
+  Cliente? _clientePorCedula(String cedula) {
+    final clave = cedula.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+    if (clave.isEmpty) return null;
+    for (final c in _clientes) {
+      final otra = c.identificacion.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+      if (otra == clave) return c;
+    }
+    return null;
+  }
+
   Future<String> _resolverClienteId() async {
     if (_usarClienteExistente && _cliente != null) return _cliente!.id;
 
@@ -241,7 +279,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
       throw Exception('El teléfono del cliente es obligatorio');
     }
 
-    final existente = _clientes.where((c) => c.identificacion == cedula).firstOrNull;
+    final existente = _clientePorCedula(cedula);
     if (existente != null) return existente.id;
 
     final creado = await context.read<AppState>().clientes.crear({
@@ -260,14 +298,51 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   }
 
   Future<void> _registrarVenta({bool borrador = false}) async {
-    if (_esCredito && (_cliente?.bloqueadoCredito ?? false)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Crédito rechazado: cliente con alto riesgo. Solo ventas de contado.'),
-          backgroundColor: Color(0xFFEF4444),
-        ),
-      );
-      return;
+    if (_esCredito) {
+      final idConsulta = _usarClienteExistente
+          ? _cliente?.id
+          : _clientePorCedula(_cedulaCtrl.text)?.id;
+      if (idConsulta != null) {
+        try {
+          final detalle = await context.read<AppState>().clientes.obtener(idConsulta);
+          if (!mounted) return;
+          if (detalle.soloContado) {
+            setState(() {
+              _aplicarRestriccionCredito(
+                soloContado: true,
+                clasificacion: detalle.clasificacionCredito,
+              );
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Crédito bloqueado: ${detalle.clasificacionCredito}. Solo se permite contado.',
+                ),
+                backgroundColor: const Color(0xFFEF4444),
+              ),
+            );
+            return;
+          }
+        } catch (_) {
+          if (_creditoBloqueado) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Crédito bloqueado: cliente moroso o de alto riesgo. Solo contado.'),
+                backgroundColor: Color(0xFFEF4444),
+              ),
+            );
+            return;
+          }
+        }
+      } else if (_creditoBloqueado) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Crédito bloqueado: cliente moroso o de alto riesgo. Solo contado.'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+        return;
+      }
     }
     if (_total <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -445,18 +520,49 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                 const Text('Tipo de venta', style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Contado'), icon: Icon(Icons.payments_outlined)),
-                    ButtonSegment(value: true, label: Text('Crédito'), icon: Icon(Icons.credit_score_outlined)),
+                  segments: [
+                    const ButtonSegment(value: false, label: Text('Contado'), icon: Icon(Icons.payments_outlined)),
+                    ButtonSegment(
+                      value: true,
+                      label: const Text('Crédito'),
+                      icon: const Icon(Icons.credit_score_outlined),
+                      enabled: !_creditoBloqueado,
+                    ),
                   ],
                   selected: {_esCredito},
                   onSelectionChanged: (s) {
+                    if (s.first && _creditoBloqueado) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Este cliente solo puede comprar de contado.'),
+                          backgroundColor: Color(0xFFEF4444),
+                        ),
+                      );
+                      return;
+                    }
                     setState(() {
                       _esCredito = s.first;
                       if (!_esCredito) _frecuencia = 'contado';
                     });
                   },
                 ),
+                if (_creditoBloqueado) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.7)),
+                    ),
+                    child: Text(
+                      'Crédito bloqueado. ${_clasificacionCredito.isEmpty ? 'Moroso / Solo Contado' : _clasificacionCredito}. '
+                      'Esta venta solo puede registrarse de contado.',
+                      style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -565,7 +671,9 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   const SizedBox(height: 8),
                   ScoreBadge(
                     score: _cliente!.scoreCredito,
-                    estado: _cliente!.bloqueadoCredito ? 'Malo / Moroso' : 'Score activo',
+                    estado: _creditoBloqueado
+                        ? (_clasificacionCredito.isEmpty ? 'Moroso / Solo Contado' : _clasificacionCredito)
+                        : (_clasificacionCredito.isEmpty ? 'Score activo' : _clasificacionCredito),
                     compact: true,
                   ),
                 ],

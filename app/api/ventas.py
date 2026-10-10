@@ -12,7 +12,13 @@ from app.schemas.core import VentaCreate, VentaResponse, CuotaAmortizacionRespon
 from app.services.recibos_email import enviar_recibo_venta
 from app.services.contabilidad import generar_asiento_venta
 from app.services.inventario import procesar_detalles_venta, calcular_total_detalles
-from app.services.buro_credito import validar_venta_credito
+from app.services.buro_credito import (
+    actualizar_historial_comportamiento,
+    clasificacion_por_score,
+    clasificar_score,
+    registrar_evento_buro,
+    validar_venta_credito,
+)
 from app.services.amortizacion import generar_plan_amortizacion, puede_aprobar_venta, serializar_cuota
 from datetime import datetime
 from typing import List, Optional
@@ -125,6 +131,7 @@ def crear_venta(
     es_borrador = venta.es_borrador and vendedor_actual.rol == RolUsuario.VENDEDOR
 
     if not es_borrador:
+        actualizar_historial_comportamiento(db, cliente_actual)
         validar_venta_credito(cliente_actual, frecuencia)
 
     _actualizar_ubicacion_cliente(cliente_actual, venta)
@@ -180,6 +187,18 @@ def crear_venta(
 
     if not es_borrador:
         generar_asiento_venta(db, nueva_venta)
+        actualizar_historial_comportamiento(db, cliente_actual)
+        registrar_evento_buro(
+            db,
+            cliente_actual.identificacion,
+            "compra",
+            (
+                f"Compra registrada por ${float(total_venta):.2f}. "
+                f"Compras: {cliente_actual.total_compras}. "
+                f"Pagos: {cliente_actual.total_pagos}. "
+                f"Crédito: {cliente_actual.clasificacion_credito}."
+            ),
+        )
 
     db.commit()
     db.refresh(nueva_venta)

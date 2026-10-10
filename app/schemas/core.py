@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from uuid import UUID
 
 # --- EMPRESAS ---
@@ -65,6 +65,8 @@ class ClienteCreate(BaseModel):
         pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
     )
     orden_secuencial: Optional[int] = Field(default=None, ge=1)
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = Field(default=None, ge=1)
 
 class ClienteUpdate(BaseModel):
     nombre_completo: Optional[str] = None
@@ -90,6 +92,8 @@ class ClienteUpdate(BaseModel):
         pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
     )
     orden_secuencial: Optional[int] = Field(default=None, ge=1)
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = Field(default=None, ge=1)
     tipo_visita_ruta: Optional[str] = Field(default=None, pattern="^(frecuente|nuevo)$")
 
 class ClienteResponse(BaseModel):
@@ -114,10 +118,18 @@ class ClienteResponse(BaseModel):
     score_credito: int = 70
     nivel_riesgo: str = "bueno"
     estado_credito: str = "Bueno"
+    clasificacion_credito: str = "Bueno"
+    total_compras: int = 0
+    monto_compras_usd: float = 0
+    total_pagos: int = 0
+    monto_pagos_usd: float = 0
+    estado_morosidad: str = "al_dia"
     tipo_cliente: str = "detal"
     vendedor_id: Optional[UUID] = None
     dia_visita: Optional[str] = None
     orden_secuencial: Optional[int] = None
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = None
     tipo_visita_ruta: str = "frecuente"
 
     model_config = ConfigDict(from_attributes=True)
@@ -129,11 +141,15 @@ class RutaClienteResponse(BaseModel):
     nombre: str
     direccion: Optional[str] = None
     dia_visita: str
+    dia_ruta: str
     orden_secuencial: int
+    orden_ruta: int
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     tipo_visita_ruta: str
     telefono: Optional[str] = None
+    estado_visita: str = "pendiente"
+    marcado_en: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -141,8 +157,66 @@ class RutaClienteResponse(BaseModel):
 class RutasDiaResponse(BaseModel):
     vendedor_id: UUID
     dia: str
+    fecha: date
     total_clientes: int
+    visitados: int = 0
+    pendientes: int = 0
     clientes: List["RutaClienteResponse"] = []
+
+
+class OrdenRutaItem(BaseModel):
+    cliente_id: UUID
+    orden_ruta: Optional[int] = Field(default=None, ge=1)
+    orden_secuencial: int = Field(ge=1)
+
+
+class ReordenarRutaRequest(BaseModel):
+    vendedor_id: Optional[UUID] = None
+    dia: str = Field(pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$")
+    orden: List[OrdenRutaItem] = Field(min_length=1)
+
+
+class VisitaCreate(BaseModel):
+    cliente_id: UUID
+    estado: str = Field(default="visitado", pattern="^(pendiente|visitado|no_encontrado)$")
+    notas: Optional[str] = None
+    latitud_visita: Optional[float] = None
+    longitud_visita: Optional[float] = None
+    fecha: Optional[date] = None
+
+
+class VisitaLoteRequest(BaseModel):
+    visitas: List[VisitaCreate] = Field(min_length=1)
+
+
+class VisitaResponse(BaseModel):
+    id: UUID
+    cliente_id: UUID
+    vendedor_id: UUID
+    fecha: date
+    estado: str
+    notas: Optional[str] = None
+    latitud_visita: Optional[float] = None
+    longitud_visita: Optional[float] = None
+    marcado_en: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ResumenVendedorRuta(BaseModel):
+    vendedor_id: UUID
+    vendedor_nombre: str
+    total_clientes: int
+    visitados: int
+    pendientes: int
+    no_encontrados: int = 0
+    porcentaje_avance: float
+
+
+class RutasResumenResponse(BaseModel):
+    fecha: date
+    dia: str
+    vendedores: List[ResumenVendedorRuta] = []
 
 
 class HistorialBuroItem(BaseModel):

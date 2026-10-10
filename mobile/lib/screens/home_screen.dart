@@ -21,6 +21,7 @@ import 'tasas_screen.dart';
 import 'panel_cobranza_screen.dart';
 import 'proveedores_screen.dart';
 import 'rutas_list_screen.dart';
+import 'rutas_resumen_screen.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -141,6 +142,15 @@ class HomeScreen extends StatelessWidget {
           color: AppColors.amber,
           screen: TasasScreen(),
           badge: 'FX',
+        ),
+        _ModuleDef(
+          id: 'rutas_resumen',
+          icon: Icons.analytics_rounded,
+          title: 'Resumen Rutas',
+          subtitle: 'Avance diario de cobradores en calle',
+          color: AppColors.violet,
+          screen: RutasResumenScreen(),
+          badge: 'LIVE',
         ),
         _ModuleDef(
           id: 'finanzas',

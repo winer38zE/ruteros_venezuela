@@ -7,6 +7,8 @@ class Cliente {
   final int scoreCredito;
   final String nivelRiesgo;
   final String identificacion;
+  final String clasificacionCredito;
+  final String estadoMorosidad;
 
   Cliente({
     required this.id,
@@ -15,6 +17,8 @@ class Cliente {
     this.scoreCredito = 70,
     this.nivelRiesgo = 'bueno',
     this.identificacion = '',
+    this.clasificacionCredito = 'Bueno',
+    this.estadoMorosidad = 'al_dia',
   });
 
   factory Cliente.fromJson(Map<String, dynamic> j) => Cliente(
@@ -24,9 +28,15 @@ class Cliente {
         scoreCredito: j['score_credito'] ?? 70,
         nivelRiesgo: j['nivel_riesgo'] ?? 'bueno',
         identificacion: j['identificacion'] ?? '',
+        clasificacionCredito: j['clasificacion_credito'] ?? j['estado_credito'] ?? 'Bueno',
+        estadoMorosidad: j['estado_morosidad'] ?? 'al_dia',
       );
 
   bool get bloqueadoCredito => scoreCredito <= 35;
+  bool get soloContado =>
+      bloqueadoCredito ||
+      estadoMorosidad == 'moroso' ||
+      clasificacionCredito.toLowerCase().contains('moroso');
 }
 
 class Producto {

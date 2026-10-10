@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 import uuid
 from app.services.contabilidad import generar_asiento_cobro
-from app.services.buro_credito import actualizar_score_por_cobro
+from app.services.buro_credito import actualizar_historial_comportamiento, actualizar_score_por_cobro
 from app.services.amortizacion import (
     aplicar_abono_a_cuotas,
     proxima_cuota_pendiente,
@@ -254,6 +254,7 @@ def registrar_cobro(
     db.refresh(venta, attribute_names=["cliente", "cobros"])
     if venta.cliente:
         actualizar_score_por_cobro(db, venta, nuevo_cobro)
+        actualizar_historial_comportamiento(db, venta.cliente)
     generar_asiento_cobro(db, nuevo_cobro)
     db.commit()
     db.refresh(nuevo_cobro)

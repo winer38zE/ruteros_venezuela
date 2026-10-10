@@ -1,10 +1,11 @@
 """Lógica de rutas diarias por vendedor/cobrador."""
+import unicodedata
 from datetime import datetime, date
 from uuid import UUID
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 
 from app.models.core import (
     Cliente,
@@ -28,6 +29,16 @@ DIAS_SEMANA = [
 
 MAPA_DIA = {d.value: d for d in DiaVisita}
 
+ETIQUETA_DIA = {
+    DiaVisita.LUNES: "Lunes",
+    DiaVisita.MARTES: "Martes",
+    DiaVisita.MIERCOLES: "Miércoles",
+    DiaVisita.JUEVES: "Jueves",
+    DiaVisita.VIERNES: "Viernes",
+    DiaVisita.SABADO: "Sábado",
+    DiaVisita.DOMINGO: "Domingo",
+}
+
 
 def dia_actual() -> DiaVisita:
     return DIAS_SEMANA[datetime.now().weekday()]
@@ -37,11 +48,69 @@ def fecha_actual() -> date:
     return date.today()
 
 
+def _clave_dia(dia: str) -> str:
+    texto = unicodedata.normalize("NFD", dia.strip())
+    sin_acentos = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    return sin_acentos.upper()
+
+
 def normalizar_dia(dia: str) -> DiaVisita:
-    clave = dia.strip().upper()
+    clave = _clave_dia(dia)
     if clave not in MAPA_DIA:
-        raise ValueError(f"Día inválido: {dia}. Use LUNES..DOMINGO")
+        raise ValueError(f"Día inválido: {dia}. Use Lunes..Domingo")
     return MAPA_DIA[clave]
+
+
+def etiqueta_dia(dia: DiaVisita) -> str:
+    return ETIQUETA_DIA[dia]
+
+
+def resolver_dia(dia_ruta: Optional[str], dia_visita: Optional[str] = None) -> Optional[DiaVisita]:
+    raw = (dia_ruta or "").strip() or (dia_visita or "").strip()
+    if not raw:
+        return None
+    return normalizar_dia(raw)
+
+
+def asignar_dia_orden(cliente: Cliente, dia: Optional[DiaVisita], orden: Optional[int]) -> None:
+    """Escribe el día y la parada en los campos de ruta y en los alias históricos."""
+    cliente.dia_visita = dia
+    cliente.dia_ruta = etiqueta_dia(dia) if dia is not None else None
+    cliente.orden_secuencial = orden
+    cliente.orden_ruta = orden
+
+
+def dia_ruta_de_cliente(cliente: Cliente) -> Optional[str]:
+    if cliente.dia_ruta:
+        return cliente.dia_ruta
+    dia = cliente.dia_visita
+    if dia is None:
+        return None
+    if not isinstance(dia, DiaVisita):
+        try:
+            dia = normalizar_dia(str(dia))
+        except ValueError:
+            return str(cliente.dia_visita)
+    return etiqueta_dia(dia)
+
+
+def orden_ruta_de_cliente(cliente: Cliente) -> Optional[int]:
+    if cliente.orden_ruta is not None:
+        return int(cliente.orden_ruta)
+    if cliente.orden_secuencial is not None:
+        return int(cliente.orden_secuencial)
+    return None
+
+
+def _filtro_mismo_dia(dia: DiaVisita):
+    etiqueta = etiqueta_dia(dia)
+    return or_(
+        Cliente.dia_ruta == etiqueta,
+        and_(
+            or_(Cliente.dia_ruta.is_(None), Cliente.dia_ruta == ""),
+            Cliente.dia_visita == dia,
+        ),
+    )
 
 
 def puede_gestionar_ruta(usuario: Usuario, vendedor_id: UUID) -> bool:
@@ -59,11 +128,11 @@ def siguiente_orden_secuencial(
     empresa_id: UUID,
 ) -> int:
     max_orden = (
-        db.query(func.max(Cliente.orden_secuencial))
+        db.query(func.max(func.coalesce(Cliente.orden_ruta, Cliente.orden_secuencial)))
         .filter(
             Cliente.empresa_id == empresa_id,
             Cliente.vendedor_id == vendedor_id,
-            Cliente.dia_visita == dia,
+            _filtro_mismo_dia(dia),
         )
         .scalar()
     )
@@ -79,13 +148,12 @@ def asignar_cliente_a_ruta(
 ) -> None:
     dia_obj = dia or dia_actual()
     cliente.vendedor_id = vendedor_id
-    cliente.dia_visita = dia_obj
     cliente.tipo_visita_ruta = TipoVisitaRuta.NUEVO if es_nuevo else TipoVisitaRuta.FRECUENTE
 
-    if cliente.orden_secuencial is None:
-        cliente.orden_secuencial = siguiente_orden_secuencial(
-            db, vendedor_id, dia_obj, cliente.empresa_id
-        )
+    orden = orden_ruta_de_cliente(cliente)
+    if orden is None:
+        orden = siguiente_orden_secuencial(db, vendedor_id, dia_obj, cliente.empresa_id)
+    asignar_dia_orden(cliente, dia_obj, orden)
 
 
 def obtener_ruta_dia(
@@ -99,10 +167,13 @@ def obtener_ruta_dia(
         .filter(
             Cliente.empresa_id == empresa_id,
             Cliente.vendedor_id == vendedor_id,
-            Cliente.dia_visita == dia,
-            Cliente.orden_secuencial.isnot(None),
+            _filtro_mismo_dia(dia),
+            or_(Cliente.orden_ruta.isnot(None), Cliente.orden_secuencial.isnot(None)),
         )
-        .order_by(Cliente.orden_secuencial.asc())
+        .order_by(
+            func.coalesce(Cliente.orden_ruta, Cliente.orden_secuencial).asc(),
+            Cliente.nombre.asc(),
+        )
         .all()
     )
 
@@ -146,6 +217,12 @@ def serializar_cliente_ruta(
     dia = cliente.dia_visita
     if hasattr(dia, "value"):
         dia = dia.value
+    dia_legible = dia_ruta_de_cliente(cliente)
+    if not dia and dia_legible:
+        dia = normalizar_dia(dia_legible).value
+    if not dia_legible and dia:
+        dia_legible = etiqueta_dia(normalizar_dia(str(dia)))
+    orden = orden_ruta_de_cliente(cliente) or 0
 
     estado = EstadoVisita.PENDIENTE.value
     marcado_en = None
@@ -159,7 +236,9 @@ def serializar_cliente_ruta(
         "nombre": cliente.nombre,
         "direccion": cliente.direccion,
         "dia_visita": dia,
-        "orden_secuencial": cliente.orden_secuencial or 0,
+        "dia_ruta": dia_legible,
+        "orden_secuencial": orden,
+        "orden_ruta": orden,
         "latitud": float(lat) if lat is not None else None,
         "longitud": float(lng) if lng is not None else None,
         "tipo_visita_ruta": tipo or "frecuente",
@@ -214,14 +293,22 @@ def reordenar_ruta_dia(
     if ids_ruta != ids_payload:
         raise ValueError("El orden debe incluir exactamente los clientes de la ruta del día")
 
-    ordenes = sorted(item["orden_secuencial"] for item in orden_items)
+    ordenes = sorted(
+        item.get("orden_ruta", item.get("orden_secuencial")) for item in orden_items
+    )
     esperado = list(range(1, len(ordenes) + 1))
     if ordenes != esperado:
         raise ValueError("Los órdenes deben ser consecutivos desde 1 hasta N sin duplicados")
 
+    etiqueta = etiqueta_dia(dia)
     mapa = {c.id: c for c in clientes_ruta}
     for item in orden_items:
-        mapa[item["cliente_id"]].orden_secuencial = item["orden_secuencial"]
+        orden = item.get("orden_ruta", item.get("orden_secuencial"))
+        cliente = mapa[item["cliente_id"]]
+        cliente.dia_visita = dia
+        cliente.dia_ruta = etiqueta
+        cliente.orden_secuencial = orden
+        cliente.orden_ruta = orden
 
     db.commit()
     return construir_ruta_dia_response(db, vendedor_id, dia, empresa_id)

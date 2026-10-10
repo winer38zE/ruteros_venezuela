@@ -98,7 +98,14 @@ def reordenar_ruta(
         raise HTTPException(status_code=400, detail=str(exc))
 
     try:
-        orden = [{"cliente_id": i.cliente_id, "orden_secuencial": i.orden_secuencial} for i in body.orden]
+        orden = [
+            {
+                "cliente_id": i.cliente_id,
+                "orden_ruta": i.orden_ruta if i.orden_ruta is not None else i.orden_secuencial,
+                "orden_secuencial": i.orden_secuencial,
+            }
+            for i in body.orden
+        ]
         data = reordenar_ruta_dia(db, vid, dia_obj, orden, empresa.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

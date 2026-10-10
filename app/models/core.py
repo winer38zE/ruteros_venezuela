@@ -1,8 +1,8 @@
 import uuid
 import enum
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR,
+    Column, String, Boolean, DateTime, Date, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship, declarative_base
@@ -85,6 +85,12 @@ class DiaVisita(str, enum.Enum):
 class TipoVisitaRuta(str, enum.Enum):
     FRECUENTE = "frecuente"
     NUEVO = "nuevo"
+
+
+class EstadoVisita(str, enum.Enum):
+    PENDIENTE = "pendiente"
+    VISITADO = "visitado"
+    NO_ENCONTRADO = "no_encontrado"
 
 class TipoReferenciaAsiento(str, enum.Enum):
     VENTA = "venta"
@@ -186,14 +192,48 @@ class Cliente(Base):
     ref_familiar_telefono = Column(String, nullable=True)
     email = Column(String, nullable=True)
     score_credito = Column(Integer, nullable=False, default=70)
+    total_compras = Column(Integer, nullable=False, default=0)
+    monto_compras_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    total_pagos = Column(Integer, nullable=False, default=0)
+    monto_pagos_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    estado_morosidad = Column(String(20), nullable=False, default="al_dia")
+    clasificacion_credito = Column(String(40), nullable=False, default="Bueno")
     tipo_cliente = Column(Enum(TipoCliente), default=TipoCliente.DETAL)
     dia_visita = Column(Enum(DiaVisita), nullable=True)
     orden_secuencial = Column(Integer, nullable=True)
+    # Día legible del recorrido (Lunes, Martes, …) y parada GPS de ese día.
+    dia_ruta = Column(String(20), nullable=True)
+    orden_ruta = Column(Integer, nullable=True)
     tipo_visita_ruta = Column(Enum(TipoVisitaRuta), default=TipoVisitaRuta.FRECUENTE)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     empresa = relationship("Empresa", back_populates="clientes")
     ventas = relationship("Venta", back_populates="cliente")
+
+
+class VisitaDiaria(Base):
+    """Registro de visita/cobro por cliente en una fecha calendario."""
+    __tablename__ = "visitas_diarias"
+    __table_args__ = (
+        UniqueConstraint(
+            "cliente_id", "vendedor_id", "fecha",
+            name="uq_visita_cliente_vendedor_fecha",
+        ),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False)
+    vendedor_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+    fecha = Column(Date, nullable=False, index=True)
+    estado = Column(Enum(EstadoVisita), nullable=False, default=EstadoVisita.VISITADO)
+    notas = Column(Text, nullable=True)
+    latitud_visita = Column(Numeric(10, 7), nullable=True)
+    longitud_visita = Column(Numeric(10, 7), nullable=True)
+    marcado_en = Column(DateTime, default=datetime.utcnow)
+
+    cliente = relationship("Cliente", foreign_keys=[cliente_id])
+    vendedor = relationship("Usuario", foreign_keys=[vendedor_id])
 
 
 class EventoBuroCredito(Base):

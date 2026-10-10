@@ -1,4 +1,6 @@
 """Migraciones ligeras para SQLite (añade columnas nuevas sin borrar datos)."""
+import unicodedata
+
 from sqlalchemy import inspect, text
 
 
@@ -26,12 +28,20 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("ref_familiar_telefono", "VARCHAR(32)"),
             ("email", "VARCHAR(255)"),
             ("score_credito", "INTEGER DEFAULT 70"),
+            ("total_compras", "INTEGER DEFAULT 0"),
+            ("monto_compras_usd", "NUMERIC(12, 2) DEFAULT 0"),
+            ("total_pagos", "INTEGER DEFAULT 0"),
+            ("monto_pagos_usd", "NUMERIC(12, 2) DEFAULT 0"),
+            ("estado_morosidad", "VARCHAR(20) DEFAULT 'al_dia'"),
+            ("clasificacion_credito", "VARCHAR(40) DEFAULT 'Bueno'"),
             ("latitud_residencia", "NUMERIC(10, 7)"),
             ("longitud_residencia", "NUMERIC(10, 7)"),
             ("latitud_trabajo", "NUMERIC(10, 7)"),
             ("longitud_trabajo", "NUMERIC(10, 7)"),
             ("dia_visita", "VARCHAR(20)"),
             ("orden_secuencial", "INTEGER"),
+            ("dia_ruta", "VARCHAR(20)"),
+            ("orden_ruta", "INTEGER"),
             ("tipo_visita_ruta", "VARCHAR(20) DEFAULT 'frecuente'"),
         ],
         "movimientos_financieros": [
@@ -95,3 +105,49 @@ def aplicar_migraciones_sqlite(engine) -> None:
                     "WHERE score_credito IS NULL"
                 )
             )
+            _rellenar_dia_y_orden_ruta(conn)
+
+
+def _clave_dia(valor: str) -> str:
+    texto = unicodedata.normalize("NFD", valor.strip())
+    return "".join(c for c in texto if unicodedata.category(c) != "Mn").upper()
+
+
+_ETIQUETA_POR_CLAVE = {
+    "LUNES": "Lunes",
+    "MARTES": "Martes",
+    "MIERCOLES": "Miércoles",
+    "JUEVES": "Jueves",
+    "VIERNES": "Viernes",
+    "SABADO": "Sábado",
+    "DOMINGO": "Domingo",
+}
+
+
+def _rellenar_dia_y_orden_ruta(conn) -> None:
+    """Copia dia_visita/orden_secuencial hacia dia_ruta/orden_ruta si faltan."""
+    columnas = {row[1] for row in conn.execute(text("PRAGMA table_info(clientes)")).fetchall()}
+    if "dia_ruta" not in columnas or "orden_ruta" not in columnas:
+        return
+
+    filas = conn.execute(
+        text(
+            "SELECT id, dia_visita, orden_secuencial, dia_ruta, orden_ruta FROM clientes"
+        )
+    ).fetchall()
+    for fila in filas:
+        cliente_id, dia_visita, orden_sec, dia_ruta, orden_ruta = fila
+        nuevo_dia = dia_ruta
+        nuevo_orden = orden_ruta
+        if not nuevo_dia and dia_visita:
+            nuevo_dia = _ETIQUETA_POR_CLAVE.get(_clave_dia(str(dia_visita)))
+        if nuevo_orden is None and orden_sec is not None:
+            nuevo_orden = orden_sec
+        if nuevo_dia == dia_ruta and nuevo_orden == orden_ruta:
+            continue
+        conn.execute(
+            text(
+                "UPDATE clientes SET dia_ruta = :dia, orden_ruta = :orden WHERE id = :id"
+            ),
+            {"dia": nuevo_dia, "orden": nuevo_orden, "id": cliente_id},
+        )
