@@ -1,4 +1,5 @@
 """Envío del comprobante de pago por Evolution API."""
+import asyncio
 import base64
 import logging
 
@@ -46,7 +47,9 @@ async def enviar_comprobante_whatsapp(
 
     imagen_base64 = base64.b64encode(contents).decode("ascii")
     logger.info("Usuario %s envía comprobante por WhatsApp", usuario.id)
-    ok, mensaje = enviar_imagen(destino, None, caption, imagen_base64=imagen_base64)
+    ok, mensaje = await asyncio.to_thread(
+        enviar_imagen, destino, None, caption, imagen_base64
+    )
     if not ok:
         raise HTTPException(status_code=estado_http_whatsapp(mensaje), detail=mensaje)
 

@@ -31,7 +31,7 @@ from app.services.rutas import (
     resolver_dia,
     siguiente_orden_secuencial,
 )
-from app.core.deps import obtener_usuario_opcional
+from app.core.deps import require_ruta_o_superior
 from app.models.core import Usuario
 from typing import List, Optional
 
@@ -90,7 +90,7 @@ def _serializar_cliente(c: Cliente) -> ClienteResponse:
 def crear_cliente(
     cliente: ClienteCreate,
     db: Session = Depends(get_db),
-    usuario: Optional[Usuario] = Depends(obtener_usuario_opcional),
+    usuario: Usuario = Depends(require_ruta_o_superior),
 ):
     empresa_actual = obtener_empresa_tenant(db)
     ident = normalizar_identificacion(cliente.identificacion)
@@ -153,7 +153,9 @@ def crear_cliente(
 def listar_clientes(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Buscar por nombre, teléfono o cédula"),
+    usuario: Usuario = Depends(require_ruta_o_superior),
 ):
+    del usuario
     empresa = obtener_empresa_tenant(db)
     query = db.query(Cliente).filter(Cliente.empresa_id == empresa.id)
     if q:
@@ -172,7 +174,12 @@ def listar_clientes(
 
 
 @router.get("/buro/{identificacion}", response_model=BuroCreditoResponse)
-def consultar_buro_credito(identificacion: str, db: Session = Depends(get_db)):
+def consultar_buro_credito(
+    identificacion: str,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_ruta_o_superior),
+):
+    del usuario
     data = consultar_buro(db, identificacion)
     return BuroCreditoResponse(
         identificacion=data["identificacion"],
@@ -187,7 +194,12 @@ def consultar_buro_credito(identificacion: str, db: Session = Depends(get_db)):
 
 
 @router.get("/verificar/{identificacion}", response_model=ClienteAutocompletadoResponse)
-def verificar_identificacion(identificacion: str, db: Session = Depends(get_db)):
+def verificar_identificacion(
+    identificacion: str,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_ruta_o_superior),
+):
+    del usuario
     data = datos_autocompletado_buro(db, identificacion)
     if not data:
         return ClienteAutocompletadoResponse(
@@ -198,7 +210,12 @@ def verificar_identificacion(identificacion: str, db: Session = Depends(get_db))
 
 
 @router.get("/{cliente_id}", response_model=ClienteResponse)
-def obtener_cliente(cliente_id: UUID, db: Session = Depends(get_db)):
+def obtener_cliente(
+    cliente_id: UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_ruta_o_superior),
+):
+    del usuario
     empresa = obtener_empresa_tenant(db)
     cliente = (
         db.query(Cliente)
@@ -218,7 +235,10 @@ def actualizar_cliente(
     cliente_id: UUID,
     body: ClienteUpdate,
     db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_ruta_o_superior),
 ):
+    # El score y la morosidad no están en ClienteUpdate: el campo no puede cambiarlos.
+    del usuario
     empresa = obtener_empresa_tenant(db)
     cliente = (
         db.query(Cliente)

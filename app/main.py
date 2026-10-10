@@ -1,8 +1,10 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.seguridad import CabecerasSeguridadMiddleware
 from app.models.core import Base
 from app.core.db import engine
 from app.core.migrate import aplicar_migraciones_sqlite
@@ -46,13 +48,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_origenes = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+if not _origenes:
+    _origenes = ["*"]
+# El comodín no puede ir con credenciales. La app móvil usa X-Usuario-Id, no cookies.
+_cors_abierto = _origenes == ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_origenes,
+    allow_credentials=not _cors_abierto,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Usuario-Id"],
 )
+app.add_middleware(CabecerasSeguridadMiddleware)
 
 # Registro de Routers principales
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])

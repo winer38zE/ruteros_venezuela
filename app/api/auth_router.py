@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.api.auth import verify_password
 from app.core.db import get_db
+from app.core.seguridad import exigir_cupo_login, limpiar_fallos_login, registrar_fallo_login
 from app.models.core import Usuario
 from app.schemas.core import UsuarioResponse
 
@@ -15,7 +16,8 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/login", response_model=UsuarioResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    exigir_cupo_login(request, body.username)
     usuario = (
         db.query(Usuario)
         .filter(Usuario.username == body.username.strip(), Usuario.activo.is_(True))
@@ -28,5 +30,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         except Exception:
             valido = False
     if not valido or usuario is None:
+        registrar_fallo_login(request, body.username)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+    limpiar_fallos_login(request, body.username)
     return usuario

@@ -1,11 +1,13 @@
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-# Configuraciones de Seguridad (En producción, esto va en un archivo .env)
-SECRET_KEY = "tu_super_clave_secreta_aqui_no_la_compartas"
+# La clave por defecto se mantiene para no invalidar sesiones ya emitidas.
+# En producción defina JWT_SECRET_KEY en el entorno del servidor.
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "tu_super_clave_secreta_aqui_no_la_compartas")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # El token dura 1 semana para los ruteros
 
