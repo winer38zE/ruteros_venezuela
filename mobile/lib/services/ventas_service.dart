@@ -168,6 +168,7 @@ class VentasService {
     String metodoPago = 'efectivo',
     String? referenciaPago,
     String? comprobanteBase64,
+    String? cuentaBancariaId,
   }) async {
     final body = {
       'cliente_id': clienteId,
@@ -182,6 +183,7 @@ class VentasService {
         'referencia_pago': referenciaPago.trim(),
       if (comprobanteBase64 != null && comprobanteBase64.isNotEmpty)
         'comprobante_base64': comprobanteBase64,
+      if (cuentaBancariaId != null) 'cuenta_bancaria_id': cuentaBancariaId,
       if (numeroCuotas != null) 'numero_cuotas': numeroCuotas,
       if (almacenId != null) 'almacen_id': almacenId,
       if (ventaId != null) 'id': ventaId,

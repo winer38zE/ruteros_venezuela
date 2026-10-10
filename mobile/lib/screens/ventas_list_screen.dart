@@ -30,7 +30,11 @@ class _VentasListScreenState extends State<VentasListScreen> {
 
   String _etiquetaVenta(Venta venta) {
     final tipo = venta.frecuenciaPago == 'contado' ? 'Contado' : 'Crédito';
-    final metodo = venta.metodoPago == 'transferencia' ? 'Transferencia' : 'Efectivo';
+    final metodo = venta.metodoPago == 'pago_movil'
+        ? 'Pago móvil'
+        : venta.metodoPago == 'transferencia'
+            ? 'Transferencia'
+            : 'Efectivo';
     return '$tipo · $metodo';
   }
 

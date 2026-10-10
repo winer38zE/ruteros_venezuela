@@ -194,8 +194,10 @@ class CobrosService {
     required double tasaEur,
     String? cobroId,
     bool esTransferencia = false,
+    String? canal,
     String? referenciaPago,
     String? comprobanteBase64,
+    String? cuentaBancariaId,
   }) async {
     final body = {
       'venta_id': ventaId,
@@ -204,11 +206,13 @@ class CobrosService {
       'tasa_usd_aplicada': tasaUsd,
       'tasa_eur_aplicada': tasaEur,
       'es_transferencia': esTransferencia,
+      if (canal != null) 'canal': canal,
       if (cobroId != null) 'id': cobroId,
       if (referenciaPago != null && referenciaPago.trim().isNotEmpty)
         'referencia_pago': referenciaPago.trim(),
       if (comprobanteBase64 != null && comprobanteBase64.isNotEmpty)
         'comprobante_base64': comprobanteBase64,
+      if (cuentaBancariaId != null) 'cuenta_bancaria_id': cuentaBancariaId,
     };
     final data = await _api.post('/cobros/', body);
     return Cobro.fromJson(data);

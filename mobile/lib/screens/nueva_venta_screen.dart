@@ -35,7 +35,8 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   Almacen? _almacen;
   bool _usarClienteExistente = true;
   bool _esCredito = true;
-  bool _pagoTransferencia = false;
+  String _metodoPago = 'efectivo';
+  String? _cuentaBancariaId;
   bool _creditoBloqueado = false;
   String _clasificacionCredito = '';
   String _frecuencia = 'semanal';
@@ -66,6 +67,12 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
   final _fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _frecuenciasCredito = ['semanal', 'quincenal', 'mensual'];
+
+  bool get _pagoElectronico =>
+      _metodoPago == 'transferencia' || _metodoPago == 'pago_movil';
+
+  String _nombreMetodo(String metodo) =>
+      metodo == 'pago_movil' ? 'Pago Móvil' : 'transferencia';
 
   @override
   void initState() {
@@ -427,17 +434,18 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             longitudResidencia: _lngRes,
             latitudTrabajo: _latTrab,
             longitudTrabajo: _lngTrab,
-            metodoPago: _pagoTransferencia ? 'transferencia' : 'efectivo',
-            referenciaPago: _pagoTransferencia ? _referenciaCtrl.text : null,
-            comprobanteBase64: _pagoTransferencia ? _comprobanteBase64 : null,
+            metodoPago: _metodoPago,
+            referenciaPago: _pagoElectronico ? _referenciaCtrl.text : null,
+            comprobanteBase64: _pagoElectronico ? _comprobanteBase64 : null,
+            cuentaBancariaId: _pagoElectronico ? _cuentaBancariaId : null,
           );
       if (!mounted) return;
       final msg = borrador
           ? 'Borrador guardado (${venta.estado})'
           : venta.estado == 'por_verificar'
-              ? 'Venta de contado por transferencia: Pagada (Por Verificar)'
-              : _pagoTransferencia && _esCredito
-                  ? 'Venta a crédito por transferencia: ${_fmt.format(_total)}'
+              ? 'Venta de contado por ${_nombreMetodo(_metodoPago)}: Pagada (Por Verificar)'
+              : _pagoElectronico && _esCredito
+                  ? 'Venta a crédito por ${_nombreMetodo(_metodoPago)}: ${_fmt.format(_total)}'
                   : 'Venta registrada: ${_fmt.format(_total)}';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       if (!borrador && venta.cuotas.isNotEmpty) {
@@ -589,21 +597,29 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                 const SizedBox(height: 16),
                 const Text('Fase 2 · Método de pago', style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
-                SegmentedButton<bool>(
+                SegmentedButton<String>(
                   segments: const [
                     ButtonSegment(
-                      value: false,
+                      value: 'efectivo',
                       label: Text('Efectivo'),
                       icon: Icon(Icons.payments_outlined),
                     ),
                     ButtonSegment(
-                      value: true,
-                      label: Text('Transferencia'),
+                      value: 'transferencia',
+                      label: Text('Transfer.'),
                       icon: Icon(Icons.account_balance_outlined),
                     ),
+                    ButtonSegment(
+                      value: 'pago_movil',
+                      label: Text('Pago móvil'),
+                      icon: Icon(Icons.phone_android_rounded),
+                    ),
                   ],
-                  selected: {_pagoTransferencia},
-                  onSelectionChanged: (s) => setState(() => _pagoTransferencia = s.first),
+                  selected: {_metodoPago},
+                  onSelectionChanged: (s) => setState(() {
+                    _metodoPago = s.first;
+                    _cuentaBancariaId = null;
+                  }),
                 ),
                 if (_creditoBloqueado) ...[
                   const SizedBox(height: 12),
@@ -622,14 +638,16 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     ),
                   ),
                 ],
-                if (_pagoTransferencia) ...[
+                if (_pagoElectronico) ...[
                   const SizedBox(height: 16),
                   FaseTransferencia(
                     esCredito: _esCredito,
+                    canal: _metodoPago,
                     detalleCredito: _esCredito ? _frecuencia : null,
                     referenciaCtrl: _referenciaCtrl,
                     comprobanteNombre: _comprobanteNombre,
                     onElegirFoto: _elegirComprobante,
+                    onCuentaChanged: (cuenta) => _cuentaBancariaId = cuenta?.id,
                     onQuitarFoto: () => setState(() {
                       _comprobanteBase64 = null;
                       _comprobanteNombre = null;

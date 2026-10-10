@@ -28,6 +28,29 @@ class DatosBancariosUpdate(BaseModel):
     numero_cuenta: Optional[str] = Field(default=None, max_length=64)
     cedula_nit: Optional[str] = Field(default=None, max_length=32)
 
+class CuentaBancariaCreate(BaseModel):
+    canal: str = Field(default="transferencia", pattern="^(transferencia|pago_movil)$")
+    banco: str = Field(min_length=1, max_length=120)
+    tipo_cuenta: Optional[str] = Field(default=None, max_length=40)
+    numero_cuenta: Optional[str] = Field(default=None, max_length=64)
+    telefono: Optional[str] = Field(default=None, max_length=20)
+    titular: str = Field(min_length=1, max_length=160)
+    documento: str = Field(min_length=1, max_length=32)
+
+class CuentaBancariaResponse(BaseModel):
+    id: UUID
+    empresa_id: UUID
+    banco: str
+    tipo_cuenta: str
+    numero_cuenta: str
+    titular: str
+    documento: str
+    canal: str = "transferencia"
+    telefono: Optional[str] = None
+    activa: bool = True
+
+    model_config = ConfigDict(from_attributes=True)
+
 # --- USUARIOS ---
 class UsuarioCreate(BaseModel):
     nombre: str
@@ -362,9 +385,10 @@ class VentaCreate(BaseModel):
     longitud_residencia: Optional[float] = None
     latitud_trabajo: Optional[float] = None
     longitud_trabajo: Optional[float] = None
-    metodo_pago: Optional[str] = Field(default="efectivo", pattern="^(efectivo|transferencia)$")
+    metodo_pago: Optional[str] = Field(default="efectivo", pattern="^(efectivo|transferencia|pago_movil)$")
     referencia_pago: Optional[str] = Field(default=None, max_length=80)
     comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
+    cuenta_bancaria_id: Optional[UUID] = None
 
 class CuotaAmortizacionResponse(BaseModel):
     id: UUID
@@ -393,6 +417,7 @@ class VentaResponse(BaseModel):
     metodo_pago: str = "efectivo"
     referencia_pago: Optional[str] = None
     tiene_comprobante: bool = False
+    cuenta_bancaria_id: Optional[UUID] = None
     detalles: List[DetalleVentaResponse] = []
     cuotas: List[CuotaAmortizacionResponse] = []
 
@@ -460,8 +485,10 @@ class CobroCreate(BaseModel):
     tasa_usd_aplicada: float
     tasa_eur_aplicada: float
     es_transferencia: bool = False
+    canal: Optional[str] = Field(default=None, pattern="^(transferencia|pago_movil)$")
     referencia_pago: Optional[str] = Field(default=None, max_length=80)
     comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
+    cuenta_bancaria_id: Optional[UUID] = None
 
 class CobroResponse(BaseModel):
     id: UUID
@@ -480,6 +507,7 @@ class CobroResponse(BaseModel):
     referencia_pago: Optional[str] = None
     tiene_comprobante: bool = False
     estado_venta: Optional[str] = None
+    cuenta_bancaria_id: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

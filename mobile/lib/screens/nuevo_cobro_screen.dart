@@ -28,7 +28,8 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
 
   VentaPendiente? _venta;
   String _moneda = 'usd';
-  bool _esTransferencia = false;
+  String _canalCobro = 'efectivo';
+  String? _cuentaBancariaId;
   final _montoCtrl = TextEditingController();
   final _referenciaCtrl = TextEditingController();
   String? _comprobanteBase64;
@@ -163,9 +164,11 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
             tasaUsd: _tasa!.usdBcvBs,
             tasaEur: _tasa!.eurBs,
             cobroId: const Uuid().v4(),
-            esTransferencia: _esTransferencia,
-            referenciaPago: _esTransferencia ? _referenciaCtrl.text : null,
-            comprobanteBase64: _esTransferencia ? _comprobanteBase64 : null,
+            esTransferencia: _canalCobro != 'efectivo',
+            canal: _canalCobro == 'efectivo' ? null : _canalCobro,
+            referenciaPago: _canalCobro != 'efectivo' ? _referenciaCtrl.text : null,
+            comprobanteBase64: _canalCobro != 'efectivo' ? _comprobanteBase64 : null,
+            cuentaBancariaId: _canalCobro != 'efectivo' ? _cuentaBancariaId : null,
           );
       if (!mounted) return;
       final porVerificar = cobro.estadoVenta == 'por_verificar';
@@ -316,28 +319,33 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                           ),
                         ),
                       ],
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Pago por transferencia'),
-                        subtitle: Text(
-                          _venta == null
-                              ? 'Muestra la cuenta de la empresa y adjunta el comprobante'
-                              : _venta!.frecuenciaPago == 'contado'
-                                  ? 'Transferencia para venta de contado'
-                                  : 'Transferencia para venta a crédito (${_venta!.tipoCredito})',
+                      DropdownButtonFormField<String>(
+                        value: _canalCobro,
+                        decoration: const InputDecoration(
+                          labelText: 'Medio de pago en Venezuela',
+                          prefixIcon: Icon(Icons.account_balance_rounded),
                         ),
-                        value: _esTransferencia,
-                        onChanged: (v) => setState(() => _esTransferencia = v),
+                        items: const [
+                          DropdownMenuItem(value: 'efectivo', child: Text('Efectivo')),
+                          DropdownMenuItem(value: 'transferencia', child: Text('Transferencia bancaria')),
+                          DropdownMenuItem(value: 'pago_movil', child: Text('Pago móvil')),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _canalCobro = v ?? 'efectivo';
+                          _cuentaBancariaId = null;
+                        }),
                       ),
-                      if (_esTransferencia) ...[
+                      if (_canalCobro != 'efectivo') ...[
                         FaseTransferencia(
                           esCredito: _venta != null && _venta!.frecuenciaPago != 'contado',
+                          canal: _canalCobro,
                           detalleCredito: _venta != null && _venta!.frecuenciaPago != 'contado'
                               ? _venta!.tipoCredito
                               : null,
                           referenciaCtrl: _referenciaCtrl,
                           comprobanteNombre: _comprobanteNombre,
                           onElegirFoto: _elegirComprobante,
+                          onCuentaChanged: (cuenta) => _cuentaBancariaId = cuenta?.id,
                           onQuitarFoto: () => setState(() {
                             _comprobanteBase64 = null;
                             _comprobanteNombre = null;

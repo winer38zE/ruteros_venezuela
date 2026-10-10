@@ -1,5 +1,6 @@
 """Migraciones ligeras para SQLite (añade columnas nuevas sin borrar datos)."""
 import unicodedata
+import uuid
 
 from sqlalchemy import inspect, text
 
@@ -80,12 +81,14 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("metodo_pago", "VARCHAR(20) DEFAULT 'efectivo'"),
             ("referencia_pago", "VARCHAR(80)"),
             ("comprobante_base64", "TEXT"),
+            ("cuenta_bancaria_id", "CHAR(36)"),
         ],
         "cobros": [
             ("es_transferencia", "BOOLEAN DEFAULT 0"),
             ("verificado", "BOOLEAN DEFAULT 1"),
             ("referencia_pago", "VARCHAR(80)"),
             ("comprobante_base64", "TEXT"),
+            ("cuenta_bancaria_id", "CHAR(36)"),
         ],
         "proveedores": [
             ("saldo_deuda_usd", "NUMERIC(12, 2) DEFAULT 0"),
@@ -121,6 +124,111 @@ def aplicar_migraciones_sqlite(engine) -> None:
                 )
             )
             _rellenar_dia_y_orden_ruta(conn)
+
+        _asegurar_tabla_cuentas_bancarias(conn)
+        _ampliar_cuentas_bancarias(conn)
+        if _tabla_sqlite(conn, "empresas") and _tabla_sqlite(conn, "cuentas_bancarias"):
+            _sembrar_cuentas_bancarias(conn)
+
+
+def _tabla_sqlite(conn, nombre: str) -> bool:
+    fila = conn.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :nombre"),
+        {"nombre": nombre},
+    ).first()
+    return fila is not None
+
+
+def _asegurar_tabla_cuentas_bancarias(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS cuentas_bancarias (
+                id CHAR(36) PRIMARY KEY,
+                empresa_id CHAR(36) NOT NULL,
+                banco VARCHAR(120) NOT NULL,
+                tipo_cuenta VARCHAR(40) NOT NULL,
+                numero_cuenta VARCHAR(64) NOT NULL,
+                titular VARCHAR(160) NOT NULL,
+                documento VARCHAR(32) NOT NULL,
+                canal VARCHAR(20) NOT NULL DEFAULT 'transferencia',
+                telefono VARCHAR(20),
+                activa BOOLEAN NOT NULL DEFAULT 1,
+                fecha_creacion DATETIME
+            )
+            """
+        )
+    )
+
+
+def _ampliar_cuentas_bancarias(conn) -> None:
+    if not _tabla_sqlite(conn, "cuentas_bancarias"):
+        return
+    existentes = {
+        fila[1]
+        for fila in conn.execute(text("PRAGMA table_info(cuentas_bancarias)")).fetchall()
+    }
+    if "canal" not in existentes:
+        conn.execute(
+            text(
+                "ALTER TABLE cuentas_bancarias "
+                "ADD COLUMN canal VARCHAR(20) DEFAULT 'transferencia'"
+            )
+        )
+    if "telefono" not in existentes:
+        conn.execute(text("ALTER TABLE cuentas_bancarias ADD COLUMN telefono VARCHAR(20)"))
+    conn.execute(
+        text(
+            "UPDATE cuentas_bancarias SET canal = 'transferencia' "
+            "WHERE canal IS NULL OR canal = ''"
+        )
+    )
+
+
+def _sembrar_cuentas_bancarias(conn) -> None:
+    columnas = {
+        fila[1]
+        for fila in conn.execute(text("PRAGMA table_info(empresas)")).fetchall()
+    }
+    if "numero_cuenta" not in columnas:
+        return
+    empresas = conn.execute(
+        text(
+            "SELECT id, nombre, banco, tipo_cuenta, numero_cuenta, cedula_nit FROM empresas"
+        )
+    ).fetchall()
+    for empresa_id, nombre, banco, tipo, numero, documento in empresas:
+        numero_limpio = (numero or "").strip()
+        if not numero_limpio:
+            continue
+        ya = conn.execute(
+            text("SELECT 1 FROM cuentas_bancarias WHERE empresa_id = :empresa_id LIMIT 1"),
+            {"empresa_id": str(empresa_id)},
+        ).first()
+        if ya:
+            continue
+        conn.execute(
+            text(
+                """
+                INSERT INTO cuentas_bancarias (
+                    id, empresa_id, banco, tipo_cuenta, numero_cuenta,
+                    titular, documento, canal, activa
+                ) VALUES (
+                    :id, :empresa_id, :banco, :tipo_cuenta, :numero_cuenta,
+                    :titular, :documento, 'transferencia', 1
+                )
+                """
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "empresa_id": str(empresa_id),
+                "banco": (banco or "Banco").strip() or "Banco",
+                "tipo_cuenta": (tipo or "Ahorro").strip() or "Ahorro",
+                "numero_cuenta": numero_limpio,
+                "titular": (nombre or "Titular").strip() or "Titular",
+                "documento": (documento or "Sin documento").strip() or "Sin documento",
+            },
+        )
 
 
 def _clave_dia(valor: str) -> str:

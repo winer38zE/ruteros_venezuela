@@ -151,6 +151,25 @@ class Empresa(Base):
         "ConfiguracionFiscal", back_populates="empresa", uselist=False
     )
     almacenes = relationship("Almacen", back_populates="empresa")
+    cuentas_bancarias = relationship("CuentaBancaria", back_populates="empresa")
+
+
+class CuentaBancaria(Base):
+    __tablename__ = "cuentas_bancarias"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    banco = Column(String(120), nullable=False)
+    tipo_cuenta = Column(String(40), nullable=False)
+    numero_cuenta = Column(String(64), nullable=False)
+    titular = Column(String(160), nullable=False)
+    documento = Column(String(32), nullable=False)
+    canal = Column(String(20), nullable=False, default="transferencia")
+    telefono = Column(String(20), nullable=True)
+    activa = Column(Boolean, nullable=False, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa", back_populates="cuentas_bancarias")
 
 
 # ---------- USUARIO ----------
@@ -427,6 +446,7 @@ class Venta(Base):
     metodo_pago = Column(String(20), nullable=False, default="efectivo")
     referencia_pago = Column(String(80), nullable=True)
     comprobante_base64 = Column(Text, nullable=True)
+    cuenta_bancaria_id = Column(GUID(), ForeignKey("cuentas_bancarias.id"), nullable=True)
 
     sincronizado = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
@@ -486,6 +506,7 @@ class Cobro(Base):
     verificado = Column(Boolean, nullable=False, default=True)
     referencia_pago = Column(String(80), nullable=True)
     comprobante_base64 = Column(Text, nullable=True)
+    cuenta_bancaria_id = Column(GUID(), ForeignKey("cuentas_bancarias.id"), nullable=True)
 
     sincronizado = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)

@@ -5,19 +5,29 @@ import '../providers/app_state.dart';
 import '../screens/datos_bancarios_screen.dart';
 import '../services/empresa_service.dart';
 import '../theme/app_theme.dart';
-import 'glass_container.dart';
 
-class DatosBancariosCard extends StatefulWidget {
-  const DatosBancariosCard({super.key});
+class SelectorCuentaBancaria extends StatefulWidget {
+  const SelectorCuentaBancaria({
+    super.key,
+    required this.onChanged,
+    this.canal = 'transferencia',
+  });
+
+  final ValueChanged<CuentaBancaria?> onChanged;
+  final String canal;
 
   @override
-  State<DatosBancariosCard> createState() => _DatosBancariosCardState();
+  State<SelectorCuentaBancaria> createState() => _SelectorCuentaBancariaState();
 }
 
-class _DatosBancariosCardState extends State<DatosBancariosCard> {
-  DatosBancarios? _datos;
+class _SelectorCuentaBancariaState extends State<SelectorCuentaBancaria> {
+  List<CuentaBancaria> _cuentas = [];
+  CuentaBancaria? _seleccionada;
   bool _cargando = true;
   String? _error;
+
+  List<CuentaBancaria> get _visibles =>
+      _cuentas.where((c) => c.canal == widget.canal).toList();
 
   @override
   void initState() {
@@ -31,127 +41,182 @@ class _DatosBancariosCardState extends State<DatosBancariosCard> {
       _error = null;
     });
     try {
-      final datos = await context.read<AppState>().empresas.datosBancarios();
+      final cuentas = await context.read<AppState>().empresas.cuentasBancarias();
       if (!mounted) return;
-      setState(() => _datos = datos);
+      setState(() => _cuentas = cuentas);
+      _publicarSeleccion();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
+      widget.onChanged(null);
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
   }
 
-  Future<void> _copiar(String etiqueta, String valor) async {
+  void _publicarSeleccion() {
+    final visibles = _visibles;
+    final previa = _seleccionada?.id;
+    CuentaBancaria? elegida;
+    for (final cuenta in visibles) {
+      if (cuenta.id == previa) elegida = cuenta;
+    }
+    elegida ??= visibles.isEmpty ? null : visibles.first;
+    setState(() => _seleccionada = elegida);
+    widget.onChanged(elegida);
+  }
+
+  Future<void> _copiarDato() async {
+    final cuenta = _seleccionada;
+    if (cuenta == null) return;
+    final valor = cuenta.datoCopiable.trim();
+    if (valor.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: valor));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$etiqueta copiado')),
-    );
-  }
-
-  Future<void> _copiarTodo() async {
-    final datos = _datos;
-    if (datos == null) return;
-    final lineas = <String>[
-      if ((datos.banco ?? '').trim().isNotEmpty) 'Banco: ${datos.banco}',
-      if ((datos.tipoCuenta ?? '').trim().isNotEmpty) 'Tipo de cuenta: ${datos.tipoCuenta}',
-      if ((datos.numeroCuenta ?? '').trim().isNotEmpty) 'Número: ${datos.numeroCuenta}',
-      if ((datos.cedulaNit ?? '').trim().isNotEmpty) 'Cédula/NIT: ${datos.cedulaNit}',
-    ];
-    if (lineas.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: lineas.join('\n')));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Datos bancarios copiados')),
+      SnackBar(
+        content: Text(
+          cuenta.esPagoMovil ? 'Teléfono de Pago Móvil copiado' : 'Número de cuenta copiado',
+        ),
+      ),
     );
   }
 
   Future<void> _abrirConfiguracion() async {
-    final guardado = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (_) => const DatosBancariosScreen()),
     );
-    if (guardado == true) _cargar();
+    if (mounted) _cargar();
+  }
+
+  void _elegir(String? id) {
+    CuentaBancaria? cuenta;
+    for (final item in _visibles) {
+      if (item.id == id) cuenta = item;
+    }
+    setState(() => _seleccionada = cuenta);
+    widget.onChanged(cuenta);
   }
 
   @override
   Widget build(BuildContext context) {
     final puedeEditar = context.watch<AppState>().puedeOperaciones;
-    return GlassContainer(
-      accentColor: AppColors.neonBlue,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_cargando)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          )
+        else if (_error != null)
+          Text(_error!, style: const TextStyle(color: Color(0xFFEF4444)))
+        else if (_visibles.isEmpty)
+          Text(
+            puedeEditar
+                ? (widget.canal == 'pago_movil'
+                    ? 'No hay Pago Móvil. Agrega banco, teléfono, titular y cédula.'
+                    : 'No hay transferencia bancaria. Agrega banco, tipo, número, titular y cédula o RIF.')
+                : 'La empresa aún no configuró este medio de pago.',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          )
+        else ...[
+          DropdownButtonFormField<String>(
+            value: _seleccionada?.id,
+            decoration: InputDecoration(
+              labelText: widget.canal == 'pago_movil' ? 'Pago Móvil de destino' : 'Cuenta de destino',
+              prefixIcon: const Icon(Icons.account_balance_rounded),
+            ),
+            items: _visibles
+                .map(
+                  (c) => DropdownMenuItem(
+                    value: c.id,
+                    child: Text(c.etiqueta, overflow: TextOverflow.ellipsis),
+                  ),
+                )
+                .toList(),
+            onChanged: _elegir,
+          ),
+          if (_seleccionada != null) ...[
+            const SizedBox(height: 12),
+            _TarjetaCuenta(cuenta: _seleccionada!, onCopiar: _copiarDato),
+          ],
+        ],
+        if (puedeEditar)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _abrirConfiguracion,
+              icon: const Icon(Icons.account_balance_rounded),
+              label: Text(_visibles.isEmpty ? 'Agregar cuenta' : 'Administrar cuentas'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TarjetaCuenta extends StatelessWidget {
+  const _TarjetaCuenta({required this.cuenta, required this.onCopiar});
+
+  final CuentaBancaria cuenta;
+  final VoidCallback onCopiar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.bgElevated.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.neonBlue.withValues(alpha: 0.35)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Datos para la transferencia',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'El cliente puede copiar estos datos y pagar desde su banco.',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          if (_cargando)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: LinearProgressIndicator(),
-            )
-          else if (_error != null)
-            Text(_error!, style: const TextStyle(color: Color(0xFFEF4444)))
-          else if (_datos == null || !_datos!.configurado)
-            Text(
-              puedeEditar
-                  ? 'Aún no hay cuenta configurada. Registra banco, tipo, número y cédula o NIT.'
-                  : 'La empresa aún no configuró la cuenta de transferencia.',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            )
-          else ...[
-            _fila('Banco', _datos!.banco),
-            _fila('Tipo de cuenta', _datos!.tipoCuenta),
-            _fila('Número', _datos!.numeroCuenta),
-            _fila('Cédula/NIT', _datos!.cedulaNit),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _copiarTodo,
-                icon: const Icon(Icons.copy_all_rounded),
-                label: const Text('Copiar todo'),
-              ),
-            ),
+          Text(cuenta.banco, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 10),
+          if (cuenta.esPagoMovil) ...[
+            _dato('Teléfono', cuenta.datoCopiable),
+            _dato('Titular', cuenta.titular),
+            _dato('Cédula', cuenta.documento),
+          ] else ...[
+            _dato('Número', cuenta.numeroCuenta),
+            _dato('Tipo', cuenta.tipoCuenta),
+            _dato('Titular', cuenta.titular),
+            _dato('Cédula/RIF', cuenta.documento),
           ],
-          if (puedeEditar)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _abrirConfiguracion,
-                icon: const Icon(Icons.account_balance_rounded),
-                label: Text(_datos?.configurado == true ? 'Editar datos' : 'Configurar cuenta'),
-              ),
-            ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: cuenta.datoCopiable.trim().isEmpty ? null : onCopiar,
+            icon: const Icon(Icons.copy_rounded),
+            label: Text(cuenta.esPagoMovil ? 'Copiar teléfono' : 'Copiar número de cuenta'),
+          ),
         ],
       ),
     );
   }
 
-  Widget _fila(String etiqueta, String? valor) {
-    final texto = (valor ?? '').trim();
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      title: Text(etiqueta, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-      subtitle: Text(
-        texto.isEmpty ? 'Sin configurar' : texto,
-        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-      ),
-      trailing: texto.isEmpty
-          ? null
-          : IconButton(
-              tooltip: 'Copiar',
-              onPressed: () => _copiar(etiqueta, texto),
-              icon: const Icon(Icons.copy_rounded),
+  Widget _dato(String etiqueta, String valor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 92,
+            child: Text(etiqueta, style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+          ),
+          Expanded(
+            child: Text(
+              valor.trim().isEmpty ? '—' : valor,
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -163,16 +228,20 @@ class FaseTransferencia extends StatelessWidget {
     required this.referenciaCtrl,
     required this.comprobanteNombre,
     required this.onElegirFoto,
+    required this.onCuentaChanged,
     this.onQuitarFoto,
     this.detalleCredito,
+    this.canal = 'transferencia',
   });
 
   final bool esCredito;
+  final String canal;
   final String? detalleCredito;
   final TextEditingController referenciaCtrl;
   final String? comprobanteNombre;
   final VoidCallback onElegirFoto;
   final VoidCallback? onQuitarFoto;
+  final ValueChanged<CuentaBancaria?> onCuentaChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -195,9 +264,9 @@ class FaseTransferencia extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Fase 2 · Transferencia bancaria',
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w700),
+              Text(
+                canal == 'pago_movil' ? 'Fase 2 · Pago Móvil' : 'Fase 2 · Transferencia bancaria',
+                style: const TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               Text(metodo, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
@@ -207,7 +276,11 @@ class FaseTransferencia extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        const DatosBancariosCard(),
+        SelectorCuentaBancaria(
+          key: ValueKey(canal),
+          canal: canal,
+          onChanged: onCuentaChanged,
+        ),
         const SizedBox(height: 12),
         CamposComprobanteTransferencia(
           referenciaCtrl: referenciaCtrl,

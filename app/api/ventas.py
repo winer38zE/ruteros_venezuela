@@ -10,6 +10,7 @@ from app.core.deps import (
     rol_confirma_pago,
 )
 from app.core.tenant import obtener_empresa_tenant
+from app.api.empresas import resolver_cuenta_transferencia
 from app.models.core import (
     Venta, Cliente, Usuario, FrecuenciaPago, EstadoVenta, TipoCliente,
     RolUsuario, TipoTasaUsd, Producto, DetalleVenta,
@@ -102,6 +103,7 @@ def _venta_a_response(venta: Venta) -> VentaResponse:
         metodo_pago=venta.metodo_pago or "efectivo",
         referencia_pago=venta.referencia_pago,
         tiene_comprobante=bool(venta.comprobante_base64),
+        cuenta_bancaria_id=venta.cuenta_bancaria_id,
         detalles=venta.detalles or [],
         cuotas=cuotas_enriquecidas,
     )
@@ -140,8 +142,13 @@ def crear_venta(
 
     es_borrador = venta.es_borrador and vendedor_actual.rol == RolUsuario.VENDEDOR
     metodo = (venta.metodo_pago or "efectivo").strip().lower()
-    if metodo not in ("efectivo", "transferencia"):
+    if metodo not in ("efectivo", "transferencia", "pago_movil"):
         raise HTTPException(status_code=400, detail="Método de pago inválido")
+    cuenta_destino = None
+    if metodo in ("transferencia", "pago_movil"):
+        cuenta_destino = resolver_cuenta_transferencia(
+            db, empresa_actual.id, venta.cuenta_bancaria_id, canal=metodo
+        )
 
     if not es_borrador:
         actualizar_historial_comportamiento(db, cliente_actual)
@@ -162,7 +169,7 @@ def crear_venta(
     if es_borrador:
         estado_inicial = EstadoVenta.BORRADOR
     elif frecuencia == FrecuenciaPago.CONTADO:
-        if metodo == "transferencia" and not rol_confirma_pago(vendedor_actual):
+        if metodo in ("transferencia", "pago_movil") and not rol_confirma_pago(vendedor_actual):
             estado_inicial = EstadoVenta.POR_VERIFICAR
         else:
             estado_inicial = EstadoVenta.PAGADA
@@ -186,6 +193,7 @@ def crear_venta(
         metodo_pago=metodo,
         referencia_pago=(venta.referencia_pago or "").strip() or None,
         comprobante_base64=venta.comprobante_base64,
+        cuenta_bancaria_id=cuenta_destino.id if cuenta_destino else None,
     )
 
     db.add(nueva_venta)
@@ -258,7 +266,7 @@ def aprobar_venta_borrador(
         raise HTTPException(status_code=400, detail="La venta no está en borrador")
 
     validar_venta_credito(venta.cliente, venta.frecuencia_pago)
-    if (venta.metodo_pago or "efectivo") == "transferencia" and venta.frecuencia_pago == FrecuenciaPago.CONTADO:
+    if (venta.metodo_pago or "efectivo") in ("transferencia", "pago_movil") and venta.frecuencia_pago == FrecuenciaPago.CONTADO:
         venta.estado = EstadoVenta.PAGADA
     else:
         venta.estado = EstadoVenta.PENDIENTE

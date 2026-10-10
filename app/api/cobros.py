@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import obtener_usuario_opcional, require_cobrador_o_superior, require_operaciones, rol_confirma_pago
 from app.core.tenant import obtener_empresa_tenant
+from app.api.empresas import resolver_cuenta_transferencia
 from app.models.core import (
     Cobro, Venta, Usuario, MonedaPago, EstadoVenta, RolUsuario,
     Producto, DetalleVenta, EstadoCuota,
@@ -250,6 +251,13 @@ def registrar_cobro(
         raise HTTPException(status_code=400, detail="Moneda de pago inválida")
 
     cobro_id = uuid.UUID(cobro.id) if cobro.id else uuid.uuid4()
+    canal = cobro.canal or ("transferencia" if cobro.es_transferencia else None)
+    electronico = canal in ("transferencia", "pago_movil")
+    cuenta_destino = None
+    if electronico:
+        cuenta_destino = resolver_cuenta_transferencia(
+            db, empresa_actual.id, cobro.cuenta_bancaria_id, canal=canal
+        )
 
     nuevo_cobro = Cobro(
         id=cobro_id,
@@ -261,9 +269,10 @@ def registrar_cobro(
         moneda_pago=moneda,
         tasa_usd_aplicada=cobro.tasa_usd_aplicada,
         tasa_eur_aplicada=cobro.tasa_eur_aplicada,
-        es_transferencia=bool(cobro.es_transferencia),
+        es_transferencia=electronico,
         referencia_pago=(cobro.referencia_pago or "").strip() or None,
         comprobante_base64=cobro.comprobante_base64,
+        cuenta_bancaria_id=cuenta_destino.id if cuenta_destino else None,
         verificado=True,
     )
 
