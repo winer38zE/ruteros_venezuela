@@ -95,13 +95,16 @@ class ClienteDetalle {
         estadoMorosidad: j['estado_morosidad'] ?? 'al_dia',
       );
 
-  bool get bloqueadoCredito => scoreCredito <= 35;
-  bool get creditoExcelente => scoreCredito >= 85;
-  bool get soloContado =>
-      bloqueadoCredito ||
+  bool get esMoroso =>
       estadoMorosidad == 'moroso' ||
       clasificacionCredito.toLowerCase().contains('moroso') ||
       nivelRiesgo == 'malo';
+
+  bool get bloqueadoCredito => scoreCredito < 50;
+
+  bool get creditoExcelente => scoreCredito >= 85;
+
+  bool get soloContado => bloqueadoCredito || esMoroso;
 }
 
 class HistorialBuroItem {

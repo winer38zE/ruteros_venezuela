@@ -32,11 +32,12 @@ class Cliente {
         estadoMorosidad: j['estado_morosidad'] ?? 'al_dia',
       );
 
-  bool get bloqueadoCredito => scoreCredito <= 35;
-  bool get soloContado =>
-      bloqueadoCredito ||
-      estadoMorosidad == 'moroso' ||
-      clasificacionCredito.toLowerCase().contains('moroso');
+  bool get esMoroso =>
+      estadoMorosidad == 'moroso' || clasificacionCredito.toLowerCase().contains('moroso');
+
+  bool get bloqueadoCredito => scoreCredito < 50;
+
+  bool get soloContado => bloqueadoCredito || esMoroso;
 }
 
 class Producto {

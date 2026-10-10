@@ -165,7 +165,7 @@ def crear_venta(
 
     if not es_borrador:
         actualizar_historial_comportamiento(db, cliente_actual)
-        validar_venta_credito(cliente_actual, frecuencia)
+    validar_venta_credito(cliente_actual, frecuencia)
 
     _actualizar_ubicacion_cliente(cliente_actual, venta)
 

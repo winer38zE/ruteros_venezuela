@@ -20,6 +20,7 @@ from app.models.core import (
 SCORE_MIN = 15
 SCORE_MAX = 100
 SCORE_BLOQUEO_CREDITO = 35
+SCORE_MINIMO_CREDITO = 50
 
 _DIAS_FRECUENCIA = {
     FrecuenciaPago.SEMANAL: 7,
@@ -58,8 +59,9 @@ def clasificacion_por_score(score: int, en_mora: bool = False) -> str:
 
 
 def credito_bloqueado(cliente: Cliente) -> bool:
+    """Crédito denegado si está moroso o el score no llega a 50."""
     score = cliente.score_credito if cliente.score_credito is not None else 70
-    if score <= SCORE_BLOQUEO_CREDITO:
+    if score < SCORE_MINIMO_CREDITO:
         return True
     if (cliente.estado_morosidad or "") == "moroso":
         return True
@@ -177,10 +179,10 @@ def validar_venta_credito(cliente: Cliente, frecuencia: FrecuenciaPago) -> None:
         return
     if credito_bloqueado(cliente):
         raise HTTPException(
-            status_code=403,
+            status_code=400,
             detail=(
-                "Crédito Rechazado: el cliente está moroso o con alto riesgo. "
-                "Solo se permite pago de contado."
+                "Acción denegada: El cliente está reportado como moroso o su "
+                "score es insuficiente. Solo se permite venta al contado."
             ),
         )
 

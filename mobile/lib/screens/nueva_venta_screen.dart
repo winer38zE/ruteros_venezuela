@@ -38,6 +38,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   String _metodoPago = 'efectivo';
   String? _cuentaBancariaId;
   bool _creditoBloqueado = false;
+  int _avisoCredito = 0;
   String _clasificacionCredito = '';
   String _frecuencia = 'semanal';
   String _tipoTasa = 'bcv';
@@ -198,10 +199,47 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   void _aplicarRestriccionCredito({
     required bool soloContado,
     required String clasificacion,
+    bool avisar = false,
   }) {
     _creditoBloqueado = soloContado;
     _clasificacionCredito = clasificacion;
-    if (soloContado) _esCredito = false;
+    if (soloContado) {
+      _esCredito = false;
+      _frecuencia = 'contado';
+    }
+    if (!soloContado || !avisar) {
+      if (!soloContado) _avisoCredito++;
+      return;
+    }
+    final ticket = ++_avisoCredito;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ticket != _avisoCredito || !_creditoBloqueado) return;
+      _mostrarCreditoNoDisponible();
+    });
+  }
+
+  Future<void> _mostrarCreditoNoDisponible() async {
+    if (!mounted || !_creditoBloqueado) return;
+    setState(() {
+      _esCredito = false;
+      _frecuencia = 'contado';
+    });
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        title: const Text('Crédito No Disponible'),
+        content: const Text(
+          'Este cliente está reportado como moroso. El sistema exige venta estrictamente al CONTADO.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _onClienteExistenteChanged(Cliente? c) async {
@@ -212,6 +250,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
         _aplicarRestriccionCredito(
           soloContado: c.soloContado,
           clasificacion: c.clasificacionCredito,
+          avisar: c.soloContado,
         );
       } else {
         _creditoBloqueado = false;
@@ -238,6 +277,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
         _aplicarRestriccionCredito(
           soloContado: detalle.soloContado,
           clasificacion: detalle.clasificacionCredito,
+          avisar: detalle.soloContado,
         );
       });
     } catch (_) {}
@@ -595,12 +635,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   selected: {_esCredito},
                   onSelectionChanged: (s) {
                     if (s.first && _creditoBloqueado) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Este cliente solo puede comprar de contado.'),
-                          backgroundColor: Color(0xFFEF4444),
-                        ),
-                      );
+                      _mostrarCreditoNoDisponible();
                       return;
                     }
                     setState(() {
