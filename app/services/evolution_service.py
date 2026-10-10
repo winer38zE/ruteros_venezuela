@@ -110,6 +110,14 @@ def enviar_texto(numero: str, texto: str) -> tuple[bool, str]:
     return True, f"Reporte enviado por WhatsApp a {destino}"
 
 
+def _es_imagen(data: bytes) -> bool:
+    if data.startswith(b"\xff\xd8"):
+        return True
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    return len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+
+
 def _mime_y_nombre(data: bytes, nombre: str | None = None) -> tuple[str, str]:
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         mime, ext = "image/png", ".png"
@@ -153,6 +161,8 @@ def preparar_imagen_comprobante(
         raise ValueError("La imagen del comprobante está vacía")
     if len(data) > 1_500_000:
         raise ValueError("La imagen del comprobante es demasiado grande")
+    if not _es_imagen(data):
+        raise ValueError("El archivo debe ser una imagen JPG, PNG o WEBP")
 
     mime, nombre_archivo = _mime_y_nombre(data, nombre)
     payload = base64.b64encode(data).decode("ascii")
@@ -244,7 +254,7 @@ def enviar_imagen(
         "mediatype": "image",
         "mimetype": mime,
         "caption": texto,
-        "media": payload_b64,
+        "media": f"data:{mime};base64,{payload_b64}",
         "fileName": nombre,
     }
     headers = {"apikey": EVOLUTION_API_KEY, "Content-Type": "application/json"}

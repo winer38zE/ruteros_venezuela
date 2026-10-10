@@ -16,6 +16,7 @@ from app.api import (
     proveedores,
     auth_router,
     rutas,
+    whatsapp,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +65,7 @@ app.include_router(ventas.router, prefix="/api/v1/ventas", tags=["Ventas"])
 app.include_router(tasas_cambio.router, prefix="/api/v1/tasas-cambio", tags=["Tasas de Cambio"])
 app.include_router(cobros.router, prefix="/api/v1/cobros", tags=["Cobros"])
 app.include_router(rutas.router, prefix="/api/v1/rutas", tags=["Rutas"])
+app.include_router(whatsapp.router, prefix="/api/v1/whatsapp", tags=["WhatsApp"])
 app.include_router(
     configuracion_fiscal.router,
     prefix="/api/v1/configuracion-fiscal",
