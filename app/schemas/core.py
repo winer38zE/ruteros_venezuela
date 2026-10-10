@@ -219,6 +219,19 @@ class RutasResumenResponse(BaseModel):
     vendedores: List[ResumenVendedorRuta] = []
 
 
+class WhatsappReporteRequest(BaseModel):
+    telefono: Optional[str] = None
+    texto: Optional[str] = Field(default=None, max_length=4000)
+    dia: Optional[str] = None
+    fecha: Optional[date] = None
+
+
+class WhatsappReporteResponse(BaseModel):
+    enviado: bool
+    telefono: str
+    mensaje: str
+
+
 class HistorialBuroItem(BaseModel):
     fecha: str
     tipo: str

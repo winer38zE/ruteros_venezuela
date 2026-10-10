@@ -18,6 +18,8 @@ from app.schemas.core import (
     VisitaResponse,
     RutasResumenResponse,
     ResumenVendedorRuta,
+    WhatsappReporteRequest,
+    WhatsappReporteResponse,
 )
 from app.services.rutas import (
     dia_actual,
@@ -30,6 +32,7 @@ from app.services.rutas import (
     serializar_visita,
     resumen_rutas_dia,
 )
+from app.services.evolution_service import enviar_texto, formatear_resumen_rutas, normalizar_telefono
 
 router = APIRouter()
 
@@ -190,3 +193,41 @@ def resumen_rutas(
         dia=data["dia"],
         vendedores=[ResumenVendedorRuta(**v) for v in data["vendedores"]],
     )
+
+
+@router.post("/resumen/whatsapp", response_model=WhatsappReporteResponse)
+def enviar_resumen_whatsapp(
+    body: WhatsappReporteRequest,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_admin_o_dueno),
+):
+    """Envía el resumen del día, o un texto ya armado, por Evolution API."""
+    empresa = obtener_empresa_tenant(db)
+    telefono = (body.telefono or usuario.telefono or "").strip()
+    if not telefono:
+        raise HTTPException(
+            status_code=400,
+            detail="Indique el teléfono del dueño o cliente que recibirá el reporte",
+        )
+
+    try:
+        destino = normalizar_telefono(telefono)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if body.texto and body.texto.strip():
+        texto = body.texto.strip()
+    else:
+        try:
+            dia_obj = normalizar_dia(body.dia) if body.dia else dia_actual()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        data = resumen_rutas_dia(db, empresa.id, body.fecha, dia_obj)
+        texto = formatear_resumen_rutas(data)
+
+    ok, mensaje = enviar_texto(destino, texto)
+    if not ok:
+        status = 503 if "no está configurada" in mensaje else 502
+        raise HTTPException(status_code=status, detail=mensaje)
+
+    return WhatsappReporteResponse(enviado=True, telefono=destino, mensaje=mensaje)

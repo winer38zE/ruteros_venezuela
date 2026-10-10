@@ -16,6 +16,7 @@ class RutasResumenScreen extends StatefulWidget {
 class _RutasResumenScreenState extends State<RutasResumenScreen> {
   RutasResumenResult? _resumen;
   bool _cargando = true;
+  bool _enviando = false;
   String? _error;
   String _dia = RutasService.diaActual();
 
@@ -44,6 +45,32 @@ class _RutasResumenScreenState extends State<RutasResumenScreen> {
       _error = e.toString();
     } finally {
       if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _enviarWhatsapp() async {
+    final telefono = await showDialog<String>(
+      context: context,
+      builder: (ctx) => const _DialogoWhatsapp(),
+    );
+    if (telefono == null || telefono.trim().isEmpty || !mounted) return;
+
+    setState(() => _enviando = true);
+    try {
+      final mensaje = await context.read<AppState>().rutas.enviarResumenWhatsapp(
+            telefono: telefono.trim(),
+            dia: _dia,
+            fecha: RutasService.fechaActual(),
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFEF4444)),
+      );
+    } finally {
+      if (mounted) setState(() => _enviando = false);
     }
   }
 
@@ -94,6 +121,25 @@ class _RutasResumenScreenState extends State<RutasResumenScreen> {
                             Text(
                               '${_resumen!.vendedores.length} cobradores/vendedores con ruta activa',
                               style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _enviando ? null : _enviarWhatsapp,
+                                icon: _enviando
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Icon(Icons.chat_rounded),
+                                label: Text(_enviando ? 'Enviando…' : 'Enviar reporte por WhatsApp'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF25D366),
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -211,6 +257,50 @@ class _RutasResumenScreenState extends State<RutasResumenScreen> {
         '$label: $valor',
         style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
       ),
+    );
+  }
+}
+
+class _DialogoWhatsapp extends StatefulWidget {
+  const _DialogoWhatsapp();
+
+  @override
+  State<_DialogoWhatsapp> createState() => _DialogoWhatsappState();
+}
+
+class _DialogoWhatsappState extends State<_DialogoWhatsapp> {
+  final _telefonoCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _telefonoCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Enviar reporte por WhatsApp'),
+      content: TextField(
+        controller: _telefonoCtrl,
+        keyboardType: TextInputType.phone,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: 'Teléfono del dueño o cliente',
+          hintText: '58412XXXXXXX',
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () {
+            final tel = _telefonoCtrl.text.trim();
+            if (tel.length < 8) return;
+            Navigator.pop(context, tel);
+          },
+          child: const Text('Enviar'),
+        ),
+      ],
     );
   }
 }

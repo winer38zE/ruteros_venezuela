@@ -339,4 +339,19 @@ class RutasService {
     final data = await _api.get('/rutas/resumen${_query(params)}') as Map<String, dynamic>;
     return RutasResumenResult.fromJson(data);
   }
+
+  Future<String> enviarResumenWhatsapp({
+    required String telefono,
+    String? dia,
+    String? fecha,
+    String? texto,
+  }) async {
+    final data = await _api.post('/rutas/resumen/whatsapp', {
+      'telefono': telefono,
+      if (dia != null) 'dia': dia,
+      if (fecha != null) 'fecha': fecha,
+      if (texto != null && texto.trim().isNotEmpty) 'texto': texto.trim(),
+    }) as Map<String, dynamic>;
+    return (data['mensaje'] ?? 'Reporte enviado por WhatsApp').toString();
+  }
 }
