@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'app.dart';
+import 'local/isar_db.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await abrirBaseLocal();
   runApp(const RuterosApp());
 }
