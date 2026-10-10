@@ -16,7 +16,7 @@ import 'nuevo_cobro_screen.dart';
 import 'registrar_movimiento_screen.dart';
 import 'registrar_usuario_screen.dart';
 import 'usuarios_screen.dart';
-import 'clientes_list_screen.dart';
+import 'clientes_screen.dart';
 import 'tasas_screen.dart';
 import 'panel_cobranza_screen.dart';
 import 'proveedores_screen.dart';
@@ -114,7 +114,7 @@ class HomeScreen extends StatelessWidget {
           title: 'Gestión de Clientes',
           subtitle: 'Scoring, buró y referencias',
           color: AppColors.neonCyan,
-          screen: ClientesListScreen(),
+          screen: ClientesScreen(),
           badge: 'KYC',
         ),
         _ModuleDef(
@@ -237,7 +237,7 @@ class HomeScreen extends StatelessWidget {
         title: 'Gestión de Clientes',
         subtitle: 'Scoring, buró y referencias',
         color: AppColors.neonCyan,
-        screen: ClientesListScreen(),
+        screen: ClientesScreen(),
         badge: 'KYC',
       ));
       modules.add(const _ModuleDef(

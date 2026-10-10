@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
+import '../services/api_service.dart';
 import '../services/clientes_service.dart';
 import '../services/rutas_service.dart';
 import '../theme/app_theme.dart';
@@ -178,6 +179,29 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
       }
       if (!mounted) return;
       Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (!widget.esEdicion && e.statusCode == 0) {
+        var guardado = false;
+        try {
+          guardado = await context.read<AppState>().sync.encolarNuevo(_body());
+        } catch (_) {
+          guardado = false;
+        }
+        if (guardado && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sin señal. El cliente quedó en el teléfono y se subirá al sincronizar.'),
+            ),
+          );
+          Navigator.pop(context, true);
+          return;
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

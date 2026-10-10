@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
@@ -15,6 +17,7 @@ import '../services/tasas_service.dart';
 import '../services/rutas_service.dart';
 import '../services/empresa_service.dart';
 import '../services/whatsapp_service.dart';
+import '../services/sync_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
@@ -33,6 +36,7 @@ class AppState extends ChangeNotifier {
     rutas = RutasService(api);
     empresas = EmpresaService(api);
     whatsapp = WhatsappService(api);
+    sync = SyncService(api);
     _inicializar();
   }
 
@@ -52,6 +56,7 @@ class AppState extends ChangeNotifier {
   late final RutasService rutas;
   late final EmpresaService empresas;
   late final WhatsappService whatsapp;
+  late final SyncService sync;
 
   Usuario? usuario;
   bool inicializado = false;
@@ -72,6 +77,7 @@ class AppState extends ChangeNotifier {
   Future<void> _inicializar() async {
     try {
       usuario = await auth.restoreSession();
+      if (usuario != null) _arrancarSync();
     } catch (_) {
       usuario = null;
     } finally {
@@ -90,6 +96,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       usuario = await auth.login(correo, password, recordar: recordar);
+      if (usuario != null) _arrancarSync();
     } catch (e) {
       error = e.toString();
       usuario = null;
@@ -100,8 +107,15 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    await sync.dejarDeEscuchar();
+    await sync.limpiarLocal();
     await auth.logout();
     usuario = null;
     notifyListeners();
+  }
+
+  void _arrancarSync() {
+    sync.escucharRed();
+    unawaited(sync.sincronizar());
   }
 }

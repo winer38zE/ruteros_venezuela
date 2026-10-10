@@ -1,5 +1,7 @@
+import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.core.db import get_db
@@ -9,6 +11,10 @@ from app.schemas.core import (
     ClienteCreate,
     ClienteUpdate,
     ClienteResponse,
+    ClienteSyncItem,
+    ClienteSyncRequest,
+    ClienteSyncResponse,
+    ClienteSyncResultado,
     BuroCreditoResponse,
     ClienteAutocompletadoResponse,
     HistorialBuroItem,
@@ -36,6 +42,7 @@ from app.models.core import Usuario
 from typing import List, Optional
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _serializar_cliente(c: Cliente) -> ClienteResponse:
@@ -207,6 +214,213 @@ def verificar_identificacion(
             en_red=False,
         )
     return ClienteAutocompletadoResponse(**data)
+
+
+def _uuid_o_nada(valor: Optional[str]) -> Optional[UUID]:
+    if not valor or not str(valor).strip():
+        return None
+    try:
+        return UUID(str(valor).strip())
+    except ValueError:
+        return None
+
+
+def _resultado_sync(
+    cliente: Cliente,
+    *,
+    local_id: Optional[str],
+    accion: str,
+    detalle: Optional[str] = None,
+) -> ClienteSyncResultado:
+    score = int(cliente.score_credito or 70)
+    en_mora = (cliente.estado_morosidad or "") == "moroso"
+    return ClienteSyncResultado(
+        local_id=local_id,
+        cedula=cliente.identificacion,
+        servidor_id=cliente.id,
+        accion=accion,
+        es_moroso=en_mora,
+        score=score,
+        detalle=detalle,
+    )
+
+
+def _aplicar_item_sync(
+    db: Session,
+    item: ClienteSyncItem,
+    empresa_id: UUID,
+    usuario: Usuario,
+) -> ClienteSyncResultado:
+    """Crea o enlaza un cliente. Nunca copia score ni morosidad desde el teléfono."""
+    local_id = (item.local_id or "").strip() or None
+    ident_raw = (item.identificacion or "").strip()
+    ident = normalizar_identificacion(ident_raw) if ident_raw else ""
+    nombre = (item.nombre_completo or "").strip()
+
+    def error(detalle: str) -> ClienteSyncResultado:
+        return ClienteSyncResultado(
+            local_id=local_id,
+            cedula=ident or ident_raw,
+            accion="error",
+            detalle=detalle,
+        )
+
+    cliente = None
+    accion = "creado"
+    backend_id = _uuid_o_nada(item.backend_id)
+    if backend_id is not None:
+        cliente = (
+            db.query(Cliente)
+            .filter(Cliente.id == backend_id, Cliente.empresa_id == empresa_id)
+            .first()
+        )
+        if cliente is not None:
+            accion = "actualizado"
+
+    if cliente is None and ident:
+        por_cedula = db.query(Cliente).filter(Cliente.identificacion == ident).first()
+        if por_cedula is not None:
+            if por_cedula.empresa_id != empresa_id:
+                en_mora = (por_cedula.estado_morosidad or "") == "moroso"
+                return ClienteSyncResultado(
+                    local_id=local_id,
+                    cedula=ident,
+                    accion="duplicado",
+                    es_moroso=en_mora,
+                    score=int(por_cedula.score_credito or 70),
+                    detalle="La cédula ya está registrada en la red Ruteros.",
+                )
+            cliente = por_cedula
+            accion = "existente"
+
+    if cliente is None and (len(nombre) < 2 or len(ident) < 5):
+        return error("Nombre e identificación (mín. 5 caracteres) son obligatorios.")
+
+    if cliente is None:
+        tipo = (item.tipo_cliente or "detal").strip().lower()
+        if tipo not in ("detal", "mayorista"):
+            return error("Tipo de cliente no válido.")
+        try:
+            dia_visita = resolver_dia(item.dia_ruta, item.dia_visita)
+        except ValueError as exc:
+            return error(str(exc))
+        orden = item.orden_ruta if item.orden_ruta is not None else item.orden_secuencial
+        if orden is not None and orden < 1:
+            return error("El orden de la ruta debe ser 1 o mayor.")
+        vendedor_id = usuario.id
+        if dia_visita is None:
+            dia_visita = dia_actual()
+        if orden is None and dia_visita is not None:
+            orden = siguiente_orden_secuencial(db, vendedor_id, dia_visita, empresa_id)
+
+        cliente = Cliente(
+            nombre=nombre,
+            identificacion=ident,
+            telefono=item.telefono,
+            telefono_secundario=item.telefono_secundario,
+            direccion=item.direccion,
+            punto_referencia=item.punto_referencia,
+            latitud_residencia=item.latitud_residencia,
+            longitud_residencia=item.longitud_residencia,
+            empresa_trabajo=item.empresa_trabajo,
+            direccion_laboral=item.direccion_laboral,
+            latitud_trabajo=item.latitud_trabajo,
+            longitud_trabajo=item.longitud_trabajo,
+            ref_familiar_nombre=item.ref_familiar_nombre,
+            ref_familiar_parentesco=item.ref_familiar_parentesco,
+            ref_familiar_telefono=item.ref_familiar_telefono,
+            email=item.email,
+            tipo_cliente=TipoCliente(tipo),
+            vendedor_id=vendedor_id,
+            tipo_visita_ruta=TipoVisitaRuta.NUEVO,
+            empresa_id=empresa_id,
+        )
+        asignar_dia_orden(cliente, dia_visita, orden)
+        sincronizar_score_inicial(db, cliente)
+        db.add(cliente)
+        db.flush()
+    elif accion == "actualizado":
+        if nombre:
+            cliente.nombre = nombre
+        if item.telefono is not None:
+            cliente.telefono = item.telefono
+        if item.telefono_secundario is not None:
+            cliente.telefono_secundario = item.telefono_secundario
+        if item.direccion is not None:
+            cliente.direccion = item.direccion
+        if item.punto_referencia is not None:
+            cliente.punto_referencia = item.punto_referencia
+        if item.latitud_residencia is not None:
+            cliente.latitud_residencia = item.latitud_residencia
+        if item.longitud_residencia is not None:
+            cliente.longitud_residencia = item.longitud_residencia
+        if item.latitud_trabajo is not None:
+            cliente.latitud_trabajo = item.latitud_trabajo
+        if item.longitud_trabajo is not None:
+            cliente.longitud_trabajo = item.longitud_trabajo
+        if item.empresa_trabajo is not None:
+            cliente.empresa_trabajo = item.empresa_trabajo
+        if item.direccion_laboral is not None:
+            cliente.direccion_laboral = item.direccion_laboral
+        if item.ref_familiar_nombre is not None:
+            cliente.ref_familiar_nombre = item.ref_familiar_nombre
+        if item.ref_familiar_parentesco is not None:
+            cliente.ref_familiar_parentesco = item.ref_familiar_parentesco
+        if item.ref_familiar_telefono is not None:
+            cliente.ref_familiar_telefono = item.ref_familiar_telefono
+        if item.email is not None:
+            cliente.email = item.email
+
+    actualizar_historial_comportamiento(db, cliente)
+    db.flush()
+    return _resultado_sync(cliente, local_id=local_id, accion=accion)
+
+
+@router.post("/sincronizar", response_model=ClienteSyncResponse)
+def sincronizar_clientes(
+    body: ClienteSyncRequest,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_ruta_o_superior),
+):
+    """Recibe el lote local, evita cédulas repetidas y devuelve morosidad del servidor."""
+    empresa = obtener_empresa_tenant(db)
+    resultados: List[ClienteSyncResultado] = []
+    for item in body.clientes:
+        try:
+            with db.begin_nested():
+                resultados.append(_aplicar_item_sync(db, item, empresa.id, usuario))
+        except IntegrityError:
+            ident = normalizar_identificacion(item.identificacion or "")
+            resultados.append(
+                ClienteSyncResultado(
+                    local_id=(item.local_id or "").strip() or None,
+                    cedula=ident,
+                    accion="duplicado",
+                    detalle="La cédula ya está registrada en la red Ruteros.",
+                )
+            )
+        except Exception:
+            logger.exception("No se pudo sincronizar un cliente del lote")
+            resultados.append(
+                ClienteSyncResultado(
+                    local_id=(item.local_id or "").strip() or None,
+                    cedula=normalizar_identificacion(item.identificacion or ""),
+                    accion="error",
+                    detalle="No se pudo guardar este cliente.",
+                )
+            )
+
+    db.commit()
+    clientes = (
+        db.query(Cliente)
+        .filter(Cliente.empresa_id == empresa.id)
+        .order_by(Cliente.nombre.asc())
+        .all()
+    )
+    return ClienteSyncResponse(
+        clientes=[_serializar_cliente(c) for c in clientes],
+        resultados=resultados,
+    )
 
 
 @router.get("/{cliente_id}", response_model=ClienteResponse)

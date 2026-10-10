@@ -172,6 +172,53 @@ class ClienteResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ClienteSyncItem(BaseModel):
+    """Cliente armado en el teléfono. El score y la morosidad no se aceptan aquí."""
+
+    local_id: Optional[str] = Field(default=None, max_length=80)
+    backend_id: Optional[str] = Field(default=None, max_length=64)
+    nombre_completo: Optional[str] = Field(default=None, max_length=200)
+    identificacion: Optional[str] = Field(default=None, max_length=32)
+    telefono: Optional[str] = None
+    telefono_secundario: Optional[str] = None
+    direccion: Optional[str] = None
+    punto_referencia: Optional[str] = None
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
+    empresa_trabajo: Optional[str] = None
+    direccion_laboral: Optional[str] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
+    ref_familiar_nombre: Optional[str] = None
+    ref_familiar_parentesco: Optional[str] = None
+    ref_familiar_telefono: Optional[str] = None
+    email: Optional[str] = None
+    tipo_cliente: Optional[str] = None
+    dia_visita: Optional[str] = None
+    orden_secuencial: Optional[int] = None
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = None
+
+
+class ClienteSyncRequest(BaseModel):
+    clientes: List[ClienteSyncItem] = Field(default_factory=list, max_length=200)
+
+
+class ClienteSyncResultado(BaseModel):
+    local_id: Optional[str] = None
+    cedula: str = ""
+    servidor_id: Optional[UUID] = None
+    accion: str
+    es_moroso: bool = False
+    score: int = 70
+    detalle: Optional[str] = None
+
+
+class ClienteSyncResponse(BaseModel):
+    clientes: List[ClienteResponse]
+    resultados: List[ClienteSyncResultado]
+
+
 class RutaClienteResponse(BaseModel):
     id: UUID
     vendedor_id: Optional[UUID] = None

@@ -22,24 +22,54 @@ const ClienteLocalSchema = CollectionSchema(
       name: r'cedula',
       type: IsarType.string,
     ),
-    r'esMoroso': PropertySchema(
+    r'clave': PropertySchema(
       id: 1,
+      name: r'clave',
+      type: IsarType.string,
+    ),
+    r'direccion': PropertySchema(
+      id: 2,
+      name: r'direccion',
+      type: IsarType.string,
+    ),
+    r'errorSync': PropertySchema(
+      id: 3,
+      name: r'errorSync',
+      type: IsarType.string,
+    ),
+    r'esMoroso': PropertySchema(
+      id: 4,
       name: r'esMoroso',
       type: IsarType.bool,
     ),
     r'nombre': PropertySchema(
-      id: 2,
+      id: 5,
       name: r'nombre',
       type: IsarType.string,
     ),
+    r'payloadJson': PropertySchema(
+      id: 6,
+      name: r'payloadJson',
+      type: IsarType.string,
+    ),
     r'score': PropertySchema(
-      id: 3,
+      id: 7,
       name: r'score',
       type: IsarType.long,
     ),
     r'servidorId': PropertySchema(
-      id: 4,
+      id: 8,
       name: r'servidorId',
+      type: IsarType.string,
+    ),
+    r'sincronizado': PropertySchema(
+      id: 9,
+      name: r'sincronizado',
+      type: IsarType.bool,
+    ),
+    r'telefono': PropertySchema(
+      id: 10,
+      name: r'telefono',
       type: IsarType.string,
     )
   },
@@ -52,11 +82,37 @@ const ClienteLocalSchema = CollectionSchema(
     r'servidorId': IndexSchema(
       id: -7953509549575050633,
       name: r'servidorId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'servidorId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'sincronizado': IndexSchema(
+      id: -5635005241243394166,
+      name: r'sincronizado',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'sincronizado',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
+    ),
+    r'clave': IndexSchema(
+      id: 8488737604413641549,
+      name: r'clave',
       unique: true,
       replace: true,
       properties: [
         IndexPropertySchema(
-          name: r'servidorId',
+          name: r'clave',
           type: IndexType.hash,
           caseSensitive: true,
         )
@@ -83,6 +139,19 @@ int _clienteLocalEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  bytesCount += 3 + object.clave.length * 3;
+  {
+    final value = object.direccion;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.errorSync;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   {
     final value = object.nombre;
     if (value != null) {
@@ -90,7 +159,19 @@ int _clienteLocalEstimateSize(
     }
   }
   {
+    final value = object.payloadJson;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.servidorId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.telefono;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
@@ -105,10 +186,16 @@ void _clienteLocalSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.cedula);
-  writer.writeBool(offsets[1], object.esMoroso);
-  writer.writeString(offsets[2], object.nombre);
-  writer.writeLong(offsets[3], object.score);
-  writer.writeString(offsets[4], object.servidorId);
+  writer.writeString(offsets[1], object.clave);
+  writer.writeString(offsets[2], object.direccion);
+  writer.writeString(offsets[3], object.errorSync);
+  writer.writeBool(offsets[4], object.esMoroso);
+  writer.writeString(offsets[5], object.nombre);
+  writer.writeString(offsets[6], object.payloadJson);
+  writer.writeLong(offsets[7], object.score);
+  writer.writeString(offsets[8], object.servidorId);
+  writer.writeBool(offsets[9], object.sincronizado);
+  writer.writeString(offsets[10], object.telefono);
 }
 
 ClienteLocal _clienteLocalDeserialize(
@@ -119,11 +206,17 @@ ClienteLocal _clienteLocalDeserialize(
 ) {
   final object = ClienteLocal();
   object.cedula = reader.readStringOrNull(offsets[0]);
-  object.esMoroso = reader.readBoolOrNull(offsets[1]);
+  object.clave = reader.readString(offsets[1]);
+  object.direccion = reader.readStringOrNull(offsets[2]);
+  object.errorSync = reader.readStringOrNull(offsets[3]);
+  object.esMoroso = reader.readBoolOrNull(offsets[4]);
   object.id = id;
-  object.nombre = reader.readStringOrNull(offsets[2]);
-  object.score = reader.readLongOrNull(offsets[3]);
-  object.servidorId = reader.readStringOrNull(offsets[4]);
+  object.nombre = reader.readStringOrNull(offsets[5]);
+  object.payloadJson = reader.readStringOrNull(offsets[6]);
+  object.score = reader.readLongOrNull(offsets[7]);
+  object.servidorId = reader.readStringOrNull(offsets[8]);
+  object.sincronizado = reader.readBool(offsets[9]);
+  object.telefono = reader.readStringOrNull(offsets[10]);
   return object;
 }
 
@@ -137,12 +230,24 @@ P _clienteLocalDeserializeProp<P>(
     case 0:
       return (reader.readStringOrNull(offset)) as P;
     case 1:
-      return (reader.readBoolOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 2:
       return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 4:
+      return (reader.readBoolOrNull(offset)) as P;
+    case 5:
+      return (reader.readStringOrNull(offset)) as P;
+    case 6:
+      return (reader.readStringOrNull(offset)) as P;
+    case 7:
+      return (reader.readLongOrNull(offset)) as P;
+    case 8:
+      return (reader.readStringOrNull(offset)) as P;
+    case 9:
+      return (reader.readBool(offset)) as P;
+    case 10:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -163,58 +268,57 @@ void _clienteLocalAttach(
 }
 
 extension ClienteLocalByIndex on IsarCollection<ClienteLocal> {
-  Future<ClienteLocal?> getByServidorId(String? servidorId) {
-    return getByIndex(r'servidorId', [servidorId]);
+  Future<ClienteLocal?> getByClave(String clave) {
+    return getByIndex(r'clave', [clave]);
   }
 
-  ClienteLocal? getByServidorIdSync(String? servidorId) {
-    return getByIndexSync(r'servidorId', [servidorId]);
+  ClienteLocal? getByClaveSync(String clave) {
+    return getByIndexSync(r'clave', [clave]);
   }
 
-  Future<bool> deleteByServidorId(String? servidorId) {
-    return deleteByIndex(r'servidorId', [servidorId]);
+  Future<bool> deleteByClave(String clave) {
+    return deleteByIndex(r'clave', [clave]);
   }
 
-  bool deleteByServidorIdSync(String? servidorId) {
-    return deleteByIndexSync(r'servidorId', [servidorId]);
+  bool deleteByClaveSync(String clave) {
+    return deleteByIndexSync(r'clave', [clave]);
   }
 
-  Future<List<ClienteLocal?>> getAllByServidorId(
-      List<String?> servidorIdValues) {
-    final values = servidorIdValues.map((e) => [e]).toList();
-    return getAllByIndex(r'servidorId', values);
+  Future<List<ClienteLocal?>> getAllByClave(List<String> claveValues) {
+    final values = claveValues.map((e) => [e]).toList();
+    return getAllByIndex(r'clave', values);
   }
 
-  List<ClienteLocal?> getAllByServidorIdSync(List<String?> servidorIdValues) {
-    final values = servidorIdValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'servidorId', values);
+  List<ClienteLocal?> getAllByClaveSync(List<String> claveValues) {
+    final values = claveValues.map((e) => [e]).toList();
+    return getAllByIndexSync(r'clave', values);
   }
 
-  Future<int> deleteAllByServidorId(List<String?> servidorIdValues) {
-    final values = servidorIdValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'servidorId', values);
+  Future<int> deleteAllByClave(List<String> claveValues) {
+    final values = claveValues.map((e) => [e]).toList();
+    return deleteAllByIndex(r'clave', values);
   }
 
-  int deleteAllByServidorIdSync(List<String?> servidorIdValues) {
-    final values = servidorIdValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'servidorId', values);
+  int deleteAllByClaveSync(List<String> claveValues) {
+    final values = claveValues.map((e) => [e]).toList();
+    return deleteAllByIndexSync(r'clave', values);
   }
 
-  Future<Id> putByServidorId(ClienteLocal object) {
-    return putByIndex(r'servidorId', object);
+  Future<Id> putByClave(ClienteLocal object) {
+    return putByIndex(r'clave', object);
   }
 
-  Id putByServidorIdSync(ClienteLocal object, {bool saveLinks = true}) {
-    return putByIndexSync(r'servidorId', object, saveLinks: saveLinks);
+  Id putByClaveSync(ClienteLocal object, {bool saveLinks = true}) {
+    return putByIndexSync(r'clave', object, saveLinks: saveLinks);
   }
 
-  Future<List<Id>> putAllByServidorId(List<ClienteLocal> objects) {
-    return putAllByIndex(r'servidorId', objects);
+  Future<List<Id>> putAllByClave(List<ClienteLocal> objects) {
+    return putAllByIndex(r'clave', objects);
   }
 
-  List<Id> putAllByServidorIdSync(List<ClienteLocal> objects,
+  List<Id> putAllByClaveSync(List<ClienteLocal> objects,
       {bool saveLinks = true}) {
-    return putAllByIndexSync(r'servidorId', objects, saveLinks: saveLinks);
+    return putAllByIndexSync(r'clave', objects, saveLinks: saveLinks);
   }
 }
 
@@ -223,6 +327,14 @@ extension ClienteLocalQueryWhereSort
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterWhere> anyId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterWhere> anySincronizado() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'sincronizado'),
+      );
     });
   }
 }
@@ -357,6 +469,96 @@ extension ClienteLocalQueryWhere
               indexName: r'servidorId',
               lower: [],
               upper: [servidorId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterWhereClause>
+      sincronizadoEqualTo(bool sincronizado) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'sincronizado',
+        value: [sincronizado],
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterWhereClause>
+      sincronizadoNotEqualTo(bool sincronizado) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'sincronizado',
+              lower: [],
+              upper: [sincronizado],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'sincronizado',
+              lower: [sincronizado],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'sincronizado',
+              lower: [sincronizado],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'sincronizado',
+              lower: [],
+              upper: [sincronizado],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterWhereClause> claveEqualTo(
+      String clave) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'clave',
+        value: [clave],
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterWhereClause> claveNotEqualTo(
+      String clave) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'clave',
+              lower: [],
+              upper: [clave],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'clave',
+              lower: [clave],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'clave',
+              lower: [clave],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'clave',
+              lower: [],
+              upper: [clave],
               includeUpper: false,
             ));
       }
@@ -514,6 +716,448 @@ extension ClienteLocalQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         property: r'cedula',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition> claveEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'clave',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      claveGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'clave',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition> claveLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'clave',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition> claveBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'clave',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      claveStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'clave',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition> claveEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'clave',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition> claveContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'clave',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition> claveMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'clave',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      claveIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'clave',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      claveIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'clave',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'direccion',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'direccion',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'direccion',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'direccion',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'direccion',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'direccion',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'direccion',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'direccion',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'direccion',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'direccion',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'direccion',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      direccionIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'direccion',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'errorSync',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'errorSync',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'errorSync',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'errorSync',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'errorSync',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'errorSync',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'errorSync',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'errorSync',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'errorSync',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'errorSync',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'errorSync',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      errorSyncIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'errorSync',
         value: '',
       ));
     });
@@ -754,6 +1398,160 @@ extension ClienteLocalQueryFilter
   }
 
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'payloadJson',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'payloadJson',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'payloadJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'payloadJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'payloadJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'payloadJson',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'payloadJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'payloadJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'payloadJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'payloadJson',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'payloadJson',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      payloadJsonIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'payloadJson',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
       scoreIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
@@ -978,6 +1776,170 @@ extension ClienteLocalQueryFilter
       ));
     });
   }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      sincronizadoEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'sincronizado',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'telefono',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'telefono',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'telefono',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'telefono',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'telefono',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'telefono',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'telefono',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'telefono',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'telefono',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'telefono',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'telefono',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      telefonoIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'telefono',
+        value: '',
+      ));
+    });
+  }
 }
 
 extension ClienteLocalQueryObject
@@ -997,6 +1959,42 @@ extension ClienteLocalQuerySortBy
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByCedulaDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'cedula', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByClave() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'clave', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByClaveDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'clave', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByDireccion() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'direccion', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByDireccionDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'direccion', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByErrorSync() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'errorSync', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByErrorSyncDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'errorSync', Sort.desc);
     });
   }
 
@@ -1024,6 +2022,19 @@ extension ClienteLocalQuerySortBy
     });
   }
 
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByPayloadJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      sortByPayloadJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.desc);
+    });
+  }
+
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByScore() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'score', Sort.asc);
@@ -1048,6 +2059,31 @@ extension ClienteLocalQuerySortBy
       return query.addSortBy(r'servidorId', Sort.desc);
     });
   }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortBySincronizado() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sincronizado', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      sortBySincronizadoDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sincronizado', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByTelefono() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'telefono', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByTelefonoDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'telefono', Sort.desc);
+    });
+  }
 }
 
 extension ClienteLocalQuerySortThenBy
@@ -1061,6 +2097,42 @@ extension ClienteLocalQuerySortThenBy
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByCedulaDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'cedula', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByClave() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'clave', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByClaveDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'clave', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByDireccion() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'direccion', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByDireccionDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'direccion', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByErrorSync() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'errorSync', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByErrorSyncDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'errorSync', Sort.desc);
     });
   }
 
@@ -1100,6 +2172,19 @@ extension ClienteLocalQuerySortThenBy
     });
   }
 
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByPayloadJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      thenByPayloadJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'payloadJson', Sort.desc);
+    });
+  }
+
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByScore() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'score', Sort.asc);
@@ -1124,6 +2209,31 @@ extension ClienteLocalQuerySortThenBy
       return query.addSortBy(r'servidorId', Sort.desc);
     });
   }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenBySincronizado() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sincronizado', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      thenBySincronizadoDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sincronizado', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByTelefono() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'telefono', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByTelefonoDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'telefono', Sort.desc);
+    });
+  }
 }
 
 extension ClienteLocalQueryWhereDistinct
@@ -1132,6 +2242,27 @@ extension ClienteLocalQueryWhereDistinct
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'cedula', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctByClave(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'clave', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctByDireccion(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'direccion', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctByErrorSync(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'errorSync', caseSensitive: caseSensitive);
     });
   }
 
@@ -1148,6 +2279,13 @@ extension ClienteLocalQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctByPayloadJson(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'payloadJson', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctByScore() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'score');
@@ -1158,6 +2296,19 @@ extension ClienteLocalQueryWhereDistinct
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'servidorId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctBySincronizado() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'sincronizado');
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctByTelefono(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'telefono', caseSensitive: caseSensitive);
     });
   }
 }
@@ -1176,6 +2327,24 @@ extension ClienteLocalQueryProperty
     });
   }
 
+  QueryBuilder<ClienteLocal, String, QQueryOperations> claveProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'clave');
+    });
+  }
+
+  QueryBuilder<ClienteLocal, String?, QQueryOperations> direccionProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'direccion');
+    });
+  }
+
+  QueryBuilder<ClienteLocal, String?, QQueryOperations> errorSyncProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'errorSync');
+    });
+  }
+
   QueryBuilder<ClienteLocal, bool?, QQueryOperations> esMorosoProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'esMoroso');
@@ -1188,6 +2357,12 @@ extension ClienteLocalQueryProperty
     });
   }
 
+  QueryBuilder<ClienteLocal, String?, QQueryOperations> payloadJsonProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'payloadJson');
+    });
+  }
+
   QueryBuilder<ClienteLocal, int?, QQueryOperations> scoreProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'score');
@@ -1197,6 +2372,18 @@ extension ClienteLocalQueryProperty
   QueryBuilder<ClienteLocal, String?, QQueryOperations> servidorIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'servidorId');
+    });
+  }
+
+  QueryBuilder<ClienteLocal, bool, QQueryOperations> sincronizadoProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'sincronizado');
+    });
+  }
+
+  QueryBuilder<ClienteLocal, String?, QQueryOperations> telefonoProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'telefono');
     });
   }
 }
