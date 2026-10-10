@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -33,7 +30,6 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
   final _montoCtrl = TextEditingController();
   final _referenciaCtrl = TextEditingController();
   String? _comprobanteBase64;
-  String? _comprobanteNombre;
   bool _cargando = true;
   bool _guardando = false;
 
@@ -118,22 +114,6 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
     });
   }
 
-  Future<void> _elegirComprobante() async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1600,
-      imageQuality: 75,
-    );
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() {
-      _comprobanteBase64 = base64Encode(bytes);
-      _comprobanteNombre = file.name;
-    });
-  }
-
   Future<void> _registrar() async {
     if (_venta == null || _tasa == null) return;
     final montoUsd = _montoUsdEquivalente;
@@ -172,16 +152,23 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
           );
       if (!mounted) return;
       final porVerificar = cobro.estadoVenta == 'por_verificar';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            porVerificar
-                ? 'Cobro registrado. La venta quedó Pagada (Por Verificar).'
-                : 'Cobro registrado: ${_fmt.format(montoUsd)} USD '
-                    '(${_fmtNum.format(_montoIngresado)} ${etiquetaMoneda(_moneda)})',
-          ),
-        ),
-      );
+      final msg = porVerificar
+          ? 'Cobro registrado. La venta quedó Pagada (Por Verificar).'
+          : 'Cobro registrado: ${_fmt.format(montoUsd)} USD '
+              '(${_fmtNum.format(_montoIngresado)} ${etiquetaMoneda(_moneda)})';
+      if (_canalCobro != 'efectivo') {
+        final cobros = context.read<AppState>().cobros;
+        final canal = _canalCobro;
+        await mostrarEnvioComprobanteWhatsapp(
+          context: context,
+          resumen: msg,
+          tieneFoto: _comprobanteBase64 != null && _comprobanteBase64!.isNotEmpty,
+          onEnviar: () => cobros.enviarComprobanteWhatsapp(cobro.id, metodo: canal),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -343,13 +330,8 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                               ? _venta!.tipoCredito
                               : null,
                           referenciaCtrl: _referenciaCtrl,
-                          comprobanteNombre: _comprobanteNombre,
-                          onElegirFoto: _elegirComprobante,
+                          onComprobante: (base64, _) => _comprobanteBase64 = base64,
                           onCuentaChanged: (cuenta) => _cuentaBancariaId = cuenta?.id,
-                          onQuitarFoto: () => setState(() {
-                            _comprobanteBase64 = null;
-                            _comprobanteNombre = null;
-                          }),
                         ),
                       ],
                     ],

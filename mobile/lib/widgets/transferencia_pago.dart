@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../screens/datos_bancarios_screen.dart';
@@ -69,17 +72,7 @@ class _SelectorCuentaBancariaState extends State<SelectorCuentaBancaria> {
   Future<void> _copiarDato() async {
     final cuenta = _seleccionada;
     if (cuenta == null) return;
-    final valor = cuenta.datoCopiable.trim();
-    if (valor.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: valor));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          cuenta.esPagoMovil ? 'Teléfono de Pago Móvil copiado' : 'Número de cuenta copiado',
-        ),
-      ),
-    );
+    await copiarAlPortapapeles(context, cuenta.datoCopiable);
   }
 
   Future<void> _abrirConfiguracion() async {
@@ -176,17 +169,22 @@ class _TarjetaCuenta extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(cuenta.banco, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          Text(
+            cuenta.esPagoMovil ? 'Datos para Pago Móvil' : 'Datos para transferencia',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          Text(cuenta.banco, style: const TextStyle(color: AppColors.textMuted)),
           const SizedBox(height: 10),
           if (cuenta.esPagoMovil) ...[
-            _dato('Teléfono', cuenta.datoCopiable),
-            _dato('Titular', cuenta.titular),
-            _dato('Cédula', cuenta.documento),
+            _dato(context, 'Teléfono', cuenta.datoCopiable),
+            _dato(context, 'Titular', cuenta.titular),
+            _dato(context, 'Cédula', cuenta.documento),
           ] else ...[
-            _dato('Número', cuenta.numeroCuenta),
-            _dato('Tipo', cuenta.tipoCuenta),
-            _dato('Titular', cuenta.titular),
-            _dato('Cédula/RIF', cuenta.documento),
+            _dato(context, 'Número', cuenta.numeroCuenta),
+            _dato(context, 'Tipo', cuenta.tipoCuenta),
+            _dato(context, 'Titular', cuenta.titular),
+            _dato(context, 'Cédula/RIF', cuenta.documento),
           ],
           const SizedBox(height: 8),
           FilledButton.icon(
@@ -199,21 +197,23 @@ class _TarjetaCuenta extends StatelessWidget {
     );
   }
 
-  Widget _dato(String etiqueta, String valor) {
+  Widget _dato(BuildContext context, String etiqueta, String valor) {
+    final texto = valor.trim().isEmpty ? '—' : valor.trim();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(bottom: 2),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: 92,
             child: Text(etiqueta, style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
           ),
           Expanded(
-            child: Text(
-              valor.trim().isEmpty ? '—' : valor,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
+            child: Text(texto, style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          IconButton(
+            tooltip: 'Copiar $etiqueta',
+            onPressed: texto == '—' ? null : () => copiarAlPortapapeles(context, texto),
+            icon: const Icon(Icons.copy, size: 18),
           ),
         ],
       ),
@@ -221,15 +221,23 @@ class _TarjetaCuenta extends StatelessWidget {
   }
 }
 
+Future<void> copiarAlPortapapeles(BuildContext context, String texto) async {
+  final valor = texto.trim();
+  if (valor.isEmpty) return;
+  await Clipboard.setData(ClipboardData(text: valor));
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Datos copiados al portapapeles')),
+  );
+}
+
 class FaseTransferencia extends StatelessWidget {
   const FaseTransferencia({
     super.key,
     required this.esCredito,
     required this.referenciaCtrl,
-    required this.comprobanteNombre,
-    required this.onElegirFoto,
+    required this.onComprobante,
     required this.onCuentaChanged,
-    this.onQuitarFoto,
     this.detalleCredito,
     this.canal = 'transferencia',
   });
@@ -238,9 +246,7 @@ class FaseTransferencia extends StatelessWidget {
   final String canal;
   final String? detalleCredito;
   final TextEditingController referenciaCtrl;
-  final String? comprobanteNombre;
-  final VoidCallback onElegirFoto;
-  final VoidCallback? onQuitarFoto;
+  final void Function(String? base64, String? nombre) onComprobante;
   final ValueChanged<CuentaBancaria?> onCuentaChanged;
 
   @override
@@ -284,66 +290,196 @@ class FaseTransferencia extends StatelessWidget {
         const SizedBox(height: 12),
         CamposComprobanteTransferencia(
           referenciaCtrl: referenciaCtrl,
-          comprobanteNombre: comprobanteNombre,
-          onElegirFoto: onElegirFoto,
-          onQuitarFoto: onQuitarFoto,
+          onComprobante: onComprobante,
         ),
       ],
     );
   }
 }
 
-class CamposComprobanteTransferencia extends StatelessWidget {
+class CamposComprobanteTransferencia extends StatefulWidget {
   const CamposComprobanteTransferencia({
     super.key,
     required this.referenciaCtrl,
-    required this.comprobanteNombre,
-    required this.onElegirFoto,
-    this.onQuitarFoto,
+    required this.onComprobante,
   });
 
   final TextEditingController referenciaCtrl;
-  final String? comprobanteNombre;
-  final VoidCallback onElegirFoto;
-  final VoidCallback? onQuitarFoto;
+  final void Function(String? base64, String? nombre) onComprobante;
+
+  @override
+  State<CamposComprobanteTransferencia> createState() => _CamposComprobanteTransferenciaState();
+}
+
+class _CamposComprobanteTransferenciaState extends State<CamposComprobanteTransferencia> {
+  final ImagePicker _picker = ImagePicker();
+  Uint8List? _bytes;
+  String? _nombre;
+
+  Future<void> _adjuntarComprobante() async {
+    final imagen = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 75,
+    );
+    if (imagen == null) return;
+    final bytes = await imagen.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _bytes = bytes;
+      _nombre = imagen.name;
+    });
+    widget.onComprobante(base64Encode(bytes), imagen.name);
+  }
+
+  void _quitar() {
+    setState(() {
+      _bytes = null;
+      _nombre = null;
+    });
+    widget.onComprobante(null, null);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final adjunto = _bytes != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextField(
-          controller: referenciaCtrl,
+          controller: widget.referenciaCtrl,
           decoration: const InputDecoration(
             labelText: 'Referencia / número de comprobante',
             prefixIcon: Icon(Icons.tag_rounded),
           ),
         ),
         const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: onElegirFoto,
-          icon: const Icon(Icons.photo_camera_outlined),
-          label: Text(
-            comprobanteNombre == null ? 'Adjuntar foto del comprobante' : 'Cambiar foto',
+        FilledButton.icon(
+          onPressed: _adjuntarComprobante,
+          icon: Icon(adjunto ? Icons.check_circle : Icons.camera_alt),
+          label: Text(adjunto ? 'Comprobante adjuntado' : 'Adjuntar comprobante'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.amber,
+            foregroundColor: AppColors.bgDeep,
           ),
         ),
-        if (comprobanteNombre != null) ...[
+        if (adjunto) ...[
           const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.image_outlined, size: 18, color: AppColors.emerald),
-              const SizedBox(width: 8),
-              Expanded(child: Text(comprobanteNombre!)),
-              if (onQuitarFoto != null)
-                IconButton(
-                  tooltip: 'Quitar foto',
-                  onPressed: onQuitarFoto,
-                  icon: const Icon(Icons.close_rounded),
-                ),
-            ],
+          const Text(
+            'Imagen lista para enviar',
+            style: TextStyle(color: AppColors.emerald, fontWeight: FontWeight.w700),
+          ),
+          if (_nombre != null) Text(_nombre!, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(_bytes!, height: 140, width: double.infinity, fit: BoxFit.cover),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _quitar,
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Quitar foto'),
+            ),
           ),
         ],
       ],
     );
   }
+}
+
+/// Diálogo posterior al registro: envía la foto ya guardada al administrador.
+Future<void> mostrarEnvioComprobanteWhatsapp({
+  required BuildContext context,
+  required String resumen,
+  required bool tieneFoto,
+  required Future<String> Function() onEnviar,
+}) async {
+  var enviando = false;
+  var enviado = false;
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (ctx, setLocal) {
+          return AlertDialog(
+            backgroundColor: AppColors.bgCard,
+            title: const Text('Pago registrado'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(resumen),
+                const SizedBox(height: 12),
+                Text(
+                  tieneFoto
+                      ? 'La foto quedó guardada. Puedes enviarla al administrador.'
+                      : 'No hay foto del comprobante, así que no se puede enviar por WhatsApp.',
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.maxFinite,
+                  child: FilledButton.icon(
+                    onPressed: !tieneFoto || enviando || enviado
+                        ? null
+                        : () async {
+                            setLocal(() => enviando = true);
+                            try {
+                              final mensaje = await onEnviar();
+                              enviado = true;
+                              if (ctx.mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(content: Text(mensaje), backgroundColor: AppColors.emerald),
+                                );
+                              }
+                            } catch (e) {
+                              if (ctx.mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(
+                                    content: Text('$e'),
+                                    backgroundColor: const Color(0xFFEF4444),
+                                  ),
+                                );
+                              }
+                            } finally {
+                              if (ctx.mounted) setLocal(() => enviando = false);
+                            }
+                          },
+                    icon: enviando
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.chat_rounded),
+                    label: Text(
+                      enviado
+                          ? 'Comprobante enviado'
+                          : 'Enviar comprobante por WhatsApp al administrador',
+                      textAlign: TextAlign.center,
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: AppColors.bgElevated,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: enviando ? null : () => Navigator.pop(ctx),
+                child: Text(enviado ? 'Listo' : 'Cerrar'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }

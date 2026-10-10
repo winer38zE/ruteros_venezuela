@@ -116,7 +116,11 @@ class ApiService {
     }
   }
 
-  Future<dynamic> post(String path, Map<String, dynamic> body) async {
+  Future<dynamic> post(
+    String path,
+    Map<String, dynamic> body, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
     try {
       final res = await _client
           .post(
@@ -124,7 +128,7 @@ class ApiService {
             headers: _headers,
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(timeout);
       return _decode(res);
     } on SocketException {
       throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');

@@ -15,8 +15,21 @@ from app.models.core import (
     Venta, Cliente, Usuario, FrecuenciaPago, EstadoVenta, TipoCliente,
     RolUsuario, TipoTasaUsd, Producto, DetalleVenta,
 )
-from app.schemas.core import VentaCreate, VentaResponse, CuotaAmortizacionResponse, EnvioReciboResponse
+from app.schemas.core import (
+    VentaCreate,
+    VentaResponse,
+    CuotaAmortizacionResponse,
+    EnvioReciboResponse,
+    WhatsappReporteResponse,
+)
 from app.services.recibos_email import enviar_recibo_venta
+from app.services.evolution_service import (
+    armar_caption_comprobante,
+    enviar_imagen,
+    estado_http_whatsapp,
+    normalizar_telefono,
+    telefono_administrador,
+)
 from app.services.contabilidad import generar_asiento_venta
 from app.services.inventario import procesar_detalles_venta, calcular_total_detalles
 from app.services.buro_credito import (
@@ -386,6 +399,56 @@ def enviar_recibo_venta_manual(
     if not exito:
         raise HTTPException(status_code=400, detail=mensaje)
     return EnvioReciboResponse(exito=exito, mensaje=mensaje, email=email)
+
+
+@router.post("/{venta_id}/comprobante/whatsapp", response_model=WhatsappReporteResponse)
+def enviar_comprobante_venta_whatsapp(
+    venta_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_vendedor_o_superior),
+):
+    """Envía la foto del comprobante de la venta al WhatsApp del administrador."""
+    venta = (
+        db.query(Venta)
+        .options(joinedload(Venta.cliente))
+        .filter(Venta.id == venta_id, Venta.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    if venta.metodo_pago not in ("transferencia", "pago_movil"):
+        raise HTTPException(
+            status_code=400,
+            detail="Esta venta no es por transferencia ni pago móvil",
+        )
+    if not venta.comprobante_base64:
+        raise HTTPException(
+            status_code=400,
+            detail="Adjunte la foto del comprobante para enviarla por WhatsApp",
+        )
+
+    try:
+        telefono = telefono_administrador(db, usuario.empresa_id)
+        destino = normalizar_telefono(telefono)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    cliente = venta.cliente.nombre if venta.cliente else "Cliente"
+    caption = armar_caption_comprobante(
+        cliente,
+        f"${float(venta.total_usd):.2f} USD",
+        venta.referencia_pago,
+        venta.metodo_pago,
+    )
+    ok, mensaje = enviar_imagen(
+        destino,
+        None,
+        caption,
+        imagen_base64=venta.comprobante_base64,
+    )
+    if not ok:
+        raise HTTPException(status_code=estado_http_whatsapp(mensaje), detail=mensaje)
+    return WhatsappReporteResponse(enviado=True, telefono=destino, mensaje=mensaje)
 
 
 @router.get("/mis-ventas", response_model=List[VentaResponse])

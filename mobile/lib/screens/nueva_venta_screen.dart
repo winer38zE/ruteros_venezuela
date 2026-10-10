@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -55,7 +52,6 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   final _cuotasCtrl = TextEditingController(text: '12');
   final _referenciaCtrl = TextEditingController();
   String? _comprobanteBase64;
-  String? _comprobanteNombre;
   double? _latRes;
   double? _lngRes;
   double? _latTrab;
@@ -313,22 +309,6 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     return creado.id;
   }
 
-  Future<void> _elegirComprobante() async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1600,
-      imageQuality: 75,
-    );
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() {
-      _comprobanteBase64 = base64Encode(bytes);
-      _comprobanteNombre = file.name;
-    });
-  }
-
   Future<void> _registrarVenta({bool borrador = false}) async {
     if (_esCredito) {
       final idConsulta = _usarClienteExistente
@@ -447,7 +427,6 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
               : _pagoElectronico && _esCredito
                   ? 'Venta a crédito por ${_nombreMetodo(_metodoPago)}: ${_fmt.format(_total)}'
                   : 'Venta registrada: ${_fmt.format(_total)}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       if (!borrador && venta.cuotas.isNotEmpty) {
         await showDialog<void>(
           context: context,
@@ -477,6 +456,19 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           ),
         );
       }
+      if (!mounted) return;
+      if (!borrador && _pagoElectronico) {
+        final ventas = context.read<AppState>().ventas;
+        await mostrarEnvioComprobanteWhatsapp(
+          context: context,
+          resumen: msg,
+          tieneFoto: venta.tieneComprobante,
+          onEnviar: () => ventas.enviarComprobanteWhatsapp(venta.id),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -645,13 +637,8 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     canal: _metodoPago,
                     detalleCredito: _esCredito ? _frecuencia : null,
                     referenciaCtrl: _referenciaCtrl,
-                    comprobanteNombre: _comprobanteNombre,
-                    onElegirFoto: _elegirComprobante,
+                    onComprobante: (base64, _) => _comprobanteBase64 = base64,
                     onCuentaChanged: (cuenta) => _cuentaBancariaId = cuenta?.id,
-                    onQuitarFoto: () => setState(() {
-                      _comprobanteBase64 = null;
-                      _comprobanteNombre = null;
-                    }),
                   ),
                 ],
                 const SizedBox(height: 16),

@@ -268,6 +268,11 @@ class WhatsappReporteResponse(BaseModel):
     mensaje: str
 
 
+class ComprobanteWhatsappRequest(BaseModel):
+    """Método opcional cuando el cobro no guarda el canal (transferencia o pago móvil)."""
+    metodo: Optional[str] = None
+
+
 class HistorialBuroItem(BaseModel):
     fecha: str
     tipo: str

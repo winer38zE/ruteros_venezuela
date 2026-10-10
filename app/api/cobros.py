@@ -6,9 +6,17 @@ from app.core.tenant import obtener_empresa_tenant
 from app.api.empresas import resolver_cuenta_transferencia
 from app.models.core import (
     Cobro, Venta, Usuario, MonedaPago, EstadoVenta, RolUsuario,
-    Producto, DetalleVenta, EstadoCuota,
+    Producto, DetalleVenta, EstadoCuota, CuentaBancaria,
 )
-from app.schemas.core import CobroCreate, CobroResponse, VentaPendienteResponse, CuotaAmortizacionResponse, EnvioReciboResponse
+from app.schemas.core import (
+    CobroCreate,
+    CobroResponse,
+    VentaPendienteResponse,
+    CuotaAmortizacionResponse,
+    EnvioReciboResponse,
+    ComprobanteWhatsappRequest,
+    WhatsappReporteResponse,
+)
 from typing import List, Optional
 from datetime import datetime
 from decimal import Decimal
@@ -21,6 +29,13 @@ from app.services.amortizacion import (
     serializar_cuota,
 )
 from app.services.recibos_email import enviar_recibo_cobro
+from app.services.evolution_service import (
+    armar_caption_comprobante,
+    enviar_imagen,
+    estado_http_whatsapp,
+    normalizar_telefono,
+    telefono_administrador,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -327,6 +342,73 @@ def enviar_recibo_cobro_manual(
     if not exito:
         raise HTTPException(status_code=400, detail=mensaje)
     return EnvioReciboResponse(exito=exito, mensaje=mensaje, email=email)
+
+
+@router.post("/{cobro_id}/comprobante/whatsapp", response_model=WhatsappReporteResponse)
+def enviar_comprobante_cobro_whatsapp(
+    cobro_id: uuid.UUID,
+    body: ComprobanteWhatsappRequest | None = None,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_cobrador_o_superior),
+):
+    """Envía la foto del comprobante del cobro al WhatsApp del administrador."""
+    cobro = (
+        db.query(Cobro)
+        .filter(Cobro.id == cobro_id, Cobro.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not cobro:
+        raise HTTPException(status_code=404, detail="Cobro no encontrado")
+    if not cobro.es_transferencia:
+        raise HTTPException(
+            status_code=400,
+            detail="Este cobro no es por transferencia ni pago móvil",
+        )
+    if not cobro.comprobante_base64:
+        raise HTTPException(
+            status_code=400,
+            detail="Adjunte la foto del comprobante para enviarla por WhatsApp",
+        )
+
+    venta = (
+        db.query(Venta)
+        .options(joinedload(Venta.cliente))
+        .filter(Venta.id == cobro.venta_id, Venta.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    metodo = (body.metodo if body and body.metodo else "") or ""
+    if metodo not in ("transferencia", "pago_movil") and cobro.cuenta_bancaria_id:
+        cuenta = db.query(CuentaBancaria).filter(CuentaBancaria.id == cobro.cuenta_bancaria_id).first()
+        if cuenta and cuenta.canal in ("transferencia", "pago_movil"):
+            metodo = cuenta.canal
+    if metodo not in ("transferencia", "pago_movil"):
+        metodo = "transferencia"
+
+    try:
+        telefono = telefono_administrador(db, usuario.empresa_id)
+        destino = normalizar_telefono(telefono)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    cliente = venta.cliente.nombre if venta.cliente else "Cliente"
+    caption = armar_caption_comprobante(
+        cliente,
+        f"${float(cobro.monto_usd):.2f} USD",
+        cobro.referencia_pago,
+        metodo,
+    )
+    ok, mensaje = enviar_imagen(
+        destino,
+        None,
+        caption,
+        imagen_base64=cobro.comprobante_base64,
+    )
+    if not ok:
+        raise HTTPException(status_code=estado_http_whatsapp(mensaje), detail=mensaje)
+    return WhatsappReporteResponse(enviado=True, telefono=destino, mensaje=mensaje)
 
 
 @router.get("/", response_model=List[CobroResponse])

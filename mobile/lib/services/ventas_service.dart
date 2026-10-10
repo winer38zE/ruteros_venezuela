@@ -206,4 +206,13 @@ class VentasService {
     final data = await _api.post('/ventas/$ventaId/enviar-recibo', {});
     return data['mensaje'] as String? ?? 'Comprobante enviado';
   }
+
+  Future<String> enviarComprobanteWhatsapp(String ventaId) async {
+    final data = await _api.post(
+      '/ventas/$ventaId/comprobante/whatsapp',
+      {},
+      timeout: const Duration(seconds: 60),
+    );
+    return data['mensaje'] as String? ?? 'Comprobante enviado por WhatsApp';
+  }
 }

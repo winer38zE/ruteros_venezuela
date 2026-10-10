@@ -222,4 +222,13 @@ class CobrosService {
     final data = await _api.post('/cobros/$cobroId/enviar-recibo', {});
     return data['mensaje'] as String? ?? 'Recibo enviado';
   }
+
+  Future<String> enviarComprobanteWhatsapp(String cobroId, {String? metodo}) async {
+    final data = await _api.post(
+      '/cobros/$cobroId/comprobante/whatsapp',
+      {if (metodo != null) 'metodo': metodo},
+      timeout: const Duration(seconds: 60),
+    );
+    return data['mensaje'] as String? ?? 'Comprobante enviado por WhatsApp';
+  }
 }

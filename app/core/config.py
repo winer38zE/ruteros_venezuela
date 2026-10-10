@@ -16,3 +16,5 @@ EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "http://178.105.48.103:8081")
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
 EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "tutor-ia-personal")
 EVOLUTION_ENABLED = bool(EVOLUTION_API_URL and EVOLUTION_API_KEY and EVOLUTION_INSTANCE)
+# Si está vacío, se usa el teléfono del dueño y, si no tiene, el del administrador.
+EVOLUTION_ADMIN_PHONE = os.getenv("EVOLUTION_ADMIN_PHONE", "").strip()
