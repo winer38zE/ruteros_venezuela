@@ -27,48 +27,53 @@ const ClienteLocalSchema = CollectionSchema(
       name: r'clave',
       type: IsarType.string,
     ),
-    r'direccion': PropertySchema(
+    r'creditoVencido': PropertySchema(
       id: 2,
+      name: r'creditoVencido',
+      type: IsarType.bool,
+    ),
+    r'direccion': PropertySchema(
+      id: 3,
       name: r'direccion',
       type: IsarType.string,
     ),
     r'errorSync': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'errorSync',
       type: IsarType.string,
     ),
     r'esMoroso': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'esMoroso',
       type: IsarType.bool,
     ),
     r'nombre': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'nombre',
       type: IsarType.string,
     ),
     r'payloadJson': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'payloadJson',
       type: IsarType.string,
     ),
     r'score': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'score',
       type: IsarType.long,
     ),
     r'servidorId': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'servidorId',
       type: IsarType.string,
     ),
     r'sincronizado': PropertySchema(
-      id: 9,
+      id: 10,
       name: r'sincronizado',
       type: IsarType.bool,
     ),
     r'telefono': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'telefono',
       type: IsarType.string,
     )
@@ -187,15 +192,16 @@ void _clienteLocalSerialize(
 ) {
   writer.writeString(offsets[0], object.cedula);
   writer.writeString(offsets[1], object.clave);
-  writer.writeString(offsets[2], object.direccion);
-  writer.writeString(offsets[3], object.errorSync);
-  writer.writeBool(offsets[4], object.esMoroso);
-  writer.writeString(offsets[5], object.nombre);
-  writer.writeString(offsets[6], object.payloadJson);
-  writer.writeLong(offsets[7], object.score);
-  writer.writeString(offsets[8], object.servidorId);
-  writer.writeBool(offsets[9], object.sincronizado);
-  writer.writeString(offsets[10], object.telefono);
+  writer.writeBool(offsets[2], object.creditoVencido);
+  writer.writeString(offsets[3], object.direccion);
+  writer.writeString(offsets[4], object.errorSync);
+  writer.writeBool(offsets[5], object.esMoroso);
+  writer.writeString(offsets[6], object.nombre);
+  writer.writeString(offsets[7], object.payloadJson);
+  writer.writeLong(offsets[8], object.score);
+  writer.writeString(offsets[9], object.servidorId);
+  writer.writeBool(offsets[10], object.sincronizado);
+  writer.writeString(offsets[11], object.telefono);
 }
 
 ClienteLocal _clienteLocalDeserialize(
@@ -207,16 +213,17 @@ ClienteLocal _clienteLocalDeserialize(
   final object = ClienteLocal();
   object.cedula = reader.readStringOrNull(offsets[0]);
   object.clave = reader.readString(offsets[1]);
-  object.direccion = reader.readStringOrNull(offsets[2]);
-  object.errorSync = reader.readStringOrNull(offsets[3]);
-  object.esMoroso = reader.readBoolOrNull(offsets[4]);
+  object.creditoVencido = reader.readBool(offsets[2]);
+  object.direccion = reader.readStringOrNull(offsets[3]);
+  object.errorSync = reader.readStringOrNull(offsets[4]);
+  object.esMoroso = reader.readBoolOrNull(offsets[5]);
   object.id = id;
-  object.nombre = reader.readStringOrNull(offsets[5]);
-  object.payloadJson = reader.readStringOrNull(offsets[6]);
-  object.score = reader.readLongOrNull(offsets[7]);
-  object.servidorId = reader.readStringOrNull(offsets[8]);
-  object.sincronizado = reader.readBool(offsets[9]);
-  object.telefono = reader.readStringOrNull(offsets[10]);
+  object.nombre = reader.readStringOrNull(offsets[6]);
+  object.payloadJson = reader.readStringOrNull(offsets[7]);
+  object.score = reader.readLongOrNull(offsets[8]);
+  object.servidorId = reader.readStringOrNull(offsets[9]);
+  object.sincronizado = reader.readBool(offsets[10]);
+  object.telefono = reader.readStringOrNull(offsets[11]);
   return object;
 }
 
@@ -232,22 +239,24 @@ P _clienteLocalDeserializeProp<P>(
     case 1:
       return (reader.readString(offset)) as P;
     case 2:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 3:
       return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readBoolOrNull(offset)) as P;
-    case 5:
       return (reader.readStringOrNull(offset)) as P;
+    case 5:
+      return (reader.readBoolOrNull(offset)) as P;
     case 6:
       return (reader.readStringOrNull(offset)) as P;
     case 7:
-      return (reader.readLongOrNull(offset)) as P;
-    case 8:
       return (reader.readStringOrNull(offset)) as P;
+    case 8:
+      return (reader.readLongOrNull(offset)) as P;
     case 9:
-      return (reader.readBool(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 10:
+      return (reader.readBool(offset)) as P;
+    case 11:
       return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -851,6 +860,16 @@ extension ClienteLocalQueryFilter
       return query.addFilterCondition(FilterCondition.greaterThan(
         property: r'clave',
         value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterFilterCondition>
+      creditoVencidoEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'creditoVencido',
+        value: value,
       ));
     });
   }
@@ -1974,6 +1993,20 @@ extension ClienteLocalQuerySortBy
     });
   }
 
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      sortByCreditoVencido() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'creditoVencido', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      sortByCreditoVencidoDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'creditoVencido', Sort.desc);
+    });
+  }
+
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> sortByDireccion() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'direccion', Sort.asc);
@@ -2109,6 +2142,20 @@ extension ClienteLocalQuerySortThenBy
   QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy> thenByClaveDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'clave', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      thenByCreditoVencido() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'creditoVencido', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ClienteLocal, ClienteLocal, QAfterSortBy>
+      thenByCreditoVencidoDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'creditoVencido', Sort.desc);
     });
   }
 
@@ -2252,6 +2299,13 @@ extension ClienteLocalQueryWhereDistinct
     });
   }
 
+  QueryBuilder<ClienteLocal, ClienteLocal, QDistinct>
+      distinctByCreditoVencido() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'creditoVencido');
+    });
+  }
+
   QueryBuilder<ClienteLocal, ClienteLocal, QDistinct> distinctByDireccion(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -2330,6 +2384,12 @@ extension ClienteLocalQueryProperty
   QueryBuilder<ClienteLocal, String, QQueryOperations> claveProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'clave');
+    });
+  }
+
+  QueryBuilder<ClienteLocal, bool, QQueryOperations> creditoVencidoProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'creditoVencido');
     });
   }
 

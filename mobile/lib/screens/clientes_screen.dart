@@ -187,8 +187,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   Widget _tarjetaLocal(ClienteLocal c) {
     final bloqueado = _soloContado(c.score, c.esMoroso);
-    final color = c.esMoroso == true
-        ? const Color(0xFFEF4444)
+    final vencido = c.creditoVencido || c.esMoroso == true;
+    final color = vencido
+        ? Colors.redAccent
         : bloqueado
             ? AppColors.amber
             : AppColors.neonCyan;
@@ -211,7 +212,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
         if (mounted) await _refrescar(avisar: false);
       },
       leading: Icon(
-        c.esMoroso == true ? Icons.block_rounded : Icons.person_rounded,
+        vencido ? Icons.block_rounded : Icons.person_rounded,
         color: color,
       ),
       title: Text(c.nombre?.isNotEmpty == true ? c.nombre! : 'Sin nombre'),
@@ -219,8 +220,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
         [
           if ((c.cedula ?? '').isNotEmpty) c.cedula!,
           if ((c.telefono ?? '').isNotEmpty) c.telefono!,
-          if (c.esMoroso == true) 'Moroso',
-          if (c.esMoroso != true && bloqueado) 'Solo contado',
+          if (c.creditoVencido) 'Vencido',
+          if (c.esMoroso == true && !c.creditoVencido) 'Moroso',
+          if (!vencido && bloqueado) 'Solo contado',
         ].join(' · '),
       ),
       trailing: _iconoSync(c.sincronizado),

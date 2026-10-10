@@ -13,6 +13,9 @@ class ClienteLocal {
   bool? esMoroso;
   int? score;
 
+  /// True si una cuota local ya pasó su fecha y no está pagada.
+  bool creditoVencido = false;
+
   /// Id en el servidor. Puede quedar vacío en varios pendientes a la vez.
   @Index()
   String? servidorId;

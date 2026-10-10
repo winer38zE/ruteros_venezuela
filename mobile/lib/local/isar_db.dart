@@ -5,6 +5,7 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'cliente_local.dart';
+import 'credito_local.dart';
 
 /// Base local. Queda en null si el dispositivo no puede abrir Isar.
 Isar? isarInstance;
@@ -33,7 +34,7 @@ Future<void> abrirBaseLocal() async {
 
 Future<Isar> _abrir(String directory) {
   return Isar.open(
-    [ClienteLocalSchema],
+    [ClienteLocalSchema, CreditoLocalSchema],
     directory: directory,
     name: 'ruteros_local',
   );

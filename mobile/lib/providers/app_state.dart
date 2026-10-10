@@ -18,6 +18,8 @@ import '../services/rutas_service.dart';
 import '../services/empresa_service.dart';
 import '../services/whatsapp_service.dart';
 import '../services/sync_service.dart';
+import '../services/alerta_cobro_service.dart';
+import '../services/notification_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
@@ -37,6 +39,8 @@ class AppState extends ChangeNotifier {
     empresas = EmpresaService(api);
     whatsapp = WhatsappService(api);
     sync = SyncService(api);
+    alertas = AlertaCobroService(api, NotificationService.instance);
+    sync.alTerminar = alertas.revisar;
     unawaited(sync.escucharRed());
     _inicializar();
   }
@@ -58,6 +62,7 @@ class AppState extends ChangeNotifier {
   late final EmpresaService empresas;
   late final WhatsappService whatsapp;
   late final SyncService sync;
+  late final AlertaCobroService alertas;
 
   Usuario? usuario;
   bool inicializado = false;
@@ -109,6 +114,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> logout() async {
     await sync.dejarDeEscuchar();
+    await alertas.limpiar();
     await sync.limpiarLocal();
     await auth.logout();
     usuario = null;

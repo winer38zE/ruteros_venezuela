@@ -219,12 +219,13 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
     final proximo = fila.proximoPago != null
         ? _fmtFecha.format(DateTime.parse(fila.proximoPago!))
         : '—';
-    final enMora = fila.estadoCuenta == 'En mora';
+    final enMora = fila.estadoCuenta == 'En mora' || fila.estadoCuenta == 'Vencido';
+    final etiquetaCuenta = enMora ? 'Vencido' : fila.estadoCuenta;
     final telefono = fila.clienteTelefono;
 
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 14),
-      accentColor: enMora ? Colors.red : AppColors.neonCyan,
+      accentColor: enMora ? Colors.redAccent : AppColors.neonCyan,
       padding: const EdgeInsets.all(0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -264,16 +265,16 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
                           _fmt.format(fila.saldoPendienteUsd),
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
-                            color: enMora ? Colors.red : AppColors.amber,
+                            color: enMora ? Colors.redAccent : AppColors.amber,
                             fontSize: 15,
                           ),
                         ),
                         Text(
-                          fila.estadoCuenta,
+                          etiquetaCuenta,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: enMora ? Colors.red : AppColors.emerald,
+                            color: enMora ? Colors.redAccent : AppColors.emerald,
                           ),
                         ),
                       ],

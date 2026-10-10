@@ -21,6 +21,9 @@ class SyncService {
   bool _enCurso = false;
   bool _escuchando = false;
 
+  /// Se ejecuta al terminar un intento de sync, también si no hay red.
+  Future<void> Function()? alTerminar;
+
   /// null hasta la primera lectura. Solo el paso de false a true dispara la sync.
   bool? _enLinea;
 
@@ -135,6 +138,7 @@ class SyncService {
       if (manual) {
         throw ApiException(0, 'Sin conexión. Los clientes siguen guardados en el teléfono.');
       }
+      await _despues();
       return;
     }
 
@@ -167,6 +171,17 @@ class SyncService {
       if (manual) rethrow;
     } finally {
       _enCurso = false;
+      await _despues();
+    }
+  }
+
+  Future<void> _despues() async {
+    final siguiente = alTerminar;
+    if (siguiente == null) return;
+    try {
+      await siguiente();
+    } catch (e, st) {
+      debugPrint('Revisión de vencimientos falló. $e\n$st');
     }
   }
 
@@ -225,11 +240,14 @@ class SyncService {
         if (servidorId.isEmpty) continue;
         final estado = (j['estado_morosidad'] ?? 'al_dia').toString();
         final scoreRaw = j['score_credito'] ?? j['score'];
+        final previa = await isar.clienteLocals.filter().claveEqualTo(servidorId).findFirst();
+        final vencidoLocal = previa?.creditoVencido ?? false;
         final fila = ClienteLocal()
           ..nombre = j['nombre']?.toString()
           ..cedula = j['identificacion']?.toString()
           ..telefono = j['telefono']?.toString()
           ..direccion = j['direccion']?.toString()
+          ..creditoVencido = vencidoLocal
           ..esMoroso = j['es_moroso'] == true || estado == 'moroso'
           ..score = scoreRaw is num ? scoreRaw.toInt() : int.tryParse('$scoreRaw')
           ..servidorId = servidorId
