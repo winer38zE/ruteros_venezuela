@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
-from app.core.deps import obtener_usuario_opcional, require_cobrador_o_superior, require_operaciones
+from app.core.deps import obtener_usuario_opcional, require_cobrador_o_superior, require_operaciones, rol_confirma_pago
 from app.core.tenant import obtener_empresa_tenant
 from app.models.core import (
     Cobro, Venta, Usuario, MonedaPago, EstadoVenta, RolUsuario,
@@ -34,16 +34,33 @@ FRECUENCIA_LABEL = {
 }
 
 
-def _actualizar_estado_venta(db: Session, venta: Venta) -> None:
+def _actualizar_estado_venta(db: Session, venta: Venta, cobro_actual: Cobro, usuario: Usuario) -> list[Cobro]:
+    """Devuelve cobros que pasan de no verificados a verificados en este abono."""
+    if cobro_actual.es_transferencia and not rol_confirma_pago(usuario):
+        cobro_actual.verificado = False
+    else:
+        cobro_actual.verificado = True
+
+    recien_verificados: list[Cobro] = []
     total_cobrado = sum(Decimal(str(c.monto_usd)) for c in venta.cobros)
     total_venta = Decimal(str(venta.total_usd))
 
     if total_cobrado >= total_venta:
-        venta.estado = EstadoVenta.PAGADA
+        hay_sin_verificar = any(c.verificado is False for c in venta.cobros)
+        if hay_sin_verificar and not rol_confirma_pago(usuario):
+            venta.estado = EstadoVenta.POR_VERIFICAR
+        else:
+            if rol_confirma_pago(usuario):
+                for cobro in venta.cobros:
+                    if cobro.verificado is False:
+                        cobro.verificado = True
+                        recien_verificados.append(cobro)
+            venta.estado = EstadoVenta.PAGADA
     elif total_cobrado > 0:
         venta.estado = EstadoVenta.PARCIAL
     else:
         venta.estado = EstadoVenta.PENDIENTE
+    return recien_verificados
 
 
 def _resolver_cobrador(
@@ -244,16 +261,23 @@ def registrar_cobro(
         moneda_pago=moneda,
         tasa_usd_aplicada=cobro.tasa_usd_aplicada,
         tasa_eur_aplicada=cobro.tasa_eur_aplicada,
+        es_transferencia=bool(cobro.es_transferencia),
+        referencia_pago=(cobro.referencia_pago or "").strip() or None,
+        comprobante_base64=cobro.comprobante_base64,
+        verificado=True,
     )
 
     db.add(nuevo_cobro)
     db.flush()
     db.refresh(venta)
-    _actualizar_estado_venta(db, venta)
+    recien_verificados = _actualizar_estado_venta(db, venta, nuevo_cobro, cobrador)
     aplicar_abono_a_cuotas(db, venta, monto)
     db.refresh(venta, attribute_names=["cliente", "cobros"])
     if venta.cliente:
-        actualizar_score_por_cobro(db, venta, nuevo_cobro)
+        if nuevo_cobro.verificado and nuevo_cobro not in recien_verificados:
+            actualizar_score_por_cobro(db, venta, nuevo_cobro)
+        for cobro_previo in recien_verificados:
+            actualizar_score_por_cobro(db, venta, cobro_previo)
         actualizar_historial_comportamiento(db, venta.cliente)
     generar_asiento_cobro(db, nuevo_cobro)
     db.commit()
@@ -264,7 +288,8 @@ def registrar_cobro(
     except Exception:
         logger.exception("No se pudo enviar recibo de cobro por correo")
 
-    return nuevo_cobro
+    respuesta = CobroResponse.model_validate(nuevo_cobro)
+    return respuesta.model_copy(update={"estado_venta": venta.estado.value})
 
 
 @router.post("/{cobro_id}/enviar-recibo", response_model=EnvioReciboResponse)

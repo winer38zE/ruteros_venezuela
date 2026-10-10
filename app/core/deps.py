@@ -28,6 +28,13 @@ def require_dueno(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario
     return usuario
 
 
+def rol_confirma_pago(usuario: Optional[Usuario]) -> bool:
+    """Dueño y administrador dan por confirmada una transferencia al registrarla."""
+    if usuario is None:
+        return False
+    return usuario.rol in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR)
+
+
 def require_admin_o_dueno(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
     if usuario.rol not in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
         raise HTTPException(

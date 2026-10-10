@@ -15,6 +15,19 @@ class EmpresaResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class DatosBancariosResponse(BaseModel):
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+    cedula_nit: Optional[str] = None
+    configurado: bool = False
+
+class DatosBancariosUpdate(BaseModel):
+    banco: Optional[str] = Field(default=None, max_length=120)
+    tipo_cuenta: Optional[str] = Field(default=None, max_length=40)
+    numero_cuenta: Optional[str] = Field(default=None, max_length=64)
+    cedula_nit: Optional[str] = Field(default=None, max_length=32)
+
 # --- USUARIOS ---
 class UsuarioCreate(BaseModel):
     nombre: str
@@ -349,6 +362,9 @@ class VentaCreate(BaseModel):
     longitud_residencia: Optional[float] = None
     latitud_trabajo: Optional[float] = None
     longitud_trabajo: Optional[float] = None
+    metodo_pago: Optional[str] = Field(default="efectivo", pattern="^(efectivo|transferencia)$")
+    referencia_pago: Optional[str] = Field(default=None, max_length=80)
+    comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
 
 class CuotaAmortizacionResponse(BaseModel):
     id: UUID
@@ -374,6 +390,9 @@ class VentaResponse(BaseModel):
     frecuencia_pago: str = "contado"
     tipo_tasa_usd: Optional[str] = "bcv"
     numero_cuotas: Optional[int] = None
+    metodo_pago: str = "efectivo"
+    referencia_pago: Optional[str] = None
+    tiene_comprobante: bool = False
     detalles: List[DetalleVentaResponse] = []
     cuotas: List[CuotaAmortizacionResponse] = []
 
@@ -440,6 +459,9 @@ class CobroCreate(BaseModel):
     )
     tasa_usd_aplicada: float
     tasa_eur_aplicada: float
+    es_transferencia: bool = False
+    referencia_pago: Optional[str] = Field(default=None, max_length=80)
+    comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
 
 class CobroResponse(BaseModel):
     id: UUID
@@ -453,6 +475,11 @@ class CobroResponse(BaseModel):
     tasa_eur_aplicada: float
     sincronizado: bool
     fecha_creacion: datetime
+    es_transferencia: bool = False
+    verificado: bool = True
+    referencia_pago: Optional[str] = None
+    tiene_comprobante: bool = False
+    estado_venta: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

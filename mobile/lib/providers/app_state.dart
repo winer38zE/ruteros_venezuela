@@ -13,6 +13,7 @@ import '../services/proveedores_service.dart';
 import '../services/clientes_service.dart';
 import '../services/tasas_service.dart';
 import '../services/rutas_service.dart';
+import '../services/empresa_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
@@ -29,6 +30,7 @@ class AppState extends ChangeNotifier {
     clientes = ClientesService(api);
     tasas = TasasService(api);
     rutas = RutasService(api);
+    empresas = EmpresaService(api);
     _inicializar();
   }
 
@@ -46,6 +48,7 @@ class AppState extends ChangeNotifier {
   late final ClientesService clientes;
   late final TasasService tasas;
   late final RutasService rutas;
+  late final EmpresaService empresas;
 
   Usuario? usuario;
   bool inicializado = false;

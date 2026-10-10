@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -10,6 +13,7 @@ import '../utils/conversion_helper.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
+import '../widgets/transferencia_pago.dart';
 
 class NuevoCobroScreen extends StatefulWidget {
   const NuevoCobroScreen({super.key});
@@ -24,7 +28,11 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
 
   VentaPendiente? _venta;
   String _moneda = 'usd';
+  bool _esTransferencia = false;
   final _montoCtrl = TextEditingController();
+  final _referenciaCtrl = TextEditingController();
+  String? _comprobanteBase64;
+  String? _comprobanteNombre;
   bool _cargando = true;
   bool _guardando = false;
 
@@ -41,6 +49,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
   @override
   void dispose() {
     _montoCtrl.dispose();
+    _referenciaCtrl.dispose();
     super.dispose();
   }
 
@@ -108,6 +117,22 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
     });
   }
 
+  Future<void> _elegirComprobante() async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 75,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _comprobanteBase64 = base64Encode(bytes);
+      _comprobanteNombre = file.name;
+    });
+  }
+
   Future<void> _registrar() async {
     if (_venta == null || _tasa == null) return;
     final montoUsd = _montoUsdEquivalente;
@@ -131,20 +156,26 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
 
     setState(() => _guardando = true);
     try {
-      await context.read<AppState>().cobros.registrarCobro(
+      final cobro = await context.read<AppState>().cobros.registrarCobro(
             ventaId: _venta!.id,
             montoUsd: montoUsd,
             monedaPago: monedaPagoBackend(_moneda),
             tasaUsd: _tasa!.usdBcvBs,
             tasaEur: _tasa!.eurBs,
             cobroId: const Uuid().v4(),
+            esTransferencia: _esTransferencia,
+            referenciaPago: _esTransferencia ? _referenciaCtrl.text : null,
+            comprobanteBase64: _esTransferencia ? _comprobanteBase64 : null,
           );
       if (!mounted) return;
+      final porVerificar = cobro.estadoVenta == 'por_verificar';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Cobro registrado: ${_fmt.format(montoUsd)} USD '
-            '(${_fmtNum.format(_montoIngresado)} ${etiquetaMoneda(_moneda)})',
+            porVerificar
+                ? 'Cobro registrado. La venta quedó Pagada (Por Verificar).'
+                : 'Cobro registrado: ${_fmt.format(montoUsd)} USD '
+                    '(${_fmtNum.format(_montoIngresado)} ${etiquetaMoneda(_moneda)})',
           ),
         ),
       );
@@ -283,6 +314,34 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                                 ),
                             ],
                           ),
+                        ),
+                      ],
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Pago por transferencia'),
+                        subtitle: Text(
+                          _venta == null
+                              ? 'Muestra la cuenta de la empresa y adjunta el comprobante'
+                              : _venta!.frecuenciaPago == 'contado'
+                                  ? 'Transferencia para venta de contado'
+                                  : 'Transferencia para venta a crédito (${_venta!.tipoCredito})',
+                        ),
+                        value: _esTransferencia,
+                        onChanged: (v) => setState(() => _esTransferencia = v),
+                      ),
+                      if (_esTransferencia) ...[
+                        FaseTransferencia(
+                          esCredito: _venta != null && _venta!.frecuenciaPago != 'contado',
+                          detalleCredito: _venta != null && _venta!.frecuenciaPago != 'contado'
+                              ? _venta!.tipoCredito
+                              : null,
+                          referenciaCtrl: _referenciaCtrl,
+                          comprobanteNombre: _comprobanteNombre,
+                          onElegirFoto: _elegirComprobante,
+                          onQuitarFoto: () => setState(() {
+                            _comprobanteBase64 = null;
+                            _comprobanteNombre = null;
+                          }),
                         ),
                       ],
                     ],

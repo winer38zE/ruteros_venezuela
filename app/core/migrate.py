@@ -68,9 +68,24 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("activa", "BOOLEAN DEFAULT 1"),
             ("origen", "VARCHAR(20) DEFAULT 'manual'"),
         ],
+        "empresas": [
+            ("banco", "VARCHAR(120)"),
+            ("tipo_cuenta", "VARCHAR(40)"),
+            ("numero_cuenta", "VARCHAR(64)"),
+            ("cedula_nit", "VARCHAR(32)"),
+        ],
         "ventas": [
             ("tipo_tasa_usd", "VARCHAR(20) DEFAULT 'bcv'"),
             ("numero_cuotas", "INTEGER"),
+            ("metodo_pago", "VARCHAR(20) DEFAULT 'efectivo'"),
+            ("referencia_pago", "VARCHAR(80)"),
+            ("comprobante_base64", "TEXT"),
+        ],
+        "cobros": [
+            ("es_transferencia", "BOOLEAN DEFAULT 0"),
+            ("verificado", "BOOLEAN DEFAULT 1"),
+            ("referencia_pago", "VARCHAR(80)"),
+            ("comprobante_base64", "TEXT"),
         ],
         "proveedores": [
             ("saldo_deuda_usd", "NUMERIC(12, 2) DEFAULT 0"),

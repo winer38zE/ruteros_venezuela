@@ -22,6 +22,7 @@ import 'panel_cobranza_screen.dart';
 import 'proveedores_screen.dart';
 import 'rutas_list_screen.dart';
 import 'rutas_resumen_screen.dart';
+import 'datos_bancarios_screen.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -170,6 +171,15 @@ class HomeScreen extends StatelessWidget {
           screen: ContabilidadScreen(),
           badge: 'PRO',
         ),
+        _ModuleDef(
+          id: 'datos_bancarios',
+          icon: Icons.account_balance_rounded,
+          title: 'Transferencia',
+          subtitle: 'Banco, cuenta y cédula para cobrar',
+          color: AppColors.neonBlue,
+          screen: DatosBancariosScreen(),
+          badge: 'BANCO',
+        ),
       ];
 
   List<_ModuleDef> _modulosEmpleado(AppState state) {
@@ -238,6 +248,18 @@ class HomeScreen extends StatelessWidget {
         color: AppColors.violet,
         screen: InventarioScreen(),
         badge: 'STOCK',
+      ));
+    }
+
+    if (state.puedeOperaciones) {
+      modules.add(const _ModuleDef(
+        id: 'datos_bancarios',
+        icon: Icons.account_balance_rounded,
+        title: 'Transferencia',
+        subtitle: 'Banco, cuenta y cédula para cobrar',
+        color: AppColors.neonBlue,
+        screen: DatosBancariosScreen(),
+        badge: 'BANCO',
       ));
     }
 

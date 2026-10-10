@@ -98,6 +98,8 @@ class VentaPendiente {
   final double cobradoUsd;
   final double saldoPendienteUsd;
   final String estado;
+  final String frecuenciaPago;
+  final String tipoCredito;
 
   VentaPendiente({
     required this.id,
@@ -107,6 +109,8 @@ class VentaPendiente {
     required this.cobradoUsd,
     required this.saldoPendienteUsd,
     required this.estado,
+    this.frecuenciaPago = 'contado',
+    this.tipoCredito = 'Contado',
   });
 
   factory VentaPendiente.fromJson(Map<String, dynamic> j) => VentaPendiente(
@@ -117,6 +121,8 @@ class VentaPendiente {
         cobradoUsd: (j['cobrado_usd'] as num).toDouble(),
         saldoPendienteUsd: (j['saldo_pendiente_usd'] as num).toDouble(),
         estado: j['estado'],
+        frecuenciaPago: j['frecuencia_pago'] ?? 'contado',
+        tipoCredito: j['tipo_credito'] ?? 'Contado',
       );
 }
 
@@ -126,6 +132,7 @@ class Cobro {
   final double montoUsd;
   final String monedaPago;
   final String fecha;
+  final String? estadoVenta;
 
   Cobro({
     required this.id,
@@ -133,6 +140,7 @@ class Cobro {
     required this.montoUsd,
     required this.monedaPago,
     required this.fecha,
+    this.estadoVenta,
   });
 
   factory Cobro.fromJson(Map<String, dynamic> j) => Cobro(
@@ -141,6 +149,7 @@ class Cobro {
         montoUsd: (j['monto_usd'] as num).toDouble(),
         monedaPago: j['moneda_pago'],
         fecha: j['fecha'],
+        estadoVenta: j['estado_venta'],
       );
 }
 
@@ -184,6 +193,9 @@ class CobrosService {
     required double tasaUsd,
     required double tasaEur,
     String? cobroId,
+    bool esTransferencia = false,
+    String? referenciaPago,
+    String? comprobanteBase64,
   }) async {
     final body = {
       'venta_id': ventaId,
@@ -191,7 +203,12 @@ class CobrosService {
       'moneda_pago': monedaPago,
       'tasa_usd_aplicada': tasaUsd,
       'tasa_eur_aplicada': tasaEur,
+      'es_transferencia': esTransferencia,
       if (cobroId != null) 'id': cobroId,
+      if (referenciaPago != null && referenciaPago.trim().isNotEmpty)
+        'referencia_pago': referenciaPago.trim(),
+      if (comprobanteBase64 != null && comprobanteBase64.isNotEmpty)
+        'comprobante_base64': comprobanteBase64,
     };
     final data = await _api.post('/cobros/', body);
     return Cobro.fromJson(data);

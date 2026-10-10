@@ -53,6 +53,7 @@ class EstadoVenta(str, enum.Enum):
     BORRADOR = "borrador"
     PENDIENTE = "pendiente"
     PARCIAL = "parcial"
+    POR_VERIFICAR = "por_verificar"
     PAGADA = "pagada"
 
 class EstadoCuota(str, enum.Enum):
@@ -138,6 +139,10 @@ class Empresa(Base):
     nombre = Column(String, nullable=False)
     activa = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    banco = Column(String(120), nullable=True)
+    tipo_cuenta = Column(String(40), nullable=True)
+    numero_cuenta = Column(String(64), nullable=True)
+    cedula_nit = Column(String(32), nullable=True)
 
     usuarios = relationship("Usuario", back_populates="empresa")
     clientes = relationship("Cliente", back_populates="empresa")
@@ -419,6 +424,9 @@ class Venta(Base):
 
     frecuencia_pago = Column(Enum(FrecuenciaPago), nullable=False)
     estado = Column(Enum(EstadoVenta), default=EstadoVenta.PENDIENTE)
+    metodo_pago = Column(String(20), nullable=False, default="efectivo")
+    referencia_pago = Column(String(80), nullable=True)
+    comprobante_base64 = Column(Text, nullable=True)
 
     sincronizado = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
@@ -427,6 +435,10 @@ class Venta(Base):
     cobros = relationship("Cobro", back_populates="venta")
     cuotas = relationship("CuotaAmortizacion", back_populates="venta", cascade="all, delete-orphan")
     cliente = relationship("Cliente")
+
+    @property
+    def tiene_comprobante(self) -> bool:
+        return bool(self.comprobante_base64)
 
 
 class CuotaAmortizacion(Base):
@@ -470,11 +482,19 @@ class Cobro(Base):
     moneda_pago = Column(Enum(MonedaPago), nullable=False)
     tasa_usd_aplicada = Column(Numeric(12, 4), nullable=False)
     tasa_eur_aplicada = Column(Numeric(12, 4), nullable=False)
+    es_transferencia = Column(Boolean, nullable=False, default=False)
+    verificado = Column(Boolean, nullable=False, default=True)
+    referencia_pago = Column(String(80), nullable=True)
+    comprobante_base64 = Column(Text, nullable=True)
 
     sincronizado = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     venta = relationship("Venta", back_populates="cobros")
+
+    @property
+    def tiene_comprobante(self) -> bool:
+        return bool(self.comprobante_base64)
 
 
 # ---------- FINANZAS / NÓMINA ----------

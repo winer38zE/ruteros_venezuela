@@ -100,16 +100,20 @@ class StatusBadge extends StatelessWidget {
   final Color color;
 
   factory StatusBadge.estado(String estado) {
-    Color c;
     switch (estado) {
       case 'pagada':
-        c = AppColors.emerald;
+        return const StatusBadge(label: 'Pagada', color: AppColors.emerald);
+      case 'por_verificar':
+        return const StatusBadge(label: 'Pagada (Por Verificar)', color: AppColors.amber);
       case 'parcial':
-        c = AppColors.amber;
+        return const StatusBadge(label: 'Parcial', color: AppColors.amber);
+      case 'borrador':
+        return const StatusBadge(label: 'Borrador', color: AppColors.neonBlue);
+      case 'pendiente':
+        return const StatusBadge(label: 'Pendiente', color: Color(0xFFEF4444));
       default:
-        c = const Color(0xFFEF4444);
+        return StatusBadge(label: estado, color: const Color(0xFFEF4444));
     }
-    return StatusBadge(label: estado.toUpperCase(), color: c);
   }
 
   @override

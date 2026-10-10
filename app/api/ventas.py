@@ -2,7 +2,13 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
-from app.core.deps import obtener_usuario_opcional, require_vendedor_o_superior, require_operaciones
+from app.core.deps import (
+    obtener_usuario_opcional,
+    require_vendedor_o_superior,
+    require_operaciones,
+    require_admin_o_dueno,
+    rol_confirma_pago,
+)
 from app.core.tenant import obtener_empresa_tenant
 from app.models.core import (
     Venta, Cliente, Usuario, FrecuenciaPago, EstadoVenta, TipoCliente,
@@ -14,6 +20,7 @@ from app.services.contabilidad import generar_asiento_venta
 from app.services.inventario import procesar_detalles_venta, calcular_total_detalles
 from app.services.buro_credito import (
     actualizar_historial_comportamiento,
+    actualizar_score_por_cobro,
     clasificacion_por_score,
     clasificar_score,
     registrar_evento_buro,
@@ -92,6 +99,9 @@ def _venta_a_response(venta: Venta) -> VentaResponse:
         frecuencia_pago=frecuencia.value,
         tipo_tasa_usd=venta.tipo_tasa_usd.value if venta.tipo_tasa_usd else "bcv",
         numero_cuotas=venta.numero_cuotas,
+        metodo_pago=venta.metodo_pago or "efectivo",
+        referencia_pago=venta.referencia_pago,
+        tiene_comprobante=bool(venta.comprobante_base64),
         detalles=venta.detalles or [],
         cuotas=cuotas_enriquecidas,
     )
@@ -129,6 +139,9 @@ def crear_venta(
         raise HTTPException(status_code=400, detail="Tipo de tasa USD inválido")
 
     es_borrador = venta.es_borrador and vendedor_actual.rol == RolUsuario.VENDEDOR
+    metodo = (venta.metodo_pago or "efectivo").strip().lower()
+    if metodo not in ("efectivo", "transferencia"):
+        raise HTTPException(status_code=400, detail="Método de pago inválido")
 
     if not es_borrador:
         actualizar_historial_comportamiento(db, cliente_actual)
@@ -146,10 +159,13 @@ def crear_venta(
         if abs(total_calculado - total_venta) > Decimal("0.05"):
             total_venta = total_calculado
 
-    if frecuencia == FrecuenciaPago.CONTADO:
-        estado_inicial = EstadoVenta.PAGADA
-    elif es_borrador:
+    if es_borrador:
         estado_inicial = EstadoVenta.BORRADOR
+    elif frecuencia == FrecuenciaPago.CONTADO:
+        if metodo == "transferencia" and not rol_confirma_pago(vendedor_actual):
+            estado_inicial = EstadoVenta.POR_VERIFICAR
+        else:
+            estado_inicial = EstadoVenta.PAGADA
     else:
         estado_inicial = EstadoVenta.PENDIENTE
 
@@ -167,6 +183,9 @@ def crear_venta(
         numero_cuotas=venta.numero_cuotas,
         frecuencia_pago=frecuencia,
         estado=estado_inicial,
+        metodo_pago=metodo,
+        referencia_pago=(venta.referencia_pago or "").strip() or None,
+        comprobante_base64=venta.comprobante_base64,
     )
 
     db.add(nueva_venta)
@@ -239,7 +258,10 @@ def aprobar_venta_borrador(
         raise HTTPException(status_code=400, detail="La venta no está en borrador")
 
     validar_venta_credito(venta.cliente, venta.frecuencia_pago)
-    venta.estado = EstadoVenta.PENDIENTE
+    if (venta.metodo_pago or "efectivo") == "transferencia" and venta.frecuencia_pago == FrecuenciaPago.CONTADO:
+        venta.estado = EstadoVenta.PAGADA
+    else:
+        venta.estado = EstadoVenta.PENDIENTE
 
     if venta.detalles:
         from app.services.inventario import descontar_stock
@@ -271,6 +293,44 @@ def aprobar_venta_borrador(
         except Exception:
             logger.exception("No se pudo enviar comprobante de venta por correo")
     return _venta_a_response(venta_final)
+
+
+@router.post("/{venta_id}/verificar", response_model=VentaResponse)
+def verificar_pago_transferencia(
+    venta_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_admin_o_dueno),
+):
+    venta = (
+        db.query(Venta)
+        .options(
+            joinedload(Venta.detalles),
+            joinedload(Venta.cuotas),
+            joinedload(Venta.cliente),
+            joinedload(Venta.cobros),
+        )
+        .filter(Venta.id == venta_id, Venta.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    if venta.estado != EstadoVenta.POR_VERIFICAR:
+        raise HTTPException(status_code=400, detail="La venta no está pendiente de verificación")
+
+    for cobro in list(venta.cobros or []):
+        if cobro.verificado is False and venta.frecuencia_pago != FrecuenciaPago.CONTADO:
+            cobro.verificado = True
+            if venta.cliente:
+                actualizar_score_por_cobro(db, venta, cobro)
+        else:
+            cobro.verificado = True
+
+    venta.estado = EstadoVenta.PAGADA
+    if venta.cliente:
+        actualizar_historial_comportamiento(db, venta.cliente)
+    db.commit()
+    db.refresh(venta)
+    return _venta_a_response(venta)
 
 
 @router.get("/{venta_id}/amortizacion", response_model=List[CuotaAmortizacionResponse])

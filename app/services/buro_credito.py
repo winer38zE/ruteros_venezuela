@@ -315,15 +315,18 @@ def actualizar_historial_comportamiento(db: Session, cliente: Cliente) -> None:
         total = Decimal(str(venta.total_usd or 0))
         monto_compras += total
         cobros = list(venta.cobros or [])
-        cobrado = sum((Decimal(str(c.monto_usd or 0)) for c in cobros), Decimal("0"))
         frecuencia = venta.frecuencia_pago
 
         if frecuencia == FrecuenciaPago.CONTADO:
+            if venta.estado == EstadoVenta.POR_VERIFICAR:
+                continue
             total_pagos += 1
             monto_pagos += total
             continue
 
-        total_pagos += len(cobros)
+        cobros_ok = [c for c in cobros if c.verificado is not False]
+        cobrado = sum((Decimal(str(c.monto_usd or 0)) for c in cobros_ok), Decimal("0"))
+        total_pagos += len(cobros_ok)
         monto_pagos += cobrado
         saldo = total - cobrado
         if saldo <= Decimal("0.01"):

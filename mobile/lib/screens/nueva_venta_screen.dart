@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -12,6 +15,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
 import '../widgets/score_badge.dart';
 import '../widgets/gps_location_capture.dart';
+import '../widgets/transferencia_pago.dart';
 
 class NuevaVentaScreen extends StatefulWidget {
   const NuevaVentaScreen({super.key});
@@ -31,6 +35,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   Almacen? _almacen;
   bool _usarClienteExistente = true;
   bool _esCredito = true;
+  bool _pagoTransferencia = false;
   bool _creditoBloqueado = false;
   String _clasificacionCredito = '';
   String _frecuencia = 'semanal';
@@ -47,6 +52,9 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   final _cantidadCtrl = TextEditingController(text: '1');
   final _montoManualCtrl = TextEditingController();
   final _cuotasCtrl = TextEditingController(text: '12');
+  final _referenciaCtrl = TextEditingController();
+  String? _comprobanteBase64;
+  String? _comprobanteNombre;
   double? _latRes;
   double? _lngRes;
   double? _latTrab;
@@ -76,6 +84,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     _cantidadCtrl.dispose();
     _montoManualCtrl.dispose();
     _cuotasCtrl.dispose();
+    _referenciaCtrl.dispose();
     super.dispose();
   }
 
@@ -297,6 +306,22 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     return creado.id;
   }
 
+  Future<void> _elegirComprobante() async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 75,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _comprobanteBase64 = base64Encode(bytes);
+      _comprobanteNombre = file.name;
+    });
+  }
+
   Future<void> _registrarVenta({bool borrador = false}) async {
     if (_esCredito) {
       final idConsulta = _usarClienteExistente
@@ -316,7 +341,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Crédito bloqueado: ${detalle.clasificacionCredito}. Solo se permite contado.',
+                  'Crédito bloqueado: ${detalle.clasificacionCredito}. Solo venta de contado, en efectivo o por transferencia.',
                 ),
                 backgroundColor: const Color(0xFFEF4444),
               ),
@@ -327,7 +352,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           if (_creditoBloqueado) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Crédito bloqueado: cliente moroso o de alto riesgo. Solo contado.'),
+                content: Text('Crédito bloqueado. Solo venta de contado, en efectivo o por transferencia.'),
                 backgroundColor: Color(0xFFEF4444),
               ),
             );
@@ -337,7 +362,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
       } else if (_creditoBloqueado) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Crédito bloqueado: cliente moroso o de alto riesgo. Solo contado.'),
+            content: Text('Crédito bloqueado. Solo venta de contado, en efectivo o por transferencia.'),
             backgroundColor: Color(0xFFEF4444),
           ),
         );
@@ -402,11 +427,18 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             longitudResidencia: _lngRes,
             latitudTrabajo: _latTrab,
             longitudTrabajo: _lngTrab,
+            metodoPago: _pagoTransferencia ? 'transferencia' : 'efectivo',
+            referenciaPago: _pagoTransferencia ? _referenciaCtrl.text : null,
+            comprobanteBase64: _pagoTransferencia ? _comprobanteBase64 : null,
           );
       if (!mounted) return;
       final msg = borrador
           ? 'Borrador guardado (${venta.estado})'
-          : 'Venta registrada: ${_fmt.format(_total)}';
+          : venta.estado == 'por_verificar'
+              ? 'Venta de contado por transferencia: Pagada (Por Verificar)'
+              : _pagoTransferencia && _esCredito
+                  ? 'Venta a crédito por transferencia: ${_fmt.format(_total)}'
+                  : 'Venta registrada: ${_fmt.format(_total)}';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       if (!borrador && venta.cuotas.isNotEmpty) {
         await showDialog<void>(
@@ -517,11 +549,15 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Tipo de venta', style: TextStyle(fontWeight: FontWeight.w800)),
+                const Text('Fase 1 · Tipo de venta', style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 SegmentedButton<bool>(
                   segments: [
-                    const ButtonSegment(value: false, label: Text('Contado'), icon: Icon(Icons.payments_outlined)),
+                    const ButtonSegment(
+                      value: false,
+                      label: Text('Contado'),
+                      icon: Icon(Icons.payments_outlined),
+                    ),
                     ButtonSegment(
                       value: true,
                       label: const Text('Crédito'),
@@ -542,9 +578,32 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     }
                     setState(() {
                       _esCredito = s.first;
-                      if (!_esCredito) _frecuencia = 'contado';
+                      if (!_esCredito) {
+                        _frecuencia = 'contado';
+                      } else if (_frecuencia == 'contado') {
+                        _frecuencia = 'semanal';
+                      }
                     });
                   },
+                ),
+                const SizedBox(height: 16),
+                const Text('Fase 2 · Método de pago', style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: false,
+                      label: Text('Efectivo'),
+                      icon: Icon(Icons.payments_outlined),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      label: Text('Transferencia'),
+                      icon: Icon(Icons.account_balance_outlined),
+                    ),
+                  ],
+                  selected: {_pagoTransferencia},
+                  onSelectionChanged: (s) => setState(() => _pagoTransferencia = s.first),
                 ),
                 if (_creditoBloqueado) ...[
                   const SizedBox(height: 12),
@@ -558,9 +617,23 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     ),
                     child: Text(
                       'Crédito bloqueado. ${_clasificacionCredito.isEmpty ? 'Moroso / Solo Contado' : _clasificacionCredito}. '
-                      'Esta venta solo puede registrarse de contado.',
+                      'Esta venta solo puede registrarse de contado, en efectivo o por transferencia.',
                       style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w700),
                     ),
+                  ),
+                ],
+                if (_pagoTransferencia) ...[
+                  const SizedBox(height: 16),
+                  FaseTransferencia(
+                    esCredito: _esCredito,
+                    detalleCredito: _esCredito ? _frecuencia : null,
+                    referenciaCtrl: _referenciaCtrl,
+                    comprobanteNombre: _comprobanteNombre,
+                    onElegirFoto: _elegirComprobante,
+                    onQuitarFoto: () => setState(() {
+                      _comprobanteBase64 = null;
+                      _comprobanteNombre = null;
+                    }),
                   ),
                 ],
                 const SizedBox(height: 16),
