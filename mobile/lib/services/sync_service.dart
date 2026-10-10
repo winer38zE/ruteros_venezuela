@@ -16,21 +16,52 @@ class SyncService {
 
   final ApiService _api;
   final Connectivity _conectividad = Connectivity();
+  final StreamController<String> _avisos = StreamController<String>.broadcast();
   StreamSubscription<List<ConnectivityResult>>? _redSub;
   bool _enCurso = false;
+  bool _escuchando = false;
+
+  /// null hasta la primera lectura. Solo el paso de false a true dispara la sync.
+  bool? _enLinea;
 
   static const _lote = 200;
   static final _uuid = Uuid();
 
-  void escucharRed() {
-    _redSub ??= _conectividad.onConnectivityChanged.listen((results) {
-      if (_hayResultado(results)) {
-        sincronizar();
+  /// Avisos para un SnackBar global. No incluye la sync silenciosa del login.
+  Stream<String> get avisos => _avisos.stream;
+
+  Future<void> escucharRed() async {
+    if (_escuchando) return;
+    _escuchando = true;
+    try {
+      _enLinea = await hayRed();
+    } catch (_) {
+      _enLinea = null;
+    }
+    if (!_escuchando) return;
+    _redSub = _conectividad.onConnectivityChanged.listen((results) {
+      final ahora = _hayResultado(results);
+      final antes = _enLinea;
+      _enLinea = ahora;
+      if (antes == false && ahora) {
+        _sincronizarAlVolverLaRed();
       }
     });
   }
 
+  void _sincronizarAlVolverLaRed() {
+    if (!_api.hasSession) return;
+    _anunciar('Sincronizando con el servidor...');
+    sincronizar();
+  }
+
+  void _anunciar(String mensaje) {
+    if (!_avisos.isClosed) _avisos.add(mensaje);
+  }
+
   Future<void> dejarDeEscuchar() async {
+    _escuchando = false;
+    _enLinea = null;
     await _redSub?.cancel();
     _redSub = null;
   }

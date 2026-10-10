@@ -37,6 +37,7 @@ class AppState extends ChangeNotifier {
     empresas = EmpresaService(api);
     whatsapp = WhatsappService(api);
     sync = SyncService(api);
+    unawaited(sync.escucharRed());
     _inicializar();
   }
 

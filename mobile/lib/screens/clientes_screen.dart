@@ -50,6 +50,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
         );
   }
 
+  /// Deslizar la lista: comprueba la red y solo entonces pide el catálogo fresco.
+  Future<void> _alDeslizar() async {
+    final online = await context.read<AppState>().sync.hayRed();
+    if (!mounted) return;
+    if (!online) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Trabajando sin conexión - Mostrando datos locales')),
+      );
+      return;
+    }
+    await _refrescar();
+  }
+
   Future<void> _refrescar({bool avisar = true}) async {
     try {
       if (_isarLista) {
@@ -85,7 +98,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
       title: 'Gestión de Clientes',
       accentColor: AppColors.neonCyan,
       actions: [
-        IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: () => _refrescar()),
+        IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: () => _alDeslizar()),
       ],
       floatingActionButton: NeonFab(
         label: 'Nuevo cliente',
@@ -146,7 +159,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
               ),
             Expanded(
               child: RefreshIndicator(
-                onRefresh: () => _refrescar(),
+                onRefresh: _alDeslizar,
                 child: visibles.isEmpty
                     ? ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
@@ -241,7 +254,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
               (c.telefono ?? '').toLowerCase().contains(q);
         }).toList();
         return RefreshIndicator(
-          onRefresh: () => _refrescar(),
+          onRefresh: _alDeslizar,
           child: clientes.isEmpty
               ? ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
