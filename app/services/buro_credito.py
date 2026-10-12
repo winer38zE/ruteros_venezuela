@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.core import (
     Cliente,
     Cobro,
     EventoBuroCredito,
     FrecuenciaPago,
+    EstadoCuota,
     EstadoVenta,
     Venta,
 )
@@ -19,6 +20,7 @@ from app.models.core import (
 SCORE_MIN = 15
 SCORE_MAX = 100
 SCORE_BLOQUEO_CREDITO = 35
+SCORE_MINIMO_CREDITO = 50
 
 _DIAS_FRECUENCIA = {
     FrecuenciaPago.SEMANAL: 7,
@@ -42,13 +44,29 @@ def clasificar_score(score: int) -> str:
 
 
 def etiqueta_estado(score: int) -> str:
-    mapping = {
-        "excelente": "Excelente",
-        "bueno": "Bueno",
-        "regular": "Regular",
-        "malo": "Malo / Moroso",
-    }
-    return mapping[clasificar_score(score)]
+    return clasificacion_por_score(score, en_mora=False)
+
+
+def clasificacion_por_score(score: int, en_mora: bool = False) -> str:
+    if en_mora or score <= SCORE_BLOQUEO_CREDITO:
+        return "Moroso / Solo Contado"
+    nivel = clasificar_score(score)
+    if nivel == "excelente":
+        return "Excelente"
+    if nivel == "regular":
+        return "Regular"
+    return "Bueno"
+
+
+def credito_bloqueado(cliente: Cliente) -> bool:
+    """Crédito denegado si está moroso o el score no llega a 50."""
+    score = cliente.score_credito if cliente.score_credito is not None else 70
+    if score < SCORE_MINIMO_CREDITO:
+        return True
+    if (cliente.estado_morosidad or "") == "moroso":
+        return True
+    clasif = (cliente.clasificacion_credito or "").lower()
+    return "moroso" in clasif or "solo contado" in clasif
 
 
 def _clamp_score(score: int) -> int:
@@ -159,13 +177,12 @@ def consultar_buro(db: Session, identificacion: str) -> dict:
 def validar_venta_credito(cliente: Cliente, frecuencia: FrecuenciaPago) -> None:
     if frecuencia == FrecuenciaPago.CONTADO:
         return
-    score_efectivo = cliente.score_credito
-    if score_efectivo <= SCORE_BLOQUEO_CREDITO:
+    if credito_bloqueado(cliente):
         raise HTTPException(
-            status_code=403,
+            status_code=400,
             detail=(
-                "Crédito Rechazado: Cliente reportado con alto riesgo crediticio. "
-                "Solo ventas de contado."
+                "Acción denegada: El cliente está reportado como moroso o su "
+                "score es insuficiente. Solo se permite venta al contado."
             ),
         )
 
@@ -273,3 +290,72 @@ def sincronizar_score_inicial(db: Session, cliente: Cliente) -> None:
         cliente.score_credito = global_score
     else:
         cliente.score_credito = _clamp_score(cliente.score_credito or 70)
+    cliente.clasificacion_credito = clasificacion_por_score(cliente.score_credito, en_mora=False)
+    if not cliente.estado_morosidad:
+        cliente.estado_morosidad = "al_dia"
+
+
+def actualizar_historial_comportamiento(db: Session, cliente: Cliente) -> None:
+    """Recalcula compras, pagos y morosidad. No modifica día de ruta ni el score numérico."""
+    ventas = (
+        db.query(Venta)
+        .options(selectinload(Venta.cobros), selectinload(Venta.cuotas))
+        .filter(
+            Venta.cliente_id == cliente.id,
+            Venta.estado != EstadoVenta.BORRADOR,
+        )
+        .all()
+    )
+
+    monto_compras = Decimal("0")
+    monto_pagos = Decimal("0")
+    total_pagos = 0
+    en_mora = False
+    ahora = datetime.utcnow()
+
+    for venta in ventas:
+        total = Decimal(str(venta.total_usd or 0))
+        monto_compras += total
+        cobros = list(venta.cobros or [])
+        frecuencia = venta.frecuencia_pago
+
+        if frecuencia == FrecuenciaPago.CONTADO:
+            if venta.estado == EstadoVenta.POR_VERIFICAR:
+                continue
+            total_pagos += 1
+            monto_pagos += total
+            continue
+
+        cobros_ok = [c for c in cobros if c.verificado is not False]
+        cobrado = sum((Decimal(str(c.monto_usd or 0)) for c in cobros_ok), Decimal("0"))
+        total_pagos += len(cobros_ok)
+        monto_pagos += cobrado
+        saldo = total - cobrado
+        if saldo <= Decimal("0.01"):
+            continue
+        if venta.estado not in (EstadoVenta.PENDIENTE, EstadoVenta.PARCIAL):
+            continue
+
+        cuotas_vencidas = [
+            cuota
+            for cuota in (venta.cuotas or [])
+            if cuota.estado != EstadoCuota.PAGADA
+            and cuota.fecha_vencimiento is not None
+            and cuota.fecha_vencimiento < ahora
+        ]
+        if cuotas_vencidas:
+            en_mora = True
+            continue
+        limite = _fecha_limite_pago(venta)
+        if limite is not None and ahora > limite and not venta.cuotas:
+            en_mora = True
+
+    cliente.total_compras = len(ventas)
+    cliente.monto_compras_usd = monto_compras
+    cliente.total_pagos = total_pagos
+    cliente.monto_pagos_usd = monto_pagos
+    cliente.estado_morosidad = "moroso" if en_mora else "al_dia"
+    cliente.clasificacion_credito = clasificacion_por_score(
+        cliente.score_credito or 70,
+        en_mora=en_mora,
+    )

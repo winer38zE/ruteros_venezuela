@@ -1,0 +1,6 @@
+# Copia este archivo como key.properties (está en .gitignore) para firmar release en Play Store.
+# Genera el keystore: keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+storePassword=TU_PASSWORD_DEL_KEYSTORE
+keyPassword=TU_PASSWORD_DE_LA_CLAVE
+keyAlias=upload
+storeFile=upload-keystore.jks

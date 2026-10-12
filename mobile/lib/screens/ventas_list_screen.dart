@@ -28,6 +28,32 @@ class _VentasListScreenState extends State<VentasListScreen> {
     _cargar();
   }
 
+  String _etiquetaVenta(Venta venta) {
+    final tipo = venta.frecuenciaPago == 'contado' ? 'Contado' : 'Crédito';
+    final metodo = venta.metodoPago == 'pago_movil'
+        ? 'Pago móvil'
+        : venta.metodoPago == 'transferencia'
+            ? 'Transferencia'
+            : 'Efectivo';
+    return '$tipo · $metodo';
+  }
+
+  Future<void> _verificar(Venta venta) async {
+    try {
+      await context.read<AppState>().ventas.verificarPago(venta.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pago confirmado. La venta quedó Pagada.')),
+      );
+      await _cargar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFEF4444)),
+      );
+    }
+  }
+
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
@@ -104,11 +130,13 @@ class _VentasListScreenState extends State<VentasListScreen> {
                                 ),
                               ),
                               title: Text(_fmt.format(v.totalUsd)),
-                              subtitle: Row(
+                              subtitle: Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   StatusBadge.estado(v.estado),
-                                  const SizedBox(width: 8),
-                                  Text('ID ${v.id.substring(0, 8)}'),
+                                  Text(_etiquetaVenta(v)),
                                 ],
                               ),
                               children: [
@@ -133,10 +161,34 @@ class _VentasListScreenState extends State<VentasListScreen> {
                                       ),
                                     ),
                                   ),
+                                if ((v.referenciaPago ?? '').isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+                                    child: Text('Referencia: ${v.referenciaPago}'),
+                                  ),
+                                if (v.tieneComprobante)
+                                  const Padding(
+                                    padding: EdgeInsets.fromLTRB(14, 4, 14, 0),
+                                    child: Text('Comprobante de transferencia adjunto'),
+                                  ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                                  child: EnviarReciboButton(
-                                    onEnviar: () => context.read<AppState>().ventas.enviarRecibo(v.id),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      EnviarReciboButton(
+                                        onEnviar: () => context.read<AppState>().ventas.enviarRecibo(v.id),
+                                      ),
+                                      if (v.estado == 'por_verificar' &&
+                                          context.watch<AppState>().puedeOperaciones) ...[
+                                        const SizedBox(height: 8),
+                                        FilledButton.icon(
+                                          onPressed: () => _verificar(v),
+                                          icon: const Icon(Icons.verified_rounded),
+                                          label: const Text('Confirmar pago'),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
                               ],

@@ -1,25 +1,41 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
-from app.core.deps import obtener_usuario_opcional, require_cobrador_o_superior, require_operaciones
+from app.core.deps import obtener_usuario_opcional, require_cobrador_o_superior, require_operaciones, rol_confirma_pago
 from app.core.tenant import obtener_empresa_tenant
+from app.api.empresas import resolver_cuenta_transferencia
 from app.models.core import (
     Cobro, Venta, Usuario, MonedaPago, EstadoVenta, RolUsuario,
-    Producto, DetalleVenta, EstadoCuota,
+    Producto, DetalleVenta, EstadoCuota, CuentaBancaria,
 )
-from app.schemas.core import CobroCreate, CobroResponse, VentaPendienteResponse, CuotaAmortizacionResponse, EnvioReciboResponse
+from app.schemas.core import (
+    CobroCreate,
+    CobroResponse,
+    VentaPendienteResponse,
+    CuotaAmortizacionResponse,
+    EnvioReciboResponse,
+    ComprobanteWhatsappRequest,
+    WhatsappReporteResponse,
+)
 from typing import List, Optional
 from datetime import datetime
 from decimal import Decimal
 import uuid
 from app.services.contabilidad import generar_asiento_cobro
-from app.services.buro_credito import actualizar_score_por_cobro
+from app.services.buro_credito import actualizar_historial_comportamiento, actualizar_score_por_cobro
 from app.services.amortizacion import (
     aplicar_abono_a_cuotas,
     proxima_cuota_pendiente,
     serializar_cuota,
 )
 from app.services.recibos_email import enviar_recibo_cobro
+from app.services.evolution_service import (
+    armar_caption_comprobante,
+    enviar_imagen,
+    estado_http_whatsapp,
+    normalizar_telefono,
+    telefono_administrador,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,16 +50,33 @@ FRECUENCIA_LABEL = {
 }
 
 
-def _actualizar_estado_venta(db: Session, venta: Venta) -> None:
+def _actualizar_estado_venta(db: Session, venta: Venta, cobro_actual: Cobro, usuario: Usuario) -> list[Cobro]:
+    """Devuelve cobros que pasan de no verificados a verificados en este abono."""
+    if cobro_actual.es_transferencia and not rol_confirma_pago(usuario):
+        cobro_actual.verificado = False
+    else:
+        cobro_actual.verificado = True
+
+    recien_verificados: list[Cobro] = []
     total_cobrado = sum(Decimal(str(c.monto_usd)) for c in venta.cobros)
     total_venta = Decimal(str(venta.total_usd))
 
     if total_cobrado >= total_venta:
-        venta.estado = EstadoVenta.PAGADA
+        hay_sin_verificar = any(c.verificado is False for c in venta.cobros)
+        if hay_sin_verificar and not rol_confirma_pago(usuario):
+            venta.estado = EstadoVenta.POR_VERIFICAR
+        else:
+            if rol_confirma_pago(usuario):
+                for cobro in venta.cobros:
+                    if cobro.verificado is False:
+                        cobro.verificado = True
+                        recien_verificados.append(cobro)
+            venta.estado = EstadoVenta.PAGADA
     elif total_cobrado > 0:
         venta.estado = EstadoVenta.PARCIAL
     else:
         venta.estado = EstadoVenta.PENDIENTE
+    return recien_verificados
 
 
 def _resolver_cobrador(
@@ -233,6 +266,13 @@ def registrar_cobro(
         raise HTTPException(status_code=400, detail="Moneda de pago inválida")
 
     cobro_id = uuid.UUID(cobro.id) if cobro.id else uuid.uuid4()
+    canal = cobro.canal or ("transferencia" if cobro.es_transferencia else None)
+    electronico = canal in ("transferencia", "pago_movil")
+    cuenta_destino = None
+    if electronico:
+        cuenta_destino = resolver_cuenta_transferencia(
+            db, empresa_actual.id, cobro.cuenta_bancaria_id, canal=canal
+        )
 
     nuevo_cobro = Cobro(
         id=cobro_id,
@@ -244,16 +284,25 @@ def registrar_cobro(
         moneda_pago=moneda,
         tasa_usd_aplicada=cobro.tasa_usd_aplicada,
         tasa_eur_aplicada=cobro.tasa_eur_aplicada,
+        es_transferencia=electronico,
+        referencia_pago=(cobro.referencia_pago or "").strip() or None,
+        comprobante_base64=cobro.comprobante_base64,
+        cuenta_bancaria_id=cuenta_destino.id if cuenta_destino else None,
+        verificado=True,
     )
 
     db.add(nuevo_cobro)
     db.flush()
     db.refresh(venta)
-    _actualizar_estado_venta(db, venta)
+    recien_verificados = _actualizar_estado_venta(db, venta, nuevo_cobro, cobrador)
     aplicar_abono_a_cuotas(db, venta, monto)
     db.refresh(venta, attribute_names=["cliente", "cobros"])
     if venta.cliente:
-        actualizar_score_por_cobro(db, venta, nuevo_cobro)
+        if nuevo_cobro.verificado and nuevo_cobro not in recien_verificados:
+            actualizar_score_por_cobro(db, venta, nuevo_cobro)
+        for cobro_previo in recien_verificados:
+            actualizar_score_por_cobro(db, venta, cobro_previo)
+        actualizar_historial_comportamiento(db, venta.cliente)
     generar_asiento_cobro(db, nuevo_cobro)
     db.commit()
     db.refresh(nuevo_cobro)
@@ -263,7 +312,8 @@ def registrar_cobro(
     except Exception:
         logger.exception("No se pudo enviar recibo de cobro por correo")
 
-    return nuevo_cobro
+    respuesta = CobroResponse.model_validate(nuevo_cobro)
+    return respuesta.model_copy(update={"estado_venta": venta.estado.value})
 
 
 @router.post("/{cobro_id}/enviar-recibo", response_model=EnvioReciboResponse)
@@ -292,6 +342,73 @@ def enviar_recibo_cobro_manual(
     if not exito:
         raise HTTPException(status_code=400, detail=mensaje)
     return EnvioReciboResponse(exito=exito, mensaje=mensaje, email=email)
+
+
+@router.post("/{cobro_id}/comprobante/whatsapp", response_model=WhatsappReporteResponse)
+def enviar_comprobante_cobro_whatsapp(
+    cobro_id: uuid.UUID,
+    body: ComprobanteWhatsappRequest | None = None,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_cobrador_o_superior),
+):
+    """Envía la foto del comprobante del cobro al WhatsApp del administrador."""
+    cobro = (
+        db.query(Cobro)
+        .filter(Cobro.id == cobro_id, Cobro.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not cobro:
+        raise HTTPException(status_code=404, detail="Cobro no encontrado")
+    if not cobro.es_transferencia:
+        raise HTTPException(
+            status_code=400,
+            detail="Este cobro no es por transferencia ni pago móvil",
+        )
+    if not cobro.comprobante_base64:
+        raise HTTPException(
+            status_code=400,
+            detail="Adjunte la foto del comprobante para enviarla por WhatsApp",
+        )
+
+    venta = (
+        db.query(Venta)
+        .options(joinedload(Venta.cliente))
+        .filter(Venta.id == cobro.venta_id, Venta.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    metodo = (body.metodo if body and body.metodo else "") or ""
+    if metodo not in ("transferencia", "pago_movil") and cobro.cuenta_bancaria_id:
+        cuenta = db.query(CuentaBancaria).filter(CuentaBancaria.id == cobro.cuenta_bancaria_id).first()
+        if cuenta and cuenta.canal in ("transferencia", "pago_movil"):
+            metodo = cuenta.canal
+    if metodo not in ("transferencia", "pago_movil"):
+        metodo = "transferencia"
+
+    try:
+        telefono = telefono_administrador(db, usuario.empresa_id)
+        destino = normalizar_telefono(telefono)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    cliente = venta.cliente.nombre if venta.cliente else "Cliente"
+    caption = armar_caption_comprobante(
+        cliente,
+        f"${float(cobro.monto_usd):.2f} USD",
+        cobro.referencia_pago,
+        metodo,
+    )
+    ok, mensaje = enviar_imagen(
+        destino,
+        None,
+        caption,
+        imagen_base64=cobro.comprobante_base64,
+    )
+    if not ok:
+        raise HTTPException(status_code=estado_http_whatsapp(mensaje), detail=mensaje)
+    return WhatsappReporteResponse(enviado=True, telefono=destino, mensaje=mensaje)
 
 
 @router.get("/", response_model=List[CobroResponse])

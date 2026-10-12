@@ -1,9 +1,9 @@
 import uuid
 import enum
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR,
-    UniqueConstraint,
+    Column, String, Boolean, DateTime, Date, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR,
+    UniqueConstraint, Index,
 )
 from sqlalchemy.orm import relationship, declarative_base
 
@@ -53,6 +53,7 @@ class EstadoVenta(str, enum.Enum):
     BORRADOR = "borrador"
     PENDIENTE = "pendiente"
     PARCIAL = "parcial"
+    POR_VERIFICAR = "por_verificar"
     PAGADA = "pagada"
 
 class EstadoCuota(str, enum.Enum):
@@ -70,6 +71,27 @@ class MonedaPago(str, enum.Enum):
 class TipoCliente(str, enum.Enum):
     MAYORISTA = "mayorista"
     DETAL = "detal"
+
+
+class DiaVisita(str, enum.Enum):
+    LUNES = "LUNES"
+    MARTES = "MARTES"
+    MIERCOLES = "MIERCOLES"
+    JUEVES = "JUEVES"
+    VIERNES = "VIERNES"
+    SABADO = "SABADO"
+    DOMINGO = "DOMINGO"
+
+
+class TipoVisitaRuta(str, enum.Enum):
+    FRECUENTE = "frecuente"
+    NUEVO = "nuevo"
+
+
+class EstadoVisita(str, enum.Enum):
+    PENDIENTE = "pendiente"
+    VISITADO = "visitado"
+    NO_ENCONTRADO = "no_encontrado"
 
 class TipoReferenciaAsiento(str, enum.Enum):
     VENTA = "venta"
@@ -117,6 +139,10 @@ class Empresa(Base):
     nombre = Column(String, nullable=False)
     activa = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    banco = Column(String(120), nullable=True)
+    tipo_cuenta = Column(String(40), nullable=True)
+    numero_cuenta = Column(String(64), nullable=True)
+    cedula_nit = Column(String(32), nullable=True)
 
     usuarios = relationship("Usuario", back_populates="empresa")
     clientes = relationship("Cliente", back_populates="empresa")
@@ -125,6 +151,25 @@ class Empresa(Base):
         "ConfiguracionFiscal", back_populates="empresa", uselist=False
     )
     almacenes = relationship("Almacen", back_populates="empresa")
+    cuentas_bancarias = relationship("CuentaBancaria", back_populates="empresa")
+
+
+class CuentaBancaria(Base):
+    __tablename__ = "cuentas_bancarias"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    banco = Column(String(120), nullable=False)
+    tipo_cuenta = Column(String(40), nullable=False)
+    numero_cuenta = Column(String(64), nullable=False)
+    titular = Column(String(160), nullable=False)
+    documento = Column(String(32), nullable=False)
+    canal = Column(String(20), nullable=False, default="transferencia")
+    telefono = Column(String(20), nullable=True)
+    activa = Column(Boolean, nullable=False, default=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa", back_populates="cuentas_bancarias")
 
 
 # ---------- USUARIO ----------
@@ -171,11 +216,114 @@ class Cliente(Base):
     ref_familiar_telefono = Column(String, nullable=True)
     email = Column(String, nullable=True)
     score_credito = Column(Integer, nullable=False, default=70)
+    total_compras = Column(Integer, nullable=False, default=0)
+    monto_compras_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    total_pagos = Column(Integer, nullable=False, default=0)
+    monto_pagos_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    estado_morosidad = Column(String(20), nullable=False, default="al_dia")
+    clasificacion_credito = Column(String(40), nullable=False, default="Bueno")
     tipo_cliente = Column(Enum(TipoCliente), default=TipoCliente.DETAL)
+    dia_visita = Column(Enum(DiaVisita), nullable=True)
+    orden_secuencial = Column(Integer, nullable=True)
+    # Día legible del recorrido (Lunes, Martes, …) y parada GPS de ese día.
+    dia_ruta = Column(String(20), nullable=True)
+    orden_ruta = Column(Integer, nullable=True)
+    tipo_visita_ruta = Column(Enum(TipoVisitaRuta), default=TipoVisitaRuta.FRECUENTE)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     empresa = relationship("Empresa", back_populates="clientes")
     ventas = relationship("Venta", back_populates="cliente")
+    notas_seguimiento = relationship(
+        "NotaSeguimientoCobranza",
+        back_populates="cliente",
+        cascade="all, delete-orphan",
+    )
+    acuerdos_pago = relationship(
+        "AcuerdoPago",
+        back_populates="cliente",
+        cascade="all, delete-orphan",
+    )
+
+
+class VisitaDiaria(Base):
+    """Registro de visita/cobro por cliente en una fecha calendario."""
+    __tablename__ = "visitas_diarias"
+    __table_args__ = (
+        UniqueConstraint(
+            "cliente_id", "vendedor_id", "fecha",
+            name="uq_visita_cliente_vendedor_fecha",
+        ),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False)
+    vendedor_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+    fecha = Column(Date, nullable=False, index=True)
+    estado = Column(Enum(EstadoVisita), nullable=False, default=EstadoVisita.VISITADO)
+    notas = Column(Text, nullable=True)
+    latitud_visita = Column(Numeric(10, 7), nullable=True)
+    longitud_visita = Column(Numeric(10, 7), nullable=True)
+    marcado_en = Column(DateTime, default=datetime.utcnow)
+
+    cliente = relationship("Cliente", foreign_keys=[cliente_id])
+    vendedor = relationship("Usuario", foreign_keys=[vendedor_id])
+
+
+class NotaSeguimientoCobranza(Base):
+    """Historial de cobranza humanizada por cliente.
+
+    Cada fila es una nota inmutable. El motivo y el estado vigentes son
+    los de la nota más reciente del cliente dentro de su empresa.
+    Se guarda como texto (no ENUM de Postgres) para crear la tabla igual
+    en SQLite local y en Supabase sin migrar tipos.
+    """
+
+    __tablename__ = "notas_seguimiento_cobranza"
+    __table_args__ = (
+        Index("ix_notas_seguimiento_empresa_cliente", "empresa_id", "cliente_id"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False, index=True)
+    usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+    fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
+    motivo = Column(String(40), nullable=False)
+    estado_consideracion = Column(String(40), nullable=False)
+    observacion = Column(Text, nullable=False)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    cliente = relationship("Cliente", back_populates="notas_seguimiento")
+    usuario = relationship("Usuario")
+
+
+class AcuerdoPago(Base):
+    """Reestructuración temporal. No reescribe cuotas ni el estado de la venta.
+
+    Mientras el acuerdo sigue activo y la fecha límite no venció, la carpeta
+    crítica suspende la alerta estricta. El plan de amortización original
+    permanece para cobranza, buró y sincronización.
+    """
+
+    __tablename__ = "acuerdos_pago"
+    __table_args__ = (
+        Index("ix_acuerdos_pago_empresa_cliente", "empresa_id", "cliente_id"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False, index=True)
+    usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+    monto_acordado_usd = Column(Numeric(12, 2), nullable=False)
+    fecha_limite = Column(Date, nullable=False)
+    cuotas_pactadas = Column(Integer, nullable=False, default=1)
+    estado = Column(String(20), nullable=False, default="activo")
+    nota_consideracion = Column(Text, nullable=False)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    cliente = relationship("Cliente", back_populates="acuerdos_pago")
+    usuario = relationship("Usuario")
 
 
 class EventoBuroCredito(Base):
@@ -361,6 +509,10 @@ class Venta(Base):
 
     frecuencia_pago = Column(Enum(FrecuenciaPago), nullable=False)
     estado = Column(Enum(EstadoVenta), default=EstadoVenta.PENDIENTE)
+    metodo_pago = Column(String(20), nullable=False, default="efectivo")
+    referencia_pago = Column(String(80), nullable=True)
+    comprobante_base64 = Column(Text, nullable=True)
+    cuenta_bancaria_id = Column(GUID(), ForeignKey("cuentas_bancarias.id"), nullable=True)
 
     sincronizado = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
@@ -369,6 +521,10 @@ class Venta(Base):
     cobros = relationship("Cobro", back_populates="venta")
     cuotas = relationship("CuotaAmortizacion", back_populates="venta", cascade="all, delete-orphan")
     cliente = relationship("Cliente")
+
+    @property
+    def tiene_comprobante(self) -> bool:
+        return bool(self.comprobante_base64)
 
 
 class CuotaAmortizacion(Base):
@@ -412,11 +568,20 @@ class Cobro(Base):
     moneda_pago = Column(Enum(MonedaPago), nullable=False)
     tasa_usd_aplicada = Column(Numeric(12, 4), nullable=False)
     tasa_eur_aplicada = Column(Numeric(12, 4), nullable=False)
+    es_transferencia = Column(Boolean, nullable=False, default=False)
+    verificado = Column(Boolean, nullable=False, default=True)
+    referencia_pago = Column(String(80), nullable=True)
+    comprobante_base64 = Column(Text, nullable=True)
+    cuenta_bancaria_id = Column(GUID(), ForeignKey("cuentas_bancarias.id"), nullable=True)
 
     sincronizado = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     venta = relationship("Venta", back_populates="cobros")
+
+    @property
+    def tiene_comprobante(self) -> bool:
+        return bool(self.comprobante_base64)
 
 
 # ---------- FINANZAS / NÓMINA ----------

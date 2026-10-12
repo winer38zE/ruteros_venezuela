@@ -16,10 +16,14 @@ import 'nuevo_cobro_screen.dart';
 import 'registrar_movimiento_screen.dart';
 import 'registrar_usuario_screen.dart';
 import 'usuarios_screen.dart';
-import 'clientes_list_screen.dart';
+import 'clientes_screen.dart';
 import 'tasas_screen.dart';
 import 'panel_cobranza_screen.dart';
+import 'cartera_critica_screen.dart';
 import 'proveedores_screen.dart';
+import 'rutas_list_screen.dart';
+import 'rutas_resumen_screen.dart';
+import 'datos_bancarios_screen.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -62,6 +66,133 @@ class HomeScreen extends StatelessWidget {
 
   List<_ModuleDef> _modules(AppState state) {
     final user = state.usuario!;
+    if (user.rolAcceso == 'owner') {
+      return _modulosOwner();
+    }
+    return _modulosEmpleado(state);
+  }
+
+  List<_ModuleDef> _modulosOwner() => const [
+        _ModuleDef(
+          id: 'ventas',
+          icon: Icons.point_of_sale_rounded,
+          title: 'Ventas',
+          subtitle: 'Registra ventas con detalle e inventario',
+          color: AppColors.emerald,
+          screen: VentasListScreen(),
+          badge: 'LIVE',
+        ),
+        _ModuleDef(
+          id: 'cobros',
+          icon: Icons.payments_rounded,
+          title: 'Cobros',
+          subtitle: 'Cobra ventas pendientes en calle',
+          color: AppColors.neonCyan,
+          screen: CobrosListScreen(),
+          badge: 'FIELD',
+        ),
+        _ModuleDef(
+          id: 'panel_cobranza',
+          icon: Icons.table_chart_rounded,
+          title: 'Panel Cobranza',
+          subtitle: 'Tabla estilo Excel con abonos rápidos',
+          color: AppColors.neonBlue,
+          screen: PanelCobranzaScreen(),
+          badge: 'EXCEL',
+        ),
+        _ModuleDef(
+          id: 'cartera_critica',
+          icon: Icons.folder_special_rounded,
+          title: 'Cartera crítica',
+          subtitle: 'Mora de más de 3 semanas y seguimiento',
+          color: Color(0xFFEF4444),
+          screen: CarteraCriticaScreen(),
+          badge: '+21D',
+        ),
+        _ModuleDef(
+          id: 'rutas',
+          icon: Icons.route_rounded,
+          title: 'Ruta del Día',
+          subtitle: 'Clientes ordenados con navegación GPS',
+          color: AppColors.amber,
+          screen: RutasListScreen(),
+          badge: 'GPS',
+        ),
+        _ModuleDef(
+          id: 'clientes',
+          icon: Icons.groups_2_rounded,
+          title: 'Gestión de Clientes',
+          subtitle: 'Scoring, buró y referencias',
+          color: AppColors.neonCyan,
+          screen: ClientesScreen(),
+          badge: 'KYC',
+        ),
+        _ModuleDef(
+          id: 'inventario',
+          icon: Icons.inventory_2_rounded,
+          title: 'Gestión de Inventario',
+          subtitle: 'Productos, stock y ajustes',
+          color: AppColors.violet,
+          screen: InventarioScreen(),
+          badge: 'STOCK',
+        ),
+        _ModuleDef(
+          id: 'proveedores',
+          icon: Icons.local_shipping_rounded,
+          title: 'Proveedores',
+          subtitle: 'Deudas y cuentas por pagar',
+          color: AppColors.violet,
+          screen: ProveedoresScreen(),
+          badge: 'CxP',
+        ),
+        _ModuleDef(
+          id: 'tasas',
+          icon: Icons.currency_exchange_rounded,
+          title: 'Tasas de Cambio',
+          subtitle: 'BCV, paralelo y sincronización auto',
+          color: AppColors.amber,
+          screen: TasasScreen(),
+          badge: 'FX',
+        ),
+        _ModuleDef(
+          id: 'rutas_resumen',
+          icon: Icons.analytics_rounded,
+          title: 'Resumen Rutas',
+          subtitle: 'Avance diario de cobradores en calle',
+          color: AppColors.violet,
+          screen: RutasResumenScreen(),
+          badge: 'LIVE',
+        ),
+        _ModuleDef(
+          id: 'finanzas',
+          icon: Icons.account_balance_rounded,
+          title: 'Finanzas',
+          subtitle: 'Gastos, entradas y nómina',
+          color: AppColors.amber,
+          screen: FinanzasScreen(),
+          badge: 'CTRL',
+        ),
+        _ModuleDef(
+          id: 'contabilidad',
+          icon: Icons.account_balance_wallet_rounded,
+          title: 'Contabilidad',
+          subtitle: 'Resumen, asientos y Excel',
+          color: AppColors.neonBlue,
+          screen: ContabilidadScreen(),
+          badge: 'PRO',
+        ),
+        _ModuleDef(
+          id: 'datos_bancarios',
+          icon: Icons.account_balance_rounded,
+          title: 'Transferencia',
+          subtitle: 'Pago móvil y transferencia en bolívares',
+          color: AppColors.neonBlue,
+          screen: DatosBancariosScreen(),
+          badge: 'BANCO',
+        ),
+      ];
+
+  List<_ModuleDef> _modulosEmpleado(AppState state) {
     final modules = <_ModuleDef>[];
 
     if (state.puedeVender) {
@@ -95,77 +226,60 @@ class HomeScreen extends StatelessWidget {
         screen: PanelCobranzaScreen(),
         badge: 'EXCEL',
       ));
+      modules.add(const _ModuleDef(
+        id: 'cartera_critica',
+        icon: Icons.folder_special_rounded,
+        title: 'Cartera crítica',
+        subtitle: 'Mora de más de 3 semanas y seguimiento',
+        color: Color(0xFFEF4444),
+        screen: CarteraCriticaScreen(),
+        badge: '+21D',
+      ));
     }
 
-    if (state.puedeVender || user.puedeOperaciones) {
+    if (state.puedeCobrar || state.puedeVender) {
+      modules.add(const _ModuleDef(
+        id: 'rutas',
+        icon: Icons.route_rounded,
+        title: 'Ruta del Día',
+        subtitle: 'Clientes ordenados con navegación GPS',
+        color: AppColors.amber,
+        screen: RutasListScreen(),
+        badge: 'GPS',
+      ));
+    }
+
+    if (state.puedeVender) {
       modules.add(const _ModuleDef(
         id: 'clientes',
         icon: Icons.groups_2_rounded,
         title: 'Gestión de Clientes',
         subtitle: 'Scoring, buró y referencias',
         color: AppColors.neonCyan,
-        screen: ClientesListScreen(),
+        screen: ClientesScreen(),
         badge: 'KYC',
       ));
-    }
-
-    if (state.puedeVender || user.puedeOperaciones) {
       modules.add(const _ModuleDef(
         id: 'inventario',
         icon: Icons.inventory_2_rounded,
         title: 'Gestión de Inventario',
-        subtitle: 'Productos, stock y ajustes',
+        subtitle: 'Consulta de stock en calle',
         color: AppColors.violet,
         screen: InventarioScreen(),
         badge: 'STOCK',
       ));
     }
 
-    if (user.puedeOperaciones) {
-      modules.add(const _ModuleDef(
-        id: 'proveedores',
-        icon: Icons.local_shipping_rounded,
-        title: 'Proveedores',
-        subtitle: 'Deudas y cuentas por pagar',
-        color: AppColors.violet,
-        screen: ProveedoresScreen(),
-        badge: 'CxP',
-      ));
-    }
-
     if (state.puedeOperaciones) {
       modules.add(const _ModuleDef(
-        id: 'tasas',
-        icon: Icons.currency_exchange_rounded,
-        title: 'Tasas de Cambio',
-        subtitle: 'BCV, paralelo y sincronización auto',
-        color: AppColors.amber,
-        screen: TasasScreen(),
-        badge: 'FX',
+        id: 'datos_bancarios',
+        icon: Icons.account_balance_rounded,
+        title: 'Transferencia',
+        subtitle: 'Pago móvil y transferencia en bolívares',
+        color: AppColors.neonBlue,
+        screen: DatosBancariosScreen(),
+        badge: 'BANCO',
       ));
-    }
-
-    if (user.esDueno) {
-      modules.addAll(const [
-        _ModuleDef(
-          id: 'finanzas',
-          icon: Icons.account_balance_rounded,
-          title: 'Finanzas',
-          subtitle: 'Gastos, entradas y nómina',
-          color: AppColors.amber,
-          screen: FinanzasScreen(),
-          badge: 'CTRL',
-        ),
-        _ModuleDef(
-          id: 'contabilidad',
-          icon: Icons.account_balance_wallet_rounded,
-          title: 'Contabilidad',
-          subtitle: 'Resumen, asientos y Excel',
-          color: AppColors.neonBlue,
-          screen: ContabilidadScreen(),
-          badge: 'PRO',
-        ),
-      ]);
     }
 
     return modules;
@@ -177,7 +291,7 @@ class HomeScreen extends StatelessWidget {
           icon: Icons.person_add_alt_1_rounded,
           color: AppColors.neonBlue,
           screen: const RegistrarUsuarioScreen(),
-          visible: state.esDueno,
+          visible: state.esOwner,
         ),
         _QuickAction(
           label: 'Registrar Venta',
@@ -198,7 +312,7 @@ class HomeScreen extends StatelessWidget {
           icon: Icons.receipt_long_rounded,
           color: AppColors.amber,
           screen: const RegistrarMovimientoScreen(soloGasto: true),
-          visible: state.puedeOperaciones,
+          visible: state.esOwner,
         ),
       ].where((a) => a.visible).toList();
 
@@ -243,7 +357,7 @@ class HomeScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const Text('Panel de Control'),
+                            Text(state.esOwner ? 'Panel de Control' : 'Panel operativo'),
                           ],
                         ),
                       ),
@@ -382,7 +496,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (state.puedeConfigurar)
+                if (state.esOwner)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),

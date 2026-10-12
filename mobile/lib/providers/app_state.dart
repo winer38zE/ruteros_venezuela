@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
@@ -7,11 +9,18 @@ import '../services/productos_service.dart';
 import '../services/catalogo_service.dart';
 import '../services/ventas_service.dart';
 import '../services/cobros_service.dart';
+import '../services/cartera_critica_service.dart';
 import '../services/finanzas_service.dart';
 import '../services/usuarios_service.dart';
 import '../services/proveedores_service.dart';
 import '../services/clientes_service.dart';
 import '../services/tasas_service.dart';
+import '../services/rutas_service.dart';
+import '../services/empresa_service.dart';
+import '../services/whatsapp_service.dart';
+import '../services/sync_service.dart';
+import '../services/alerta_cobro_service.dart';
+import '../services/notification_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
@@ -22,11 +31,19 @@ class AppState extends ChangeNotifier {
     catalogo = CatalogoService(api);
     ventas = VentasService(api);
     cobros = CobrosService(api);
+    carteraCritica = CarteraCriticaService(api);
     finanzas = FinanzasService(api);
     usuarios = UsuariosService(api);
     proveedores = ProveedoresService(api);
     clientes = ClientesService(api);
     tasas = TasasService(api);
+    rutas = RutasService(api);
+    empresas = EmpresaService(api);
+    whatsapp = WhatsappService(api);
+    sync = SyncService(api);
+    alertas = AlertaCobroService(api, NotificationService.instance);
+    sync.alTerminar = alertas.revisar;
+    unawaited(sync.escucharRed());
     _inicializar();
   }
 
@@ -38,11 +55,17 @@ class AppState extends ChangeNotifier {
   late final CatalogoService catalogo;
   late final VentasService ventas;
   late final CobrosService cobros;
+  late final CarteraCriticaService carteraCritica;
   late final FinanzasService finanzas;
   late final UsuariosService usuarios;
   late final ProveedoresService proveedores;
   late final ClientesService clientes;
   late final TasasService tasas;
+  late final RutasService rutas;
+  late final EmpresaService empresas;
+  late final WhatsappService whatsapp;
+  late final SyncService sync;
+  late final AlertaCobroService alertas;
 
   Usuario? usuario;
   bool inicializado = false;
@@ -57,10 +80,13 @@ class AppState extends ChangeNotifier {
   bool get puedeVender => esVendedor || puedeOperaciones;
   bool get puedeCobrar => esCobrador || puedeOperaciones;
   bool get puedeConfigurar => esDueno;
+  String get rolAcceso => usuario?.rolAcceso ?? 'employee';
+  bool get esOwner => usuario?.esOwner ?? false;
 
   Future<void> _inicializar() async {
     try {
       usuario = await auth.restoreSession();
+      if (usuario != null) _arrancarSync();
     } catch (_) {
       usuario = null;
     } finally {
@@ -69,12 +95,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String username) async {
+  Future<void> login(
+    String correo,
+    String password, {
+    bool recordar = true,
+  }) async {
     cargando = true;
     error = null;
     notifyListeners();
     try {
-      usuario = await auth.login(username);
+      usuario = await auth.login(correo, password, recordar: recordar);
+      if (usuario != null) _arrancarSync();
     } catch (e) {
       error = e.toString();
       usuario = null;
@@ -85,8 +116,16 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    await sync.dejarDeEscuchar();
+    await alertas.limpiar();
+    await sync.limpiarLocal();
     await auth.logout();
     usuario = null;
     notifyListeners();
+  }
+
+  void _arrancarSync() {
+    sync.escucharRed();
+    unawaited(sync.sincronizar());
   }
 }

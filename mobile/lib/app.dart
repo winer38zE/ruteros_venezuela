@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_state.dart';
-import '../theme/app_theme.dart';
-import '../widgets/futuristic_background.dart';
+import 'providers/app_state.dart';
+import 'theme/app_theme.dart';
+import 'widgets/futuristic_background.dart';
+import 'widgets/sync_aviso.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 
@@ -16,7 +17,9 @@ class RuterosApp extends StatelessWidget {
       child: MaterialApp(
         title: 'ED NET PRO — Ruteros',
         debugShowCheckedModeBanner: false,
+        scaffoldMessengerKey: syncMessengerKey,
         theme: AppTheme.dark,
+        builder: (context, child) => SyncAvisoHost(child: child ?? const SizedBox.shrink()),
         home: Consumer<AppState>(
           builder: (_, state, __) {
             if (!state.inicializado) {

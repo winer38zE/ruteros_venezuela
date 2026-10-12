@@ -67,6 +67,9 @@ class Venta {
   final double totalUsd;
   final String estado;
   final String frecuenciaPago;
+  final String metodoPago;
+  final String? referenciaPago;
+  final bool tieneComprobante;
   final List<DetalleVenta> detalles;
   final List<CuotaAmortizacion> cuotas;
 
@@ -77,6 +80,9 @@ class Venta {
     required this.totalUsd,
     required this.estado,
     required this.frecuenciaPago,
+    this.metodoPago = 'efectivo',
+    this.referenciaPago,
+    this.tieneComprobante = false,
     required this.detalles,
     required this.cuotas,
   });
@@ -88,6 +94,9 @@ class Venta {
         totalUsd: (j['total_usd'] as num).toDouble(),
         estado: j['estado'],
         frecuenciaPago: j['frecuencia_pago'] ?? 'contado',
+        metodoPago: j['metodo_pago'] ?? 'efectivo',
+        referenciaPago: j['referencia_pago'],
+        tieneComprobante: j['tiene_comprobante'] == true,
         detalles: (j['detalles'] as List? ?? [])
             .map((e) => DetalleVenta.fromJson(e))
             .toList(),
@@ -156,6 +165,10 @@ class VentasService {
     double? longitudResidencia,
     double? latitudTrabajo,
     double? longitudTrabajo,
+    String metodoPago = 'efectivo',
+    String? referenciaPago,
+    String? comprobanteBase64,
+    String? cuentaBancariaId,
   }) async {
     final body = {
       'cliente_id': clienteId,
@@ -165,6 +178,12 @@ class VentasService {
       'frecuencia_pago': frecuenciaPago,
       'tipo_tasa_usd': tipoTasaUsd,
       'es_borrador': esBorrador,
+      'metodo_pago': metodoPago,
+      if (referenciaPago != null && referenciaPago.trim().isNotEmpty)
+        'referencia_pago': referenciaPago.trim(),
+      if (comprobanteBase64 != null && comprobanteBase64.isNotEmpty)
+        'comprobante_base64': comprobanteBase64,
+      if (cuentaBancariaId != null) 'cuenta_bancaria_id': cuentaBancariaId,
       if (numeroCuotas != null) 'numero_cuotas': numeroCuotas,
       if (almacenId != null) 'almacen_id': almacenId,
       if (ventaId != null) 'id': ventaId,
@@ -178,8 +197,22 @@ class VentasService {
     return Venta.fromJson(data);
   }
 
+  Future<Venta> verificarPago(String ventaId) async {
+    final data = await _api.post('/ventas/$ventaId/verificar', {});
+    return Venta.fromJson(data);
+  }
+
   Future<String> enviarRecibo(String ventaId) async {
     final data = await _api.post('/ventas/$ventaId/enviar-recibo', {});
     return data['mensaje'] as String? ?? 'Comprobante enviado';
+  }
+
+  Future<String> enviarComprobanteWhatsapp(String ventaId) async {
+    final data = await _api.post(
+      '/ventas/$ventaId/comprobante/whatsapp',
+      {},
+      timeout: const Duration(seconds: 60),
+    );
+    return data['mensaje'] as String? ?? 'Comprobante enviado por WhatsApp';
   }
 }

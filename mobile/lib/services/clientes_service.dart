@@ -22,6 +22,15 @@ class ClienteDetalle {
   final String nivelRiesgo;
   final String estadoCredito;
   final String tipoCliente;
+  final String? diaRuta;
+  final int? ordenRuta;
+  final String clasificacionCredito;
+  final int totalCompras;
+  final double montoComprasUsd;
+  final int totalPagos;
+  final double montoPagosUsd;
+  final String estadoMorosidad;
+  final bool esMoroso;
 
   ClienteDetalle({
     required this.id,
@@ -45,9 +54,23 @@ class ClienteDetalle {
     required this.nivelRiesgo,
     required this.estadoCredito,
     required this.tipoCliente,
+    this.diaRuta,
+    this.ordenRuta,
+    this.clasificacionCredito = 'Bueno',
+    this.totalCompras = 0,
+    this.montoComprasUsd = 0,
+    this.totalPagos = 0,
+    this.montoPagosUsd = 0,
+    this.estadoMorosidad = 'al_dia',
+    this.esMoroso = false,
   });
 
-  factory ClienteDetalle.fromJson(Map<String, dynamic> j) => ClienteDetalle(
+  /// Score tal como viene en `score_credito`.
+  int get score => scoreCredito;
+
+  factory ClienteDetalle.fromJson(Map<String, dynamic> j) {
+    final estado = (j['estado_morosidad'] ?? 'al_dia').toString();
+    return ClienteDetalle(
         id: j['id'],
         nombre: j['nombre'],
         identificacion: j['identificacion'] ?? '',
@@ -65,14 +88,27 @@ class ClienteDetalle {
         refFamiliarParentesco: j['ref_familiar_parentesco'],
         refFamiliarTelefono: j['ref_familiar_telefono'],
         email: j['email'],
-        scoreCredito: j['score_credito'] ?? 70,
+        scoreCredito: _enteroCliente(j['score_credito'] ?? j['score'], 70),
         nivelRiesgo: j['nivel_riesgo'] ?? 'bueno',
         estadoCredito: j['estado_credito'] ?? 'Bueno',
         tipoCliente: j['tipo_cliente'] ?? 'detal',
+        diaRuta: j['dia_ruta'] as String?,
+        ordenRuta: (j['orden_ruta'] as num?)?.toInt() ?? (j['orden_secuencial'] as num?)?.toInt(),
+        clasificacionCredito: j['clasificacion_credito'] ?? j['estado_credito'] ?? 'Bueno',
+        totalCompras: (j['total_compras'] as num?)?.toInt() ?? 0,
+        montoComprasUsd: (j['monto_compras_usd'] as num?)?.toDouble() ?? 0,
+        totalPagos: (j['total_pagos'] as num?)?.toInt() ?? 0,
+        montoPagosUsd: (j['monto_pagos_usd'] as num?)?.toDouble() ?? 0,
+        estadoMorosidad: estado,
+        esMoroso: j['es_moroso'] == true || estado == 'moroso',
       );
+  }
 
-  bool get bloqueadoCredito => scoreCredito <= 35;
+  bool get bloqueadoCredito => score < 50;
+
   bool get creditoExcelente => scoreCredito >= 85;
+
+  bool get soloContado => bloqueadoCredito || esMoroso;
 }
 
 class HistorialBuroItem {
@@ -175,6 +211,18 @@ class ClienteAutocompletado {
       );
 }
 
+int _enteroCliente(dynamic valor, int porDefecto) {
+  if (valor is num) return valor.toInt();
+  if (valor is String) return int.tryParse(valor) ?? porDefecto;
+  return porDefecto;
+}
+
+List<ClienteDetalle> parsearClientesDetalle(List<dynamic> respuestaJson) {
+  return respuestaJson
+      .map((json) => ClienteDetalle.fromJson(Map<String, dynamic>.from(json as Map)))
+      .toList();
+}
+
 class ClientesService {
   ClientesService(this._api);
   final ApiClient _api;
@@ -191,12 +239,12 @@ class ClientesService {
 
   Future<List<ClienteDetalle>> listar({String? busqueda}) async {
     final data = await _api.get('/clientes/', query: busqueda != null ? {'q': busqueda} : null) as List;
-    return data.map((e) => ClienteDetalle.fromJson(e)).toList();
+    return parsearClientesDetalle(data);
   }
 
   Future<ClienteDetalle> obtener(String id) async {
     final data = await _api.get('/clientes/$id');
-    return ClienteDetalle.fromJson(data);
+    return ClienteDetalle.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
   Future<ClienteDetalle> crear(Map<String, dynamic> body) async {

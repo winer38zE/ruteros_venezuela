@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
+import '../services/api_service.dart';
 import '../services/clientes_service.dart';
+import '../services/rutas_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
@@ -31,8 +33,10 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
   final _refNombreCtrl = TextEditingController();
   final _refTelCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _ordenCtrl = TextEditingController();
 
   String _tipoCliente = 'detal';
+  String _diaRuta = RutasService.etiquetaDiaActual();
   String? _parentesco;
   bool _guardando = false;
   bool _verificando = false;
@@ -61,11 +65,19 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
       _refTelCtrl.text = c.refFamiliarTelefono ?? '';
       _emailCtrl.text = c.email ?? '';
       _tipoCliente = c.tipoCliente;
+      final diaGuardado = c.diaRuta;
+      if (diaGuardado != null && diaGuardado.isNotEmpty) {
+        final etiqueta = RutasService.etiquetaDia(diaGuardado);
+        if (RutasService.diasEtiqueta.contains(etiqueta)) {
+          _diaRuta = etiqueta;
+        }
+      }
       _scorePreview = c.scoreCredito;
       _latRes = c.latitudResidencia;
       _lngRes = c.longitudResidencia;
       _latTrab = c.latitudTrabajo;
       _lngTrab = c.longitudTrabajo;
+      if (c.ordenRuta != null) _ordenCtrl.text = '${c.ordenRuta}';
     } else {
       _parentesco = ClientesService.parentescos.first;
     }
@@ -75,7 +87,7 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
   void dispose() {
     for (final c in [
       _nombreCtrl, _identCtrl, _telCtrl, _tel2Ctrl, _dirCtrl, _refDirCtrl,
-      _empresaCtrl, _dirLabCtrl, _refNombreCtrl, _refTelCtrl, _emailCtrl,
+      _empresaCtrl, _dirLabCtrl, _refNombreCtrl, _refTelCtrl, _emailCtrl, _ordenCtrl,
     ]) {
       c.dispose();
     }
@@ -133,7 +145,15 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
         'ref_familiar_telefono': _refTelCtrl.text.trim().isEmpty ? null : _refTelCtrl.text.trim(),
         'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
         'tipo_cliente': _tipoCliente,
+        'dia_ruta': _diaRuta,
+        if (_ordenIngresado() != null) 'orden_ruta': _ordenIngresado(),
       };
+
+  int? _ordenIngresado() {
+    final n = int.tryParse(_ordenCtrl.text.trim());
+    if (n == null || n < 1) return null;
+    return n;
+  }
 
   Future<void> _guardar() async {
     if (_nombreCtrl.text.trim().isEmpty || _identCtrl.text.trim().length < 5) {
@@ -159,6 +179,29 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
       }
       if (!mounted) return;
       Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (!widget.esEdicion && e.statusCode == 0) {
+        var guardado = false;
+        try {
+          guardado = await context.read<AppState>().sync.encolarNuevo(_body());
+        } catch (_) {
+          guardado = false;
+        }
+        if (guardado && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sin señal. El cliente quedó en el teléfono y se subirá al sincronizar.'),
+            ),
+          );
+          Navigator.pop(context, true);
+          return;
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -281,6 +324,45 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
                     DropdownMenuItem(value: 'mayorista', child: Text('Mayorista')),
                   ],
                   onChanged: (v) => setState(() => _tipoCliente = v!),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(title: 'Ruta semanal'),
+          GlassContainer(
+            accentColor: AppColors.neonCyan,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: _diaRuta,
+                  decoration: const InputDecoration(
+                    labelText: 'Día de ruta',
+                    prefixIcon: Icon(Icons.calendar_today_rounded),
+                  ),
+                  dropdownColor: AppColors.bgElevated,
+                  items: RutasService.diasEtiqueta
+                      .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _diaRuta = v);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _ordenCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Orden de visita',
+                    hintText: '1, 2, 3…',
+                    prefixIcon: Icon(Icons.format_list_numbered_rounded),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Cambiar el día o la parada conserva el historial de crédito, compras y pagos.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                 ),
               ],
             ),

@@ -28,6 +28,13 @@ def require_dueno(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario
     return usuario
 
 
+def rol_confirma_pago(usuario: Optional[Usuario]) -> bool:
+    """Dueño y administrador dan por confirmada una transferencia al registrarla."""
+    if usuario is None:
+        return False
+    return usuario.rol in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR)
+
+
 def require_admin_o_dueno(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
     if usuario.rol not in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
         raise HTTPException(
@@ -81,6 +88,23 @@ def require_cobrador_o_superior(
         raise HTTPException(
             status_code=403,
             detail="Acceso restringido a COBRADOR, ADMINISTRADOR o DUEÑO",
+        )
+    return usuario
+
+
+def require_ruta_o_superior(
+    usuario: Usuario = Depends(obtener_usuario_actual),
+) -> Usuario:
+    """Vendedores y cobradores en calle consultan rutas diarias."""
+    if usuario.rol not in (
+        RolUsuario.VENDEDOR,
+        RolUsuario.COBRADOR,
+        RolUsuario.DUENO,
+        RolUsuario.ADMINISTRADOR,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso restringido a VENDEDOR, COBRADOR, ADMINISTRADOR o DUEÑO",
         )
     return usuario
 

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -12,6 +15,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
 import '../widgets/score_badge.dart';
 import '../widgets/gps_location_capture.dart';
+import '../widgets/transferencia_pago.dart';
 
 class NuevaVentaScreen extends StatefulWidget {
   const NuevaVentaScreen({super.key});
@@ -31,6 +35,11 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   Almacen? _almacen;
   bool _usarClienteExistente = true;
   bool _esCredito = true;
+  String _metodoPago = 'efectivo';
+  String? _cuentaBancariaId;
+  bool _creditoBloqueado = false;
+  int _avisoCredito = 0;
+  String _clasificacionCredito = '';
   String _frecuencia = 'semanal';
   String _tipoTasa = 'bcv';
   bool _usarMontoManual = false;
@@ -45,6 +54,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   final _cantidadCtrl = TextEditingController(text: '1');
   final _montoManualCtrl = TextEditingController();
   final _cuotasCtrl = TextEditingController(text: '12');
+  final _referenciaCtrl = TextEditingController();
+  String? _comprobanteBase64;
+  Uint8List? _comprobanteBytes;
+  String? _comprobanteNombre;
   double? _latRes;
   double? _lngRes;
   double? _latTrab;
@@ -56,6 +69,24 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
   final _fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _frecuenciasCredito = ['semanal', 'quincenal', 'mensual'];
+
+  bool get _pagoElectronico =>
+      _metodoPago == 'transferencia' || _metodoPago == 'pago_movil';
+
+  bool get _tieneFotoComprobante =>
+      _comprobanteBytes != null && _comprobanteBytes!.isNotEmpty;
+
+  String _nombreMetodo(String metodo) =>
+      metodo == 'pago_movil' ? 'Pago Móvil' : 'transferencia';
+
+  String _captionComprobante() {
+    final cliente = (_usarClienteExistente ? _cliente?.nombre : _nombreCtrl.text) ?? _nombreCtrl.text;
+    final nombre = cliente.trim().isEmpty ? 'Cliente' : cliente.trim();
+    final medio = _metodoPago == 'pago_movil' ? 'pago móvil' : 'transferencia';
+    final ref = _referenciaCtrl.text.trim();
+    final referencia = ref.isEmpty ? '' : ' - Referencia: $ref';
+    return 'Pago por $medio - Cliente: $nombre - Monto: ${_fmt.format(_total)}$referencia';
+  }
 
   @override
   void initState() {
@@ -74,6 +105,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     _cantidadCtrl.dispose();
     _montoManualCtrl.dispose();
     _cuotasCtrl.dispose();
+    _referenciaCtrl.dispose();
     super.dispose();
   }
 
@@ -108,12 +140,19 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           nombre: _cliente!.nombre,
           identificacion: _cliente!.identificacion,
         );
+        _aplicarRestriccionCredito(
+          soloContado: _cliente!.soloContado,
+          clasificacion: _cliente!.clasificacionCredito,
+        );
       }
       _montoManualCtrl.text = '0.00';
     } catch (e) {
       _error = e.toString();
     } finally {
       if (mounted) setState(() => _cargando = false);
+    }
+    if (_cliente != null && mounted) {
+      await _onClienteExistenteChanged(_cliente);
     }
   }
 
@@ -157,12 +196,65 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     _lngTrab = lngTrab;
   }
 
+  void _aplicarRestriccionCredito({
+    required bool soloContado,
+    required String clasificacion,
+    bool avisar = false,
+  }) {
+    _creditoBloqueado = soloContado;
+    _clasificacionCredito = clasificacion;
+    if (soloContado) {
+      _esCredito = false;
+      _frecuencia = 'contado';
+    }
+    if (!soloContado || !avisar) {
+      if (!soloContado) _avisoCredito++;
+      return;
+    }
+    final ticket = ++_avisoCredito;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ticket != _avisoCredito || !_creditoBloqueado) return;
+      _mostrarCreditoNoDisponible();
+    });
+  }
+
+  Future<void> _mostrarCreditoNoDisponible() async {
+    if (!mounted || !_creditoBloqueado) return;
+    setState(() {
+      _esCredito = false;
+      _frecuencia = 'contado';
+    });
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        title: const Text('Crédito No Disponible'),
+        content: const Text(
+          'Este cliente está reportado como moroso. El sistema exige venta estrictamente al CONTADO.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _onClienteExistenteChanged(Cliente? c) async {
     setState(() {
       _cliente = c;
       if (c != null) {
         _llenarDatosCliente(nombre: c.nombre, identificacion: c.identificacion);
-        if (c.bloqueadoCredito) _esCredito = false;
+        _aplicarRestriccionCredito(
+          soloContado: c.soloContado,
+          clasificacion: c.clasificacionCredito,
+          avisar: c.soloContado,
+        );
+      } else {
+        _creditoBloqueado = false;
+        _clasificacionCredito = '';
       }
     });
     if (c == null) return;
@@ -181,6 +273,11 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           lngRes: detalle.longitudResidencia,
           latTrab: detalle.latitudTrabajo,
           lngTrab: detalle.longitudTrabajo,
+        );
+        _aplicarRestriccionCredito(
+          soloContado: detalle.soloContado,
+          clasificacion: detalle.clasificacionCredito,
+          avisar: detalle.soloContado,
         );
       });
     } catch (_) {}
@@ -228,6 +325,16 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     });
   }
 
+  Cliente? _clientePorCedula(String cedula) {
+    final clave = cedula.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+    if (clave.isEmpty) return null;
+    for (final c in _clientes) {
+      final otra = c.identificacion.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+      if (otra == clave) return c;
+    }
+    return null;
+  }
+
   Future<String> _resolverClienteId() async {
     if (_usarClienteExistente && _cliente != null) return _cliente!.id;
 
@@ -241,7 +348,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
       throw Exception('El teléfono del cliente es obligatorio');
     }
 
-    final existente = _clientes.where((c) => c.identificacion == cedula).firstOrNull;
+    final existente = _clientePorCedula(cedula);
     if (existente != null) return existente.id;
 
     final creado = await context.read<AppState>().clientes.crear({
@@ -260,14 +367,57 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   }
 
   Future<void> _registrarVenta({bool borrador = false}) async {
-    if (_esCredito && (_cliente?.bloqueadoCredito ?? false)) {
+    if (!borrador && _pagoElectronico && !_tieneFotoComprobante) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Crédito rechazado: cliente con alto riesgo. Solo ventas de contado.'),
-          backgroundColor: Color(0xFFEF4444),
-        ),
+        const SnackBar(content: Text('Por favor adjunta el comprobante antes de continuar')),
       );
       return;
+    }
+    if (_esCredito) {
+      final idConsulta = _usarClienteExistente
+          ? _cliente?.id
+          : _clientePorCedula(_cedulaCtrl.text)?.id;
+      if (idConsulta != null) {
+        try {
+          final detalle = await context.read<AppState>().clientes.obtener(idConsulta);
+          if (!mounted) return;
+          if (detalle.soloContado) {
+            setState(() {
+              _aplicarRestriccionCredito(
+                soloContado: true,
+                clasificacion: detalle.clasificacionCredito,
+              );
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Crédito bloqueado: ${detalle.clasificacionCredito}. Solo venta de contado, en efectivo o por transferencia.',
+                ),
+                backgroundColor: const Color(0xFFEF4444),
+              ),
+            );
+            return;
+          }
+        } catch (_) {
+          if (_creditoBloqueado) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Crédito bloqueado. Solo venta de contado, en efectivo o por transferencia.'),
+                backgroundColor: Color(0xFFEF4444),
+              ),
+            );
+            return;
+          }
+        }
+      } else if (_creditoBloqueado) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Crédito bloqueado. Solo venta de contado, en efectivo o por transferencia.'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+        return;
+      }
     }
     if (_total <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -327,12 +477,19 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             longitudResidencia: _lngRes,
             latitudTrabajo: _latTrab,
             longitudTrabajo: _lngTrab,
+            metodoPago: _metodoPago,
+            referenciaPago: _pagoElectronico ? _referenciaCtrl.text : null,
+            comprobanteBase64: _pagoElectronico ? _comprobanteBase64 : null,
+            cuentaBancariaId: _pagoElectronico ? _cuentaBancariaId : null,
           );
       if (!mounted) return;
       final msg = borrador
           ? 'Borrador guardado (${venta.estado})'
-          : 'Venta registrada: ${_fmt.format(_total)}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+          : venta.estado == 'por_verificar'
+              ? 'Venta de contado por ${_nombreMetodo(_metodoPago)}: Pagada (Por Verificar)'
+              : _pagoElectronico && _esCredito
+                  ? 'Venta a crédito por ${_nombreMetodo(_metodoPago)}: ${_fmt.format(_total)}'
+                  : 'Venta registrada: ${_fmt.format(_total)}';
       if (!borrador && venta.cuotas.isNotEmpty) {
         await showDialog<void>(
           context: context,
@@ -362,6 +519,19 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           ),
         );
       }
+      if (!mounted) return;
+      if (!borrador && _pagoElectronico) {
+        final ventas = context.read<AppState>().ventas;
+        await mostrarEnvioComprobanteWhatsapp(
+          context: context,
+          resumen: msg,
+          tieneFoto: venta.tieneComprobante,
+          onEnviar: () => ventas.enviarComprobanteWhatsapp(venta.id),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -411,7 +581,9 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   ),
                 ),
               FilledButton.icon(
-                onPressed: _guardando ? null : () => _registrarVenta(),
+                onPressed: _guardando || (_pagoElectronico && !_tieneFotoComprobante)
+                    ? null
+                    : () => _registrarVenta(),
                 icon: _guardando
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.check_circle_rounded),
@@ -421,8 +593,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                 ),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(double.infinity, 52),
-                  backgroundColor: AppColors.emerald,
-                  foregroundColor: AppColors.bgDeep,
+                  backgroundColor: _pagoElectronico && !_tieneFotoComprobante ? Colors.grey : AppColors.emerald,
+                  foregroundColor: _pagoElectronico && !_tieneFotoComprobante ? Colors.white70 : AppColors.bgDeep,
+                  disabledBackgroundColor: Colors.grey,
+                  disabledForegroundColor: Colors.white70,
                 ),
               ),
             ],
@@ -442,21 +616,108 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Tipo de venta', style: TextStyle(fontWeight: FontWeight.w800)),
+                const Text('Fase 1 · Tipo de venta', style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Contado'), icon: Icon(Icons.payments_outlined)),
-                    ButtonSegment(value: true, label: Text('Crédito'), icon: Icon(Icons.credit_score_outlined)),
+                  segments: [
+                    const ButtonSegment(
+                      value: false,
+                      label: Text('Contado'),
+                      icon: Icon(Icons.payments_outlined),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      label: const Text('Crédito'),
+                      icon: const Icon(Icons.credit_score_outlined),
+                      enabled: !_creditoBloqueado,
+                    ),
                   ],
                   selected: {_esCredito},
                   onSelectionChanged: (s) {
+                    if (s.first && _creditoBloqueado) {
+                      _mostrarCreditoNoDisponible();
+                      return;
+                    }
                     setState(() {
                       _esCredito = s.first;
-                      if (!_esCredito) _frecuencia = 'contado';
+                      if (!_esCredito) {
+                        _frecuencia = 'contado';
+                      } else if (_frecuencia == 'contado') {
+                        _frecuencia = 'semanal';
+                      }
                     });
                   },
                 ),
+                const SizedBox(height: 16),
+                const Text('Fase 2 · Método de pago', style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'efectivo',
+                      label: Text('Efectivo'),
+                      icon: Icon(Icons.payments_outlined),
+                    ),
+                    ButtonSegment(
+                      value: 'transferencia',
+                      label: Text('Transfer.'),
+                      icon: Icon(Icons.account_balance_outlined),
+                    ),
+                    ButtonSegment(
+                      value: 'pago_movil',
+                      label: Text('Pago móvil'),
+                      icon: Icon(Icons.phone_android_rounded),
+                    ),
+                  ],
+                  selected: {_metodoPago},
+                  onSelectionChanged: (s) => setState(() {
+                    _metodoPago = s.first;
+                    _cuentaBancariaId = null;
+                    _comprobanteBase64 = null;
+                    _comprobanteBytes = null;
+                    _comprobanteNombre = null;
+                  }),
+                ),
+                if (_creditoBloqueado) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.7)),
+                    ),
+                    child: Text(
+                      'Crédito bloqueado. ${_clasificacionCredito.isEmpty ? 'Moroso / Solo Contado' : _clasificacionCredito}. '
+                      'Esta venta solo puede registrarse de contado, en efectivo o por transferencia.',
+                      style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+                if (_pagoElectronico) ...[
+                  const SizedBox(height: 16),
+                  FaseTransferencia(
+                    esCredito: _esCredito,
+                    canal: _metodoPago,
+                    detalleCredito: _esCredito ? _frecuencia : null,
+                    referenciaCtrl: _referenciaCtrl,
+                    onComprobante: (base64, nombre) {
+                      setState(() {
+                        _comprobanteBase64 = base64;
+                        _comprobanteNombre = nombre;
+                        _comprobanteBytes = (base64 == null || base64.isEmpty) ? null : base64Decode(base64);
+                      });
+                    },
+                    onCuentaChanged: (cuenta) => _cuentaBancariaId = cuenta?.id,
+                  ),
+                  const SizedBox(height: 12),
+                  BotonEnviarComprobanteWhatsapp(
+                    imagen: _comprobanteBytes,
+                    nombreArchivo: _comprobanteNombre,
+                    caption: _captionComprobante(),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -565,7 +826,9 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   const SizedBox(height: 8),
                   ScoreBadge(
                     score: _cliente!.scoreCredito,
-                    estado: _cliente!.bloqueadoCredito ? 'Malo / Moroso' : 'Score activo',
+                    estado: _creditoBloqueado
+                        ? (_clasificacionCredito.isEmpty ? 'Moroso / Solo Contado' : _clasificacionCredito)
+                        : (_clasificacionCredito.isEmpty ? 'Score activo' : _clasificacionCredito),
                     compact: true,
                   ),
                 ],

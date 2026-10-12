@@ -2,17 +2,44 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
-from app.core.deps import obtener_usuario_opcional, require_vendedor_o_superior, require_operaciones
+from app.core.deps import (
+    obtener_usuario_opcional,
+    require_vendedor_o_superior,
+    require_operaciones,
+    require_admin_o_dueno,
+    rol_confirma_pago,
+)
 from app.core.tenant import obtener_empresa_tenant
+from app.api.empresas import resolver_cuenta_transferencia
 from app.models.core import (
     Venta, Cliente, Usuario, FrecuenciaPago, EstadoVenta, TipoCliente,
     RolUsuario, TipoTasaUsd, Producto, DetalleVenta,
 )
-from app.schemas.core import VentaCreate, VentaResponse, CuotaAmortizacionResponse, EnvioReciboResponse
+from app.schemas.core import (
+    VentaCreate,
+    VentaResponse,
+    CuotaAmortizacionResponse,
+    EnvioReciboResponse,
+    WhatsappReporteResponse,
+)
 from app.services.recibos_email import enviar_recibo_venta
+from app.services.evolution_service import (
+    armar_caption_comprobante,
+    enviar_imagen,
+    estado_http_whatsapp,
+    normalizar_telefono,
+    telefono_administrador,
+)
 from app.services.contabilidad import generar_asiento_venta
 from app.services.inventario import procesar_detalles_venta, calcular_total_detalles
-from app.services.buro_credito import validar_venta_credito
+from app.services.buro_credito import (
+    actualizar_historial_comportamiento,
+    actualizar_score_por_cobro,
+    clasificacion_por_score,
+    clasificar_score,
+    registrar_evento_buro,
+    validar_venta_credito,
+)
 from app.services.amortizacion import generar_plan_amortizacion, puede_aprobar_venta, serializar_cuota
 from datetime import datetime
 from typing import List, Optional
@@ -86,6 +113,10 @@ def _venta_a_response(venta: Venta) -> VentaResponse:
         frecuencia_pago=frecuencia.value,
         tipo_tasa_usd=venta.tipo_tasa_usd.value if venta.tipo_tasa_usd else "bcv",
         numero_cuotas=venta.numero_cuotas,
+        metodo_pago=venta.metodo_pago or "efectivo",
+        referencia_pago=venta.referencia_pago,
+        tiene_comprobante=bool(venta.comprobante_base64),
+        cuenta_bancaria_id=venta.cuenta_bancaria_id,
         detalles=venta.detalles or [],
         cuotas=cuotas_enriquecidas,
     )
@@ -123,9 +154,18 @@ def crear_venta(
         raise HTTPException(status_code=400, detail="Tipo de tasa USD inválido")
 
     es_borrador = venta.es_borrador and vendedor_actual.rol == RolUsuario.VENDEDOR
+    metodo = (venta.metodo_pago or "efectivo").strip().lower()
+    if metodo not in ("efectivo", "transferencia", "pago_movil"):
+        raise HTTPException(status_code=400, detail="Método de pago inválido")
+    cuenta_destino = None
+    if metodo in ("transferencia", "pago_movil"):
+        cuenta_destino = resolver_cuenta_transferencia(
+            db, empresa_actual.id, venta.cuenta_bancaria_id, canal=metodo
+        )
 
     if not es_borrador:
-        validar_venta_credito(cliente_actual, frecuencia)
+        actualizar_historial_comportamiento(db, cliente_actual)
+    validar_venta_credito(cliente_actual, frecuencia)
 
     _actualizar_ubicacion_cliente(cliente_actual, venta)
 
@@ -139,10 +179,13 @@ def crear_venta(
         if abs(total_calculado - total_venta) > Decimal("0.05"):
             total_venta = total_calculado
 
-    if frecuencia == FrecuenciaPago.CONTADO:
-        estado_inicial = EstadoVenta.PAGADA
-    elif es_borrador:
+    if es_borrador:
         estado_inicial = EstadoVenta.BORRADOR
+    elif frecuencia == FrecuenciaPago.CONTADO:
+        if metodo in ("transferencia", "pago_movil") and not rol_confirma_pago(vendedor_actual):
+            estado_inicial = EstadoVenta.POR_VERIFICAR
+        else:
+            estado_inicial = EstadoVenta.PAGADA
     else:
         estado_inicial = EstadoVenta.PENDIENTE
 
@@ -160,6 +203,10 @@ def crear_venta(
         numero_cuotas=venta.numero_cuotas,
         frecuencia_pago=frecuencia,
         estado=estado_inicial,
+        metodo_pago=metodo,
+        referencia_pago=(venta.referencia_pago or "").strip() or None,
+        comprobante_base64=venta.comprobante_base64,
+        cuenta_bancaria_id=cuenta_destino.id if cuenta_destino else None,
     )
 
     db.add(nueva_venta)
@@ -180,6 +227,18 @@ def crear_venta(
 
     if not es_borrador:
         generar_asiento_venta(db, nueva_venta)
+        actualizar_historial_comportamiento(db, cliente_actual)
+        registrar_evento_buro(
+            db,
+            cliente_actual.identificacion,
+            "compra",
+            (
+                f"Compra registrada por ${float(total_venta):.2f}. "
+                f"Compras: {cliente_actual.total_compras}. "
+                f"Pagos: {cliente_actual.total_pagos}. "
+                f"Crédito: {cliente_actual.clasificacion_credito}."
+            ),
+        )
 
     db.commit()
     db.refresh(nueva_venta)
@@ -220,7 +279,10 @@ def aprobar_venta_borrador(
         raise HTTPException(status_code=400, detail="La venta no está en borrador")
 
     validar_venta_credito(venta.cliente, venta.frecuencia_pago)
-    venta.estado = EstadoVenta.PENDIENTE
+    if (venta.metodo_pago or "efectivo") in ("transferencia", "pago_movil") and venta.frecuencia_pago == FrecuenciaPago.CONTADO:
+        venta.estado = EstadoVenta.PAGADA
+    else:
+        venta.estado = EstadoVenta.PENDIENTE
 
     if venta.detalles:
         from app.services.inventario import descontar_stock
@@ -252,6 +314,44 @@ def aprobar_venta_borrador(
         except Exception:
             logger.exception("No se pudo enviar comprobante de venta por correo")
     return _venta_a_response(venta_final)
+
+
+@router.post("/{venta_id}/verificar", response_model=VentaResponse)
+def verificar_pago_transferencia(
+    venta_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_admin_o_dueno),
+):
+    venta = (
+        db.query(Venta)
+        .options(
+            joinedload(Venta.detalles),
+            joinedload(Venta.cuotas),
+            joinedload(Venta.cliente),
+            joinedload(Venta.cobros),
+        )
+        .filter(Venta.id == venta_id, Venta.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    if venta.estado != EstadoVenta.POR_VERIFICAR:
+        raise HTTPException(status_code=400, detail="La venta no está pendiente de verificación")
+
+    for cobro in list(venta.cobros or []):
+        if cobro.verificado is False and venta.frecuencia_pago != FrecuenciaPago.CONTADO:
+            cobro.verificado = True
+            if venta.cliente:
+                actualizar_score_por_cobro(db, venta, cobro)
+        else:
+            cobro.verificado = True
+
+    venta.estado = EstadoVenta.PAGADA
+    if venta.cliente:
+        actualizar_historial_comportamiento(db, venta.cliente)
+    db.commit()
+    db.refresh(venta)
+    return _venta_a_response(venta)
 
 
 @router.get("/{venta_id}/amortizacion", response_model=List[CuotaAmortizacionResponse])
@@ -299,6 +399,56 @@ def enviar_recibo_venta_manual(
     if not exito:
         raise HTTPException(status_code=400, detail=mensaje)
     return EnvioReciboResponse(exito=exito, mensaje=mensaje, email=email)
+
+
+@router.post("/{venta_id}/comprobante/whatsapp", response_model=WhatsappReporteResponse)
+def enviar_comprobante_venta_whatsapp(
+    venta_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_vendedor_o_superior),
+):
+    """Envía la foto del comprobante de la venta al WhatsApp del administrador."""
+    venta = (
+        db.query(Venta)
+        .options(joinedload(Venta.cliente))
+        .filter(Venta.id == venta_id, Venta.empresa_id == usuario.empresa_id)
+        .first()
+    )
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    if venta.metodo_pago not in ("transferencia", "pago_movil"):
+        raise HTTPException(
+            status_code=400,
+            detail="Esta venta no es por transferencia ni pago móvil",
+        )
+    if not venta.comprobante_base64:
+        raise HTTPException(
+            status_code=400,
+            detail="Adjunte la foto del comprobante para enviarla por WhatsApp",
+        )
+
+    try:
+        telefono = telefono_administrador(db, usuario.empresa_id)
+        destino = normalizar_telefono(telefono)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    cliente = venta.cliente.nombre if venta.cliente else "Cliente"
+    caption = armar_caption_comprobante(
+        cliente,
+        f"${float(venta.total_usd):.2f} USD",
+        venta.referencia_pago,
+        venta.metodo_pago,
+    )
+    ok, mensaje = enviar_imagen(
+        destino,
+        None,
+        caption,
+        imagen_base64=venta.comprobante_base64,
+    )
+    if not ok:
+        raise HTTPException(status_code=estado_http_whatsapp(mensaje), detail=mensaje)
+    return WhatsappReporteResponse(enviado=True, telefono=destino, mensaje=mensaje)
 
 
 @router.get("/mis-ventas", response_model=List[VentaResponse])

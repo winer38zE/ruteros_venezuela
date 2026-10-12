@@ -12,6 +12,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/gps_location_capture.dart';
 import '../widgets/asistente_ruta_widget.dart';
 import '../widgets/enviar_recibo_button.dart';
+import 'cartera_critica_screen.dart';
 
 class PanelCobranzaScreen extends StatefulWidget {
   const PanelCobranzaScreen({super.key});
@@ -215,16 +216,52 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
     );
   }
 
+  Widget _carpetaMoraCritica() {
+    return GlassContainer(
+      margin: const EdgeInsets.only(bottom: 14),
+      accentColor: const Color(0xFFEF4444),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CarteraCriticaScreen()),
+        );
+      },
+      child: const Row(
+        children: [
+          Icon(Icons.folder_special_rounded, color: Color(0xFFEF4444)),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Carpeta de mora +3 semanas',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  'Clientes con más de 21 días y notas de seguimiento',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+        ],
+      ),
+    );
+  }
+
   Widget _tarjetaCredito(FilaCobranza fila, bool verCostos) {
     final proximo = fila.proximoPago != null
         ? _fmtFecha.format(DateTime.parse(fila.proximoPago!))
         : '—';
-    final enMora = fila.estadoCuenta == 'En mora';
+    final enMora = fila.estadoCuenta == 'En mora' || fila.estadoCuenta == 'Vencido';
+    final etiquetaCuenta = enMora ? 'Vencido' : fila.estadoCuenta;
     final telefono = fila.clienteTelefono;
 
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 14),
-      accentColor: enMora ? Colors.red : AppColors.neonCyan,
+      accentColor: enMora ? Colors.redAccent : AppColors.neonCyan,
       padding: const EdgeInsets.all(0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -264,16 +301,16 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
                           _fmt.format(fila.saldoPendienteUsd),
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
-                            color: enMora ? Colors.red : AppColors.amber,
+                            color: enMora ? Colors.redAccent : AppColors.amber,
                             fontSize: 15,
                           ),
                         ),
                         Text(
-                          fila.estadoCuenta,
+                          etiquetaCuenta,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: enMora ? Colors.red : AppColors.emerald,
+                            color: enMora ? Colors.redAccent : AppColors.emerald,
                           ),
                         ),
                       ],
@@ -515,15 +552,23 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
           : _error != null
               ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
               : _filas.isEmpty
-                  ? const EmptyState(
-                      icon: Icons.credit_score_outlined,
-                      message: 'No hay cuentas pendientes de cobro',
+                  ? ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      children: [
+                        _carpetaMoraCritica(),
+                        const SizedBox(height: 80),
+                        const EmptyState(
+                          icon: Icons.credit_score_outlined,
+                          message: 'No hay cuentas pendientes de cobro',
+                        ),
+                      ],
                     )
                   : RefreshIndicator(
                       onRefresh: _cargar,
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                         children: [
+                          _carpetaMoraCritica(),
                           Text(
                             '${_filas.length} crédito(s) activo(s)',
                             style: Theme.of(context).textTheme.bodySmall,

@@ -150,11 +150,41 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                           destacados: true,
                         ),
                         const SizedBox(height: 16),
+                        const SectionTitle(title: 'Historial de comportamiento'),
+                        GlassContainer(
+                          accentColor: _cliente!.soloContado ? const Color(0xFFEF4444) : AppColors.emerald,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _cliente!.clasificacionCredito,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: _cliente!.soloContado ? const Color(0xFFEF4444) : AppColors.emerald,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _InfoTile('Compras', '${_cliente!.totalCompras} · \$${_cliente!.montoComprasUsd.toStringAsFixed(2)}'),
+                              _InfoTile('Pagos', '${_cliente!.totalPagos} · \$${_cliente!.montoPagosUsd.toStringAsFixed(2)}'),
+                              _InfoTile(
+                                'Morosidad',
+                                _cliente!.estadoMorosidad == 'moroso' ? 'Moroso' : 'Al día',
+                              ),
+                              _InfoTile('Score', '${_cliente!.scoreCredito}'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         const SectionTitle(title: 'Datos de contacto'),
                         _InfoTile('Teléfono', _cliente!.telefono),
                         _InfoTile('Tel. secundario', _cliente!.telefonoSecundario),
                         _InfoTile('Email', _cliente!.email),
                         _InfoTile('Dirección', _cliente!.direccion),
+                        _InfoTile('Día de ruta', _cliente!.diaRuta),
+                        _InfoTile(
+                          'Orden de visita',
+                          _cliente!.ordenRuta != null ? '${_cliente!.ordenRuta}' : null,
+                        ),
                         _InfoTile('Referencia', _cliente!.puntoReferencia),
                         _InfoTile('Trabajo', _cliente!.empresaTrabajo),
                         _InfoTile('Dir. laboral', _cliente!.direccionLaboral),

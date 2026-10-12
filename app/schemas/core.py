@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional, List, Literal
+from datetime import datetime, date
 from uuid import UUID
 
 # --- EMPRESAS ---
@@ -12,6 +12,42 @@ class EmpresaResponse(BaseModel):
     nombre: str
     activa: bool
     fecha_creacion: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class DatosBancariosResponse(BaseModel):
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+    cedula_nit: Optional[str] = None
+    configurado: bool = False
+
+class DatosBancariosUpdate(BaseModel):
+    banco: Optional[str] = Field(default=None, max_length=120)
+    tipo_cuenta: Optional[str] = Field(default=None, max_length=40)
+    numero_cuenta: Optional[str] = Field(default=None, max_length=64)
+    cedula_nit: Optional[str] = Field(default=None, max_length=32)
+
+class CuentaBancariaCreate(BaseModel):
+    canal: str = Field(default="transferencia", pattern="^(transferencia|pago_movil)$")
+    banco: str = Field(min_length=1, max_length=120)
+    tipo_cuenta: Optional[str] = Field(default=None, max_length=40)
+    numero_cuenta: Optional[str] = Field(default=None, max_length=64)
+    telefono: Optional[str] = Field(default=None, max_length=20)
+    titular: str = Field(min_length=1, max_length=160)
+    documento: str = Field(min_length=1, max_length=32)
+
+class CuentaBancariaResponse(BaseModel):
+    id: UUID
+    empresa_id: UUID
+    banco: str
+    tipo_cuenta: str
+    numero_cuenta: str
+    titular: str
+    documento: str
+    canal: str = "transferencia"
+    telefono: Optional[str] = None
+    activa: bool = True
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +95,14 @@ class ClienteCreate(BaseModel):
     ref_familiar_telefono: Optional[str] = None
     email: Optional[str] = None
     tipo_cliente: Optional[str] = Field(default="detal", pattern="^(mayorista|detal)$")
+    vendedor_id: Optional[UUID] = None
+    dia_visita: Optional[str] = Field(
+        default=None,
+        pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
+    )
+    orden_secuencial: Optional[int] = Field(default=None, ge=1)
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = Field(default=None, ge=1)
 
 class ClienteUpdate(BaseModel):
     nombre_completo: Optional[str] = None
@@ -78,6 +122,15 @@ class ClienteUpdate(BaseModel):
     ref_familiar_telefono: Optional[str] = None
     email: Optional[str] = None
     tipo_cliente: Optional[str] = Field(default=None, pattern="^(mayorista|detal)$")
+    vendedor_id: Optional[UUID] = None
+    dia_visita: Optional[str] = Field(
+        default=None,
+        pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
+    )
+    orden_secuencial: Optional[int] = Field(default=None, ge=1)
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = Field(default=None, ge=1)
+    tipo_visita_ruta: Optional[str] = Field(default=None, pattern="^(frecuente|nuevo)$")
 
 class ClienteResponse(BaseModel):
     id: UUID
@@ -101,9 +154,172 @@ class ClienteResponse(BaseModel):
     score_credito: int = 70
     nivel_riesgo: str = "bueno"
     estado_credito: str = "Bueno"
+    clasificacion_credito: str = "Bueno"
+    total_compras: int = 0
+    monto_compras_usd: float = 0
+    total_pagos: int = 0
+    monto_pagos_usd: float = 0
+    estado_morosidad: str = "al_dia"
+    es_moroso: bool = False
     tipo_cliente: str = "detal"
+    vendedor_id: Optional[UUID] = None
+    dia_visita: Optional[str] = None
+    orden_secuencial: Optional[int] = None
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = None
+    tipo_visita_ruta: str = "frecuente"
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ClienteSyncItem(BaseModel):
+    """Cliente armado en el teléfono. El score y la morosidad no se aceptan aquí."""
+
+    local_id: Optional[str] = Field(default=None, max_length=80)
+    backend_id: Optional[str] = Field(default=None, max_length=64)
+    nombre_completo: Optional[str] = Field(default=None, max_length=200)
+    identificacion: Optional[str] = Field(default=None, max_length=32)
+    telefono: Optional[str] = None
+    telefono_secundario: Optional[str] = None
+    direccion: Optional[str] = None
+    punto_referencia: Optional[str] = None
+    latitud_residencia: Optional[float] = None
+    longitud_residencia: Optional[float] = None
+    empresa_trabajo: Optional[str] = None
+    direccion_laboral: Optional[str] = None
+    latitud_trabajo: Optional[float] = None
+    longitud_trabajo: Optional[float] = None
+    ref_familiar_nombre: Optional[str] = None
+    ref_familiar_parentesco: Optional[str] = None
+    ref_familiar_telefono: Optional[str] = None
+    email: Optional[str] = None
+    tipo_cliente: Optional[str] = None
+    dia_visita: Optional[str] = None
+    orden_secuencial: Optional[int] = None
+    dia_ruta: Optional[str] = None
+    orden_ruta: Optional[int] = None
+
+
+class ClienteSyncRequest(BaseModel):
+    clientes: List[ClienteSyncItem] = Field(default_factory=list, max_length=200)
+
+
+class ClienteSyncResultado(BaseModel):
+    local_id: Optional[str] = None
+    cedula: str = ""
+    servidor_id: Optional[UUID] = None
+    accion: str
+    es_moroso: bool = False
+    score: int = 70
+    detalle: Optional[str] = None
+
+
+class ClienteSyncResponse(BaseModel):
+    clientes: List[ClienteResponse]
+    resultados: List[ClienteSyncResultado]
+
+
+class RutaClienteResponse(BaseModel):
+    id: UUID
+    vendedor_id: Optional[UUID] = None
+    nombre: str
+    direccion: Optional[str] = None
+    dia_visita: str
+    dia_ruta: str
+    orden_secuencial: int
+    orden_ruta: int
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    tipo_visita_ruta: str
+    telefono: Optional[str] = None
+    estado_visita: str = "pendiente"
+    marcado_en: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RutasDiaResponse(BaseModel):
+    vendedor_id: UUID
+    dia: str
+    fecha: date
+    total_clientes: int
+    visitados: int = 0
+    pendientes: int = 0
+    clientes: List["RutaClienteResponse"] = []
+
+
+class OrdenRutaItem(BaseModel):
+    cliente_id: UUID
+    orden_ruta: Optional[int] = Field(default=None, ge=1)
+    orden_secuencial: int = Field(ge=1)
+
+
+class ReordenarRutaRequest(BaseModel):
+    vendedor_id: Optional[UUID] = None
+    dia: str = Field(pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$")
+    orden: List[OrdenRutaItem] = Field(min_length=1)
+
+
+class VisitaCreate(BaseModel):
+    cliente_id: UUID
+    estado: str = Field(default="visitado", pattern="^(pendiente|visitado|no_encontrado)$")
+    notas: Optional[str] = None
+    latitud_visita: Optional[float] = None
+    longitud_visita: Optional[float] = None
+    fecha: Optional[date] = None
+
+
+class VisitaLoteRequest(BaseModel):
+    visitas: List[VisitaCreate] = Field(min_length=1)
+
+
+class VisitaResponse(BaseModel):
+    id: UUID
+    cliente_id: UUID
+    vendedor_id: UUID
+    fecha: date
+    estado: str
+    notas: Optional[str] = None
+    latitud_visita: Optional[float] = None
+    longitud_visita: Optional[float] = None
+    marcado_en: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ResumenVendedorRuta(BaseModel):
+    vendedor_id: UUID
+    vendedor_nombre: str
+    total_clientes: int
+    visitados: int
+    pendientes: int
+    no_encontrados: int = 0
+    porcentaje_avance: float
+
+
+class RutasResumenResponse(BaseModel):
+    fecha: date
+    dia: str
+    vendedores: List[ResumenVendedorRuta] = []
+
+
+class WhatsappReporteRequest(BaseModel):
+    telefono: Optional[str] = None
+    texto: Optional[str] = Field(default=None, max_length=4000)
+    dia: Optional[str] = None
+    fecha: Optional[date] = None
+
+
+class WhatsappReporteResponse(BaseModel):
+    enviado: bool
+    telefono: str
+    mensaje: str
+
+
+class ComprobanteWhatsappRequest(BaseModel):
+    """Método opcional cuando el cobro no guarda el canal (transferencia o pago móvil)."""
+    metodo: Optional[str] = None
+
 
 class HistorialBuroItem(BaseModel):
     fecha: str
@@ -222,6 +438,10 @@ class VentaCreate(BaseModel):
     longitud_residencia: Optional[float] = None
     latitud_trabajo: Optional[float] = None
     longitud_trabajo: Optional[float] = None
+    metodo_pago: Optional[str] = Field(default="efectivo", pattern="^(efectivo|transferencia|pago_movil)$")
+    referencia_pago: Optional[str] = Field(default=None, max_length=80)
+    comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
+    cuenta_bancaria_id: Optional[UUID] = None
 
 class CuotaAmortizacionResponse(BaseModel):
     id: UUID
@@ -247,6 +467,10 @@ class VentaResponse(BaseModel):
     frecuencia_pago: str = "contado"
     tipo_tasa_usd: Optional[str] = "bcv"
     numero_cuotas: Optional[int] = None
+    metodo_pago: str = "efectivo"
+    referencia_pago: Optional[str] = None
+    tiene_comprobante: bool = False
+    cuenta_bancaria_id: Optional[UUID] = None
     detalles: List[DetalleVentaResponse] = []
     cuotas: List[CuotaAmortizacionResponse] = []
 
@@ -313,6 +537,11 @@ class CobroCreate(BaseModel):
     )
     tasa_usd_aplicada: float
     tasa_eur_aplicada: float
+    es_transferencia: bool = False
+    canal: Optional[str] = Field(default=None, pattern="^(transferencia|pago_movil)$")
+    referencia_pago: Optional[str] = Field(default=None, max_length=80)
+    comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
+    cuenta_bancaria_id: Optional[UUID] = None
 
 class CobroResponse(BaseModel):
     id: UUID
@@ -326,6 +555,12 @@ class CobroResponse(BaseModel):
     tasa_eur_aplicada: float
     sincronizado: bool
     fecha_creacion: datetime
+    es_transferencia: bool = False
+    verificado: bool = True
+    referencia_pago: Optional[str] = None
+    tiene_comprobante: bool = False
+    estado_venta: Optional[str] = None
+    cuenta_bancaria_id: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -671,3 +906,126 @@ class ProveedorResponse(BaseModel):
 class PagoProveedorRequest(BaseModel):
     monto_usd: float = Field(gt=0)
     descripcion: Optional[str] = None
+
+
+# --- CARTERA CRÍTICA (+21 DÍAS) ---
+MotivoNoPago = Literal[
+    "desempleado_temporal",
+    "problema_familiar",
+    "negativa_pago",
+    "alquiler_pendiente",
+    "otro",
+]
+
+EstadoConsideracion = Literal[
+    "en_observacion",
+    "acuerdo_pago",
+    "cobro_juridico",
+]
+
+
+class OpcionCatalogoCartera(BaseModel):
+    codigo: str
+    etiqueta: str
+
+
+class CatalogoCarteraCriticaResponse(BaseModel):
+    dias_atraso_minimo: int
+    motivos: List[OpcionCatalogoCartera]
+    estados: List[OpcionCatalogoCartera]
+
+
+class CreditoCriticoResponse(BaseModel):
+    venta_id: UUID
+    saldo_pendiente_usd: float
+    dias_atraso: int
+    fecha_referencia: datetime
+    frecuencia_pago: str
+
+
+class AcuerdoPagoResumen(BaseModel):
+    id: UUID
+    monto_acordado_usd: float
+    fecha_limite: date
+    cuotas_pactadas: int
+    estado: str
+    estado_etiqueta: str
+    nota_consideracion: str
+
+
+class ClienteCriticoResponse(BaseModel):
+    cliente_id: UUID
+    cliente_nombre: str
+    cliente_telefono: Optional[str] = None
+    cliente_direccion: Optional[str] = None
+    dias_atraso: int
+    saldo_pendiente_usd: float
+    creditos: List[CreditoCriticoResponse]
+    motivo: Optional[str] = None
+    motivo_etiqueta: Optional[str] = None
+    grupo_motivo: str = "sin_motivo"
+    estado_consideracion: Optional[str] = None
+    estado_etiqueta: Optional[str] = None
+    ultima_observacion: Optional[str] = None
+    ultima_nota_fecha: Optional[datetime] = None
+    en_plazo_de_gracia: bool = False
+    alerta_estricta: bool = True
+    acuerdo: Optional[AcuerdoPagoResumen] = None
+
+
+class ConteoMotivoCartera(BaseModel):
+    codigo: str
+    etiqueta: str
+    total: int
+
+
+class CarteraCriticaListResponse(BaseModel):
+    motivo_mora: str = "todos"
+    conteos: List[ConteoMotivoCartera]
+    clientes: List[ClienteCriticoResponse]
+
+
+class AcuerdoPagoCreate(BaseModel):
+    cliente_id: UUID
+    monto_acordado_usd: float = Field(gt=0)
+    fecha_limite: date
+    cuotas_pactadas: int = Field(ge=1, le=120)
+    nota_consideracion: str = Field(min_length=3, max_length=2000)
+
+
+class AcuerdoPagoResponse(BaseModel):
+    id: UUID
+    empresa_id: UUID
+    cliente_id: UUID
+    usuario_id: UUID
+    usuario_nombre: str
+    monto_acordado_usd: float
+    fecha_limite: date
+    cuotas_pactadas: int
+    estado: str
+    estado_etiqueta: str
+    nota_consideracion: str
+    fecha_creacion: datetime
+    en_plazo_de_gracia: bool
+    alerta_estricta: bool
+
+
+class NotaSeguimientoCreate(BaseModel):
+    motivo: MotivoNoPago
+    estado_consideracion: EstadoConsideracion
+    observacion: str = Field(min_length=3, max_length=2000)
+
+
+class NotaSeguimientoResponse(BaseModel):
+    id: UUID
+    empresa_id: UUID
+    cliente_id: UUID
+    usuario_id: UUID
+    usuario_nombre: str
+    fecha: datetime
+    motivo: str
+    motivo_etiqueta: str
+    estado_consideracion: str
+    estado_etiqueta: str
+    observacion: str
+    fecha_creacion: datetime
