@@ -9,6 +9,7 @@ import '../services/productos_service.dart';
 import '../services/catalogo_service.dart';
 import '../services/ventas_service.dart';
 import '../services/cobros_service.dart';
+import '../services/cartera_critica_service.dart';
 import '../services/finanzas_service.dart';
 import '../services/usuarios_service.dart';
 import '../services/proveedores_service.dart';
@@ -30,6 +31,7 @@ class AppState extends ChangeNotifier {
     catalogo = CatalogoService(api);
     ventas = VentasService(api);
     cobros = CobrosService(api);
+    carteraCritica = CarteraCriticaService(api);
     finanzas = FinanzasService(api);
     usuarios = UsuariosService(api);
     proveedores = ProveedoresService(api);
@@ -53,6 +55,7 @@ class AppState extends ChangeNotifier {
   late final CatalogoService catalogo;
   late final VentasService ventas;
   late final CobrosService cobros;
+  late final CarteraCriticaService carteraCritica;
   late final FinanzasService finanzas;
   late final UsuariosService usuarios;
   late final ProveedoresService proveedores;

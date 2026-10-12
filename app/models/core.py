@@ -3,7 +3,7 @@ import enum
 from datetime import datetime, date
 from sqlalchemy import (
     Column, String, Boolean, DateTime, Date, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR,
-    UniqueConstraint,
+    UniqueConstraint, Index,
 )
 from sqlalchemy.orm import relationship, declarative_base
 
@@ -233,6 +233,16 @@ class Cliente(Base):
 
     empresa = relationship("Empresa", back_populates="clientes")
     ventas = relationship("Venta", back_populates="cliente")
+    notas_seguimiento = relationship(
+        "NotaSeguimientoCobranza",
+        back_populates="cliente",
+        cascade="all, delete-orphan",
+    )
+    acuerdos_pago = relationship(
+        "AcuerdoPago",
+        back_populates="cliente",
+        cascade="all, delete-orphan",
+    )
 
 
 class VisitaDiaria(Base):
@@ -258,6 +268,62 @@ class VisitaDiaria(Base):
 
     cliente = relationship("Cliente", foreign_keys=[cliente_id])
     vendedor = relationship("Usuario", foreign_keys=[vendedor_id])
+
+
+class NotaSeguimientoCobranza(Base):
+    """Historial de cobranza humanizada por cliente.
+
+    Cada fila es una nota inmutable. El motivo y el estado vigentes son
+    los de la nota más reciente del cliente dentro de su empresa.
+    Se guarda como texto (no ENUM de Postgres) para crear la tabla igual
+    en SQLite local y en Supabase sin migrar tipos.
+    """
+
+    __tablename__ = "notas_seguimiento_cobranza"
+    __table_args__ = (
+        Index("ix_notas_seguimiento_empresa_cliente", "empresa_id", "cliente_id"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False, index=True)
+    usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+    fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
+    motivo = Column(String(40), nullable=False)
+    estado_consideracion = Column(String(40), nullable=False)
+    observacion = Column(Text, nullable=False)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    cliente = relationship("Cliente", back_populates="notas_seguimiento")
+    usuario = relationship("Usuario")
+
+
+class AcuerdoPago(Base):
+    """Reestructuración temporal. No reescribe cuotas ni el estado de la venta.
+
+    Mientras el acuerdo sigue activo y la fecha límite no venció, la carpeta
+    crítica suspende la alerta estricta. El plan de amortización original
+    permanece para cobranza, buró y sincronización.
+    """
+
+    __tablename__ = "acuerdos_pago"
+    __table_args__ = (
+        Index("ix_acuerdos_pago_empresa_cliente", "empresa_id", "cliente_id"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False, index=True)
+    usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False)
+    monto_acordado_usd = Column(Numeric(12, 2), nullable=False)
+    fecha_limite = Column(Date, nullable=False)
+    cuotas_pactadas = Column(Integer, nullable=False, default=1)
+    estado = Column(String(20), nullable=False, default="activo")
+    nota_consideracion = Column(Text, nullable=False)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    cliente = relationship("Cliente", back_populates="acuerdos_pago")
+    usuario = relationship("Usuario")
 
 
 class EventoBuroCredito(Base):

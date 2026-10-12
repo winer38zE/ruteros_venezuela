@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime, date
 from uuid import UUID
 
@@ -906,3 +906,126 @@ class ProveedorResponse(BaseModel):
 class PagoProveedorRequest(BaseModel):
     monto_usd: float = Field(gt=0)
     descripcion: Optional[str] = None
+
+
+# --- CARTERA CRÍTICA (+21 DÍAS) ---
+MotivoNoPago = Literal[
+    "desempleado_temporal",
+    "problema_familiar",
+    "negativa_pago",
+    "alquiler_pendiente",
+    "otro",
+]
+
+EstadoConsideracion = Literal[
+    "en_observacion",
+    "acuerdo_pago",
+    "cobro_juridico",
+]
+
+
+class OpcionCatalogoCartera(BaseModel):
+    codigo: str
+    etiqueta: str
+
+
+class CatalogoCarteraCriticaResponse(BaseModel):
+    dias_atraso_minimo: int
+    motivos: List[OpcionCatalogoCartera]
+    estados: List[OpcionCatalogoCartera]
+
+
+class CreditoCriticoResponse(BaseModel):
+    venta_id: UUID
+    saldo_pendiente_usd: float
+    dias_atraso: int
+    fecha_referencia: datetime
+    frecuencia_pago: str
+
+
+class AcuerdoPagoResumen(BaseModel):
+    id: UUID
+    monto_acordado_usd: float
+    fecha_limite: date
+    cuotas_pactadas: int
+    estado: str
+    estado_etiqueta: str
+    nota_consideracion: str
+
+
+class ClienteCriticoResponse(BaseModel):
+    cliente_id: UUID
+    cliente_nombre: str
+    cliente_telefono: Optional[str] = None
+    cliente_direccion: Optional[str] = None
+    dias_atraso: int
+    saldo_pendiente_usd: float
+    creditos: List[CreditoCriticoResponse]
+    motivo: Optional[str] = None
+    motivo_etiqueta: Optional[str] = None
+    grupo_motivo: str = "sin_motivo"
+    estado_consideracion: Optional[str] = None
+    estado_etiqueta: Optional[str] = None
+    ultima_observacion: Optional[str] = None
+    ultima_nota_fecha: Optional[datetime] = None
+    en_plazo_de_gracia: bool = False
+    alerta_estricta: bool = True
+    acuerdo: Optional[AcuerdoPagoResumen] = None
+
+
+class ConteoMotivoCartera(BaseModel):
+    codigo: str
+    etiqueta: str
+    total: int
+
+
+class CarteraCriticaListResponse(BaseModel):
+    motivo_mora: str = "todos"
+    conteos: List[ConteoMotivoCartera]
+    clientes: List[ClienteCriticoResponse]
+
+
+class AcuerdoPagoCreate(BaseModel):
+    cliente_id: UUID
+    monto_acordado_usd: float = Field(gt=0)
+    fecha_limite: date
+    cuotas_pactadas: int = Field(ge=1, le=120)
+    nota_consideracion: str = Field(min_length=3, max_length=2000)
+
+
+class AcuerdoPagoResponse(BaseModel):
+    id: UUID
+    empresa_id: UUID
+    cliente_id: UUID
+    usuario_id: UUID
+    usuario_nombre: str
+    monto_acordado_usd: float
+    fecha_limite: date
+    cuotas_pactadas: int
+    estado: str
+    estado_etiqueta: str
+    nota_consideracion: str
+    fecha_creacion: datetime
+    en_plazo_de_gracia: bool
+    alerta_estricta: bool
+
+
+class NotaSeguimientoCreate(BaseModel):
+    motivo: MotivoNoPago
+    estado_consideracion: EstadoConsideracion
+    observacion: str = Field(min_length=3, max_length=2000)
+
+
+class NotaSeguimientoResponse(BaseModel):
+    id: UUID
+    empresa_id: UUID
+    cliente_id: UUID
+    usuario_id: UUID
+    usuario_nombre: str
+    fecha: datetime
+    motivo: str
+    motivo_etiqueta: str
+    estado_consideracion: str
+    estado_etiqueta: str
+    observacion: str
+    fecha_creacion: datetime

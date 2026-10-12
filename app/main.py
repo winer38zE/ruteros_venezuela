@@ -19,6 +19,8 @@ from app.api import (
     auth_router,
     rutas,
     whatsapp,
+    cartera_critica,
+    cartera,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -72,6 +74,12 @@ app.include_router(productos.router, prefix="/api/v1/productos", tags=["Producto
 app.include_router(ventas.router, prefix="/api/v1/ventas", tags=["Ventas"])
 app.include_router(tasas_cambio.router, prefix="/api/v1/tasas-cambio", tags=["Tasas de Cambio"])
 app.include_router(cobros.router, prefix="/api/v1/cobros", tags=["Cobros"])
+app.include_router(
+    cartera_critica.router,
+    prefix="/api/v1/cartera-critica",
+    tags=["Cartera crítica"],
+)
+app.include_router(cartera.router, prefix="/api/v1/cartera", tags=["Cartera"])
 app.include_router(rutas.router, prefix="/api/v1/rutas", tags=["Rutas"])
 app.include_router(whatsapp.router, prefix="/api/v1/whatsapp", tags=["WhatsApp"])
 app.include_router(

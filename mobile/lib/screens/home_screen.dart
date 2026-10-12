@@ -19,6 +19,7 @@ import 'usuarios_screen.dart';
 import 'clientes_screen.dart';
 import 'tasas_screen.dart';
 import 'panel_cobranza_screen.dart';
+import 'cartera_critica_screen.dart';
 import 'proveedores_screen.dart';
 import 'rutas_list_screen.dart';
 import 'rutas_resumen_screen.dart';
@@ -98,6 +99,15 @@ class HomeScreen extends StatelessWidget {
           color: AppColors.neonBlue,
           screen: PanelCobranzaScreen(),
           badge: 'EXCEL',
+        ),
+        _ModuleDef(
+          id: 'cartera_critica',
+          icon: Icons.folder_special_rounded,
+          title: 'Cartera crítica',
+          subtitle: 'Mora de más de 3 semanas y seguimiento',
+          color: Color(0xFFEF4444),
+          screen: CarteraCriticaScreen(),
+          badge: '+21D',
         ),
         _ModuleDef(
           id: 'rutas',
@@ -215,6 +225,15 @@ class HomeScreen extends StatelessWidget {
         color: AppColors.neonBlue,
         screen: PanelCobranzaScreen(),
         badge: 'EXCEL',
+      ));
+      modules.add(const _ModuleDef(
+        id: 'cartera_critica',
+        icon: Icons.folder_special_rounded,
+        title: 'Cartera crítica',
+        subtitle: 'Mora de más de 3 semanas y seguimiento',
+        color: Color(0xFFEF4444),
+        screen: CarteraCriticaScreen(),
+        badge: '+21D',
       ));
     }
 
