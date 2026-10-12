@@ -4,9 +4,15 @@ class ApiConfig {
 
   static const String apiPrefix = '/api/v1';
 
-  /// Producción (Coolify). Incluye `/api/v1`.
+  /// Producción (Hetzner / Coolify). Incluye `/api/v1`.
   static const String _productionApiBaseUrl =
-      'https://kmtwbdgpl4lc18ed3w31bcb8.178.105.48.103.sslip.io/api/v1';
+      'https://api.edwuarcardenas.online/api/v1';
+
+  /// Hosts con certificado intermedio incompleto en el servidor (aceptar solo estos).
+  /// Quitar cuando el nginx/Coolify sirva la cadena SSL completa.
+  static const Set<String> insecureSslHosts = {
+    'api.edwuarcardenas.online',
+  };
 
   /// Override opcional en compilación:
   /// `flutter run --dart-define=API_BASE_URL=http://192.168.x.x:8000/api/v1`

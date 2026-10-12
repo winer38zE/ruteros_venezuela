@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
@@ -16,7 +18,19 @@ class ApiException implements Exception {
 
 /// Cliente HTTP centralizado para ED NET PRO — FastAPI multi-tenant.
 class ApiService {
-  ApiService({http.Client? client}) : _client = client ?? http.Client();
+  ApiService({http.Client? client}) : _client = client ?? createHttpClient();
+
+  /// Cliente HTTP con soporte para cadena SSL incompleta en hosts de confianza.
+  static http.Client createHttpClient() {
+    if (kIsWeb) {
+      return http.Client();
+    }
+    final io = HttpClient();
+    io.badCertificateCallback = (X509Certificate cert, String host, int port) {
+      return ApiConfig.insecureSslHosts.contains(host);
+    };
+    return IOClient(io);
+  }
 
   /// Alias de [ApiConfig.apiBaseUrl] — punto único de configuración.
   static String get baseUrl => ApiConfig.apiBaseUrl;
