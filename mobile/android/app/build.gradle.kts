@@ -58,6 +58,12 @@ android {
             }
         }
     }
+
+    // PCs con poca RAM: lintVitalAnalyzeRelease (p. ej. google_maps) agota Metaspace.
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 flutter {

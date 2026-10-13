@@ -115,6 +115,27 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> loginConBiometria() async {
+    cargando = true;
+    error = null;
+    notifyListeners();
+    try {
+      final user = await auth.loginConBiometria();
+      if (user == null) {
+        usuario = null;
+        return;
+      }
+      usuario = user;
+      _arrancarSync();
+    } catch (e) {
+      error = e.toString();
+      usuario = null;
+    } finally {
+      cargando = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> logout() async {
     await sync.dejarDeEscuchar();
     await alertas.limpiar();

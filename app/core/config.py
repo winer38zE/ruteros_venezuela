@@ -1,7 +1,9 @@
 """Configuración de la aplicación."""
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ruteros_local.db")
+POCKETBASE_URL = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090").rstrip("/")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))

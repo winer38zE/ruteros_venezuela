@@ -1,5 +1,5 @@
 """
-Carga datos de demostración en ruteros_local.db para probar la app completa.
+Carga datos de demostración vía API (PocketBase) para probar la app completa.
 
 Uso:
     python scripts/seed_demo.py
@@ -16,11 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 from app.main import app
-from app.models.core import Base, Usuario, Cliente
-from app.core import db as db_module
-from sqlalchemy.orm import sessionmaker
-
-from app.core.migrate import aplicar_migraciones_sqlite
+from app.models.core import Usuario, Cliente
+from app.core.bootstrap import asegurar_usuario_admin
+from app.core.pb_orm.session import SessionLocal
 
 c = TestClient(app)
 
@@ -40,8 +38,7 @@ def _get(path: str, headers: dict | None = None):
 
 
 def main():
-    Session = sessionmaker(bind=db_module.engine)
-    db = Session()
+    db = SessionLocal()
     try:
         tiene_dueno = db.query(Usuario).filter(Usuario.username == "dueno").first()
         demo_ok = db.query(Cliente).filter(Cliente.nombre == "Bodega La Esquina").first()
@@ -76,7 +73,7 @@ def main():
             "rif": "J-12345678-9",
         })
     else:
-        db2 = Session()
+        db2 = SessionLocal()
         try:
             dueno_row = db2.query(Usuario).filter(Usuario.username == "dueno").first()
             vend_row = db2.query(Usuario).filter(Usuario.username == "vend").first()
@@ -144,7 +141,7 @@ def main():
         headers={"X-Usuario-Id": cob["id"]},
     )
 
-    print("\n✅ Demo lista en ruteros_local.db")
+    print("\n✅ Demo lista en PocketBase")
     print(f"   Venta pendiente: ${venta['total_usd']} — cliente: {pendientes[0]['cliente_nombre']}")
     print(f"   Asientos contables: {resumen['asientos_generados']}")
     print("\nLogin Flutter:")
@@ -154,6 +151,5 @@ def main():
 
 
 if __name__ == "__main__":
-    aplicar_migraciones_sqlite(db_module.engine)
-    Base.metadata.create_all(bind=db_module.engine)
+    asegurar_usuario_admin()
     main()
