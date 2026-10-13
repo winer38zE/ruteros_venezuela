@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.core.db import SessionLocal
+from app.core.pb_orm.session import SessionLocal
 from app.services.tasas_scraper import sincronizar_tasas_automaticas
 
 logger = logging.getLogger(__name__)

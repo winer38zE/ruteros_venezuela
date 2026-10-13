@@ -1,15 +1,26 @@
 services:
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: ruteros-pocketbase
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - pocketbase_data:/pb_data
+
   api:
     build: .
     container_name: ruteros-api
     restart: unless-stopped
+    depends_on:
+      - pocketbase
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite:////app/data/ruteros.db
+      - POCKETBASE_URL=http://pocketbase:8090
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@ruteros.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin12345678}
       - SECRET_KEY=${SECRET_KEY:-cambiar-esta-clave-en-produccion}
-    volumes:
-      - ruteros_data:/app/data
 
 volumes:
-  ruteros_data:
+  pocketbase_data:

@@ -5,9 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.seguridad import CabecerasSeguridadMiddleware
-from app.models.core import Base
-from app.core.db import engine
-from app.core.migrate import aplicar_migraciones_sqlite
+from app.core.db import PocketBaseDep, autenticar_admin_pocketbase, get_pocketbase_client
+from app.core.pb_schema import asegurar_colecciones
 from app.core.bootstrap import asegurar_usuario_admin
 from app.core.scheduler import iniciar_scheduler, detener_scheduler
 
@@ -26,16 +25,20 @@ from app.api import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-aplicar_migraciones_sqlite(engine)
-Base.metadata.create_all(bind=engine)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
+        autenticar_admin_pocketbase()
+        asegurar_colecciones(get_pocketbase_client())
+    except Exception:
+        logger.exception(
+            "Autenticación admin PocketBase falló; revisa POCKETBASE_URL, ADMIN_EMAIL y ADMIN_PASSWORD."
+        )
+    try:
         asegurar_usuario_admin()
     except Exception:
-        logger.exception("Bootstrap de admin falló; el servidor continuará arrancando.")
+        logger.exception("Bootstrap de datos falló; el servidor continuará arrancando.")
     try:
         iniciar_scheduler()
     except Exception:
@@ -101,9 +104,10 @@ def estado_servidor():
 
 # Endpoint de prueba para verificar conexión y funcionamiento rápido
 @app.get("/api/v1/test-conexion")
-def probar_conexion():
+def probar_conexion(pb: PocketBaseDep):
     return {
         "status": "success",
         "codigo": 200,
-        "mensaje": "ED NET PRO - Mi primera API inteligente"
+        "mensaje": "ED NET PRO - Mi primera API inteligente",
+        "pocketbase_url": pb.base_url,
     }

@@ -43,9 +43,30 @@ Crea un archivo `.env` junto a `docker-compose.yml`:
 
 ```env
 SECRET_KEY=una-clave-larga-y-segura
+ADMIN_EMAIL=admin@tu-dominio.com
+ADMIN_PASSWORD=clave-del-superusuario-pocketbase
+POCKETBASE_URL=http://pocketbase:8090
 ```
 
-La base de datos SQLite se guarda en el volumen Docker `ruteros_data`.
+Los datos persisten en el volumen Docker `pocketbase_data`. La API crea las colecciones al arrancar y se autentica como admin para lectura/escritura.
+
+### Migrar datos desde SQLite antiguo
+
+Si tienes un `ruteros_local.db` (o el volumen Docker anterior), impórtalo a PocketBase:
+
+```bash
+# PocketBase debe estar corriendo y ADMIN_EMAIL / ADMIN_PASSWORD configurados
+set POCKETBASE_URL=http://127.0.0.1:8090
+set ADMIN_EMAIL=admin@ruteros.local
+set ADMIN_PASSWORD=tu-clave
+
+python scripts/migrate_sqlite_to_pocketbase.py --sqlite ruteros_local.db
+```
+
+Opciones útiles:
+
+- `--dry-run` — muestra cuántos registros migraría sin escribir.
+- `--skip-existing` — solo crea IDs nuevos; no sobrescribe lo ya importado.
 
 ## Desarrollo local (sin Docker)
 
@@ -65,8 +86,8 @@ Documentación interactiva: `http://localhost:8000/docs`
 ```
 app/
   api/          # Endpoints REST
-  core/         # Configuración, DB, auth
-  models/       # Modelos SQLAlchemy
+  core/         # Configuración, PocketBase, ORM
+  models/       # Modelos de dominio (mapeados a colecciones PB)
   schemas/      # Schemas Pydantic
   services/     # Lógica de negocio
 scripts/        # Utilidades (seed, etc.)

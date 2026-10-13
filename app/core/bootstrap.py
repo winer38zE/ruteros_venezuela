@@ -1,8 +1,8 @@
 import logging
-from sqlalchemy.orm import Session
-from app.core.db import SessionLocal
-from app.models.core import Usuario, Empresa, RolUsuario, Almacen
+
 from app.api.auth import get_password_hash
+from app.core.pb_orm.session import SessionLocal
+from app.models.core import Almacen, Empresa, RolUsuario, Usuario
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +18,7 @@ DEMO_USUARIOS = [
 ]
 
 
-def _crear_usuario_si_no_existe(
-    db: Session,
-    empresa_id,
-    username: str,
-    nombre: str,
-    rol: RolUsuario,
-    password: str,
-) -> None:
+def _crear_usuario_si_no_existe(db, empresa_id, username, nombre, rol, password) -> None:
     if db.query(Usuario).filter(Usuario.username == username).first():
         return
     db.add(
@@ -40,7 +33,7 @@ def _crear_usuario_si_no_existe(
     )
 
 
-def _asegurar_almacen_principal(db: Session, empresa_id) -> None:
+def _asegurar_almacen_principal(db, empresa_id) -> None:
     existe = (
         db.query(Almacen)
         .filter(Almacen.empresa_id == empresa_id, Almacen.activo.is_(True))
@@ -59,14 +52,10 @@ def _asegurar_almacen_principal(db: Session, empresa_id) -> None:
 
 
 def asegurar_usuario_admin() -> None:
-    """Crea empresa y usuario dueño si la base de datos no tiene usuarios activos."""
-    db: Session = SessionLocal()
+    """Crea empresa y usuarios demo en PocketBase si no existen."""
+    db = SessionLocal()
     try:
-        existe_activo = (
-            db.query(Usuario)
-            .filter(Usuario.activo.is_(True))
-            .first()
-        )
+        existe_activo = db.query(Usuario).filter(Usuario.activo.is_(True)).first()
         if existe_activo:
             empresa = db.query(Empresa).first()
             if empresa:
@@ -110,7 +99,6 @@ def asegurar_usuario_admin() -> None:
         db.add(dueno)
         db.flush()
         _asegurar_almacen_principal(db, empresa.id)
-
         for username, nombre, rol, pwd in DEMO_USUARIOS:
             _crear_usuario_si_no_existe(db, empresa.id, username, nombre, rol, pwd)
 
