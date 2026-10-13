@@ -68,14 +68,24 @@ class AuthService {
     );
 
     try {
-      final yaGuardadas = await _biometric.tieneCredenciales();
-      if (recordar || !yaGuardadas) {
+      if (recordar) {
         await _biometric.guardarCredenciales(correo: correo, password: password);
-      } else {
-        await _biometric.borrarCredenciales();
       }
     } catch (_) {}
     return user;
+  }
+
+  /// Huella válida → login con credenciales guardadas y sesión persistente.
+  Future<Usuario?> loginConBiometria() async {
+    final ok = await _biometric.autenticar();
+    if (!ok) return null;
+    final credenciales = await _biometric.leerCredenciales();
+    if (credenciales == null) return null;
+    return login(
+      credenciales.correo,
+      credenciales.password,
+      recordar: true,
+    );
   }
 
   Future<Usuario?> restoreSession() async {

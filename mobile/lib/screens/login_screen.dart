@@ -23,12 +23,10 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _ocultarPassword = true;
   bool _tieneSesionGuardada = false;
   bool _biometriaDisponible = false;
-  bool _ofreciendoBiometria = false;
-
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prepararBiometria());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _cargarOpcionesBiometria());
   }
 
   @override
@@ -38,59 +36,21 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _prepararBiometria() async {
+  Future<void> _cargarOpcionesBiometria() async {
     final credenciales = await _bio.leerCredenciales();
     final soporta = await _bio.soportaBiometria();
     if (!mounted) return;
     setState(() {
       _tieneSesionGuardada = credenciales != null;
       _biometriaDisponible = soporta;
+      if (credenciales != null && _correoCtrl.text.isEmpty) {
+        _correoCtrl.text = credenciales.correo;
+      }
     });
-    if (credenciales != null && soporta) {
-      await _dialogoHuella();
-    }
-  }
-
-  Future<void> _dialogoHuella() async {
-    if (_ofreciendoBiometria || !mounted) return;
-    _ofreciendoBiometria = true;
-    final aceptar = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        title: const Text('Sesión guardada'),
-        content: const Text('Ingresar con Huella Dactilar'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Usar contraseña')),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.fingerprint_rounded),
-            label: const Text('Ingresar con Huella Dactilar'),
-          ),
-        ],
-      ),
-    );
-    if (aceptar == true) {
-      await _ingresarConBiometria();
-    }
   }
 
   Future<void> _ingresarConBiometria() async {
-    final ok = await _bio.autenticar();
-    if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo confirmar la huella o el rostro')),
-      );
-      return;
-    }
-    final credenciales = await _bio.leerCredenciales();
-    if (!mounted || credenciales == null) return;
-    await context.read<AppState>().login(
-          credenciales.correo,
-          credenciales.password,
-          recordar: true,
-        );
+    await context.read<AppState>().loginConBiometria();
   }
 
   Future<void> _login() async {
@@ -111,20 +71,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final mostrarHuella = _tieneSesionGuardada && _biometriaDisponible;
 
     return Scaffold(
-      floatingActionButton: mostrarHuella
-          ? FloatingActionButton.extended(
-              onPressed: state.cargando ? null : _ingresarConBiometria,
-              backgroundColor: AppColors.neonCyan,
-              foregroundColor: AppColors.bgDeep,
-              icon: const Icon(Icons.fingerprint_rounded),
-              label: const Text('Ingresar con Huella Dactilar'),
-            )
-          : null,
       body: FuturisticBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
@@ -232,9 +183,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     )
                                   : const Icon(Icons.login_rounded),
-                              label: Text(state.cargando ? 'Conectando...' : 'Ingresar al sistema'),
+                              label: Text(state.cargando ? 'Conectando...' : 'Ingresar con contraseña'),
                             ),
                           ),
+                          if (mostrarHuella) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: state.cargando ? null : _ingresarConBiometria,
+                                icon: const Icon(Icons.fingerprint_rounded),
+                                label: const Text('Ingresar con huella dactilar'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
