@@ -16,10 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY scripts ./scripts
 
-RUN mkdir -p /app/data
-
-ENV DATABASE_URL=sqlite:////app/data/ruteros.db
-
 EXPOSE 8000
+
+# PocketBase (servicio `pocketbase` en docker-compose). En Coolify, define la URL interna real.
+ENV POCKETBASE_URL=http://pocketbase:8090
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
