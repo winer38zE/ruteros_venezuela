@@ -1,6 +1,10 @@
 import logging
 
+from pocketbase.errors import ClientResponseError
+
 from app.api.auth import get_password_hash
+from app.core.db import autenticar_admin_pocketbase, get_pocketbase_client
+from app.core.pb_schema import verificar_colecciones_completas
 from app.core.pb_orm.session import SessionLocal
 from app.models.core import Almacen, Empresa, RolUsuario, Usuario
 
@@ -52,7 +56,11 @@ def _asegurar_almacen_principal(db, empresa_id) -> None:
 
 
 def asegurar_usuario_admin() -> None:
-    """Crea empresa y usuarios demo en PocketBase si no existen."""
+    """Crea empresa y usuarios demo. Solo debe llamarse tras crear todas las colecciones."""
+    pb = get_pocketbase_client()
+    autenticar_admin_pocketbase(pb)
+    verificar_colecciones_completas(pb)
+
     db = SessionLocal()
     try:
         existe_activo = db.query(Usuario).filter(Usuario.activo.is_(True)).first()
@@ -107,8 +115,17 @@ def asegurar_usuario_admin() -> None:
             "Usuarios demo creados (dueno, vendedor, cobrador) — empresa '%s'.",
             empresa.nombre,
         )
+    except ClientResponseError as exc:
+        db.rollback()
+        if getattr(exc, "status", None) == 404:
+            raise RuntimeError(
+                "Bootstrap abortado: colección PocketBase inexistente. "
+                "Ejecute asegurar_colecciones antes de insertar registros."
+            ) from exc
+        raise
     except Exception:
         db.rollback()
         logger.exception("Error al crear usuario administrador por defecto.")
+        raise
     finally:
         db.close()

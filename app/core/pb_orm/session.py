@@ -144,6 +144,11 @@ class PbSession:
         try:
             self.pb.collection(name).create(body)
         except ClientResponseError as exc:
+            if exc.status == 404:
+                raise RuntimeError(
+                    f"La colección '{name}' no existe en PocketBase. "
+                    "El arranque debe crear el esquema antes del bootstrap."
+                ) from exc
             raise _as_integrity(exc) from exc
         self._snapshots[rid] = mapper.model_to_record(obj)
         self._new.discard(rid)
