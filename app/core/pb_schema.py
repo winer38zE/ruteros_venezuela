@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from typing import Any
 
@@ -9,9 +10,18 @@ from pocketbase.errors import ClientResponseError
 from pocketbase import PocketBase
 from sqlalchemy import Integer, inspect as sa_inspect
 
+from app.core.db import autenticar_admin_pocketbase
 from app.core.pb_orm import mapper
 
 logger = logging.getLogger(__name__)
+
+# Colecciones críticas (deben responder en /records antes del bootstrap).
+_COLECCIONES_NUCLEO: tuple[str, ...] = (
+    "empresas",
+    "usuarios",
+    "clientes",
+    "almacenes",
+)
 
 # Mismo orden que scripts/migrate_sqlite_to_pocketbase.py (FK lógicas al insertar datos).
 _ORDEN_COLECCIONES: tuple[str, ...] = (
@@ -46,6 +56,17 @@ def nombres_colecciones_requeridas() -> list[str]:
     return [mapper.collection_name(m) for m in mapper.all_models()]
 
 
+def _credenciales_admin() -> tuple[str, str]:
+    email = os.getenv("ADMIN_EMAIL", "").strip()
+    password = os.getenv("ADMIN_PASSWORD", "")
+    return email, password
+
+
+def _autenticar_admin_api(pb: PocketBase) -> None:
+    email, password = _credenciales_admin()
+    autenticar_admin_pocketbase(pb, email=email, password=password)
+
+
 def _mapa_colecciones(pb: PocketBase) -> dict[str, Any]:
     return {c.name: c for c in pb.collections.get_full_list()}
 
@@ -55,19 +76,34 @@ def colecciones_faltantes(pb: PocketBase) -> list[str]:
     return [n for n in nombres_colecciones_requeridas() if n not in existentes]
 
 
+def confirmar_acceso_registros(pb: PocketBase, nombres: tuple[str, ...] | None = None) -> None:
+    """Comprueba que la API de registros responde (no basta con listar metadatos de colección)."""
+    objetivos = nombres or _COLECCIONES_NUCLEO
+    for nombre in objetivos:
+        try:
+            pb.collection(nombre).get_list(1, 1)
+        except ClientResponseError as exc:
+            if exc.status == 404:
+                raise RuntimeError(
+                    f"La colección '{nombre}' no existe o no es accesible en "
+                    f"{getattr(pb, 'base_url', 'PocketBase')} (HTTP 404 en /records)."
+                ) from exc
+            raise
+
+
 def verificar_colecciones_completas(pb: PocketBase) -> None:
-    """Fallo explícito si falta alguna tabla Ruteros (evita bootstrap sobre PB vacío)."""
     faltantes = colecciones_faltantes(pb)
     if faltantes:
         raise RuntimeError(
             "Colecciones PocketBase faltantes antes del bootstrap: "
             + ", ".join(faltantes)
         )
+    confirmar_acceso_registros(pb)
 
 
 def _field_id(field_type: str) -> str:
-    """PocketBase v0.23+ exige id único por campo en el JSON de la colección."""
-    return f"{field_type}{secrets.token_hex(7)}"[:15]
+    base = field_type.replace("_", "")[:3]
+    return f"{base}{secrets.token_hex(6)}"[:15]
 
 
 def _tabla_fk(col) -> str | None:
@@ -78,9 +114,14 @@ def _tabla_fk(col) -> str | None:
     return fk.column.table.name
 
 
-def _field_for_column(col, ids_por_tabla: dict[str, str]) -> dict[str, Any]:
+def _field_for_column(
+    col,
+    ids_por_tabla: dict[str, str],
+    *,
+    usar_relaciones: bool,
+) -> dict[str, Any]:
     tabla_rel = _tabla_fk(col)
-    if tabla_rel and tabla_rel in ids_por_tabla:
+    if usar_relaciones and tabla_rel and tabla_rel in ids_por_tabla:
         return {
             "id": _field_id("rel"),
             "name": col.key,
@@ -112,12 +153,17 @@ def _field_for_column(col, ids_por_tabla: dict[str, str]) -> dict[str, Any]:
     return entry
 
 
-def _fields_for_model(model: type, ids_por_tabla: dict[str, str]) -> list[dict[str, Any]]:
+def _fields_for_model(
+    model: type,
+    ids_por_tabla: dict[str, str],
+    *,
+    usar_relaciones: bool,
+) -> list[dict[str, Any]]:
     fields: list[dict[str, Any]] = []
     for col in sa_inspect(model).columns:
         if col.key == "id":
             continue
-        fields.append(_field_for_column(col, ids_por_tabla))
+        fields.append(_field_for_column(col, ids_por_tabla, usar_relaciones=usar_relaciones))
     return fields
 
 
@@ -139,7 +185,38 @@ def _ids_por_tabla(pb: PocketBase) -> dict[str, str]:
     return {c.name: c.id for c in pb.collections.get_full_list()}
 
 
+def _crear_coleccion(
+    pb: PocketBase,
+    model: type,
+    ids_por_tabla: dict[str, str],
+    *,
+    usar_relaciones: bool,
+) -> None:
+    nombre = mapper.collection_name(model)
+    body = {
+        "name": nombre,
+        "type": "base",
+        "fields": _fields_for_model(model, ids_por_tabla, usar_relaciones=usar_relaciones),
+        "listRule": "",
+        "viewRule": "",
+        "createRule": "",
+        "updateRule": "",
+        "deleteRule": "",
+    }
+    created = pb.collections.create(body)
+    coll_id = getattr(created, "id", None)
+    if coll_id:
+        ids_por_tabla[nombre] = str(coll_id)
+    logger.info(
+        "Colección PocketBase creada: %s (%d campos, relaciones=%s)",
+        nombre,
+        len(body["fields"]),
+        usar_relaciones,
+    )
+
+
 def asegurar_colecciones(pb: PocketBase) -> None:
+    _autenticar_admin_api(pb)
     try:
         ids_por_tabla = _ids_por_tabla(pb)
         existentes = set(ids_por_tabla.keys())
@@ -152,32 +229,26 @@ def asegurar_colecciones(pb: PocketBase) -> None:
         nombre = mapper.collection_name(model)
         if nombre in existentes:
             continue
-        body = {
-            "name": nombre,
-            "type": "base",
-            "fields": _fields_for_model(model, ids_por_tabla),
-            "listRule": "",
-            "viewRule": "",
-            "createRule": "",
-            "updateRule": "",
-            "deleteRule": "",
-        }
         try:
-            created = pb.collections.create(body)
-            coll_id = getattr(created, "id", None) or created.__dict__.get("id")
-            if coll_id:
-                ids_por_tabla[nombre] = str(coll_id)
-            existentes.add(nombre)
-            creadas += 1
-            logger.info("Colección PocketBase creada: %s (%d campos)", nombre, len(body["fields"]))
+            _crear_coleccion(pb, model, ids_por_tabla, usar_relaciones=True)
         except ClientResponseError as exc:
-            logger.error(
-                "No se pudo crear la colección %s: status=%s data=%s",
+            logger.warning(
+                "Reintento sin relaciones para '%s' (status=%s).",
                 nombre,
                 getattr(exc, "status", "?"),
-                getattr(exc, "data", exc),
             )
-            raise RuntimeError(f"Fallo al crear colección '{nombre}' en PocketBase") from exc
+            try:
+                _crear_coleccion(pb, model, ids_por_tabla, usar_relaciones=False)
+            except ClientResponseError as exc2:
+                logger.error(
+                    "No se pudo crear la colección %s: status=%s data=%s",
+                    nombre,
+                    getattr(exc2, "status", "?"),
+                    getattr(exc2, "data", exc2),
+                )
+                raise RuntimeError(f"Fallo al crear colección '{nombre}' en PocketBase") from exc2
+        existentes.add(nombre)
+        creadas += 1
 
     verificar_colecciones_completas(pb)
 
@@ -185,3 +256,8 @@ def asegurar_colecciones(pb: PocketBase) -> None:
         logger.info("Esquema PocketBase: %d colección(es) nueva(s).", creadas)
     else:
         logger.info("Esquema PocketBase: todas las colecciones ya existían.")
+
+
+def preparar_esquema_pocketbase(pb: PocketBase) -> None:
+    """Auth admin + crear colecciones + verificar acceso a registros (obligatorio antes del bootstrap)."""
+    asegurar_colecciones(pb)

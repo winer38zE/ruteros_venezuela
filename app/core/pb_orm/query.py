@@ -119,7 +119,12 @@ class PbQuery:
                 batch = pb.collection(name).get_list(page, per_page, query_params=params)
             except ClientResponseError as exc:
                 if exc.status == 404:
-                    return []
+                    raise ClientResponseError(
+                        f"La colección '{name}' no existe en PocketBase.",
+                        url=exc.url,
+                        status=exc.status,
+                        data=exc.data,
+                    ) from exc
                 if reintentar_auth and exc.status in (401, 403):
                     reintentar_auth = False
                     if reautenticar_admin_pocketbase(pb):

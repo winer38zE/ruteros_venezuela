@@ -1,10 +1,11 @@
 import logging
+import os
 
 from pocketbase.errors import ClientResponseError
 
 from app.api.auth import get_password_hash
-from app.core.db import autenticar_admin_pocketbase, get_pocketbase_client
-from app.core.pb_schema import verificar_colecciones_completas
+from app.core.db import get_pocketbase_client
+from app.core.pb_schema import preparar_esquema_pocketbase, verificar_colecciones_completas
 from app.core.pb_orm.session import SessionLocal
 from app.models.core import Almacen, Empresa, RolUsuario, Usuario
 
@@ -56,9 +57,12 @@ def _asegurar_almacen_principal(db, empresa_id) -> None:
 
 
 def asegurar_usuario_admin() -> None:
-    """Crea empresa y usuarios demo. Solo debe llamarse tras crear todas las colecciones."""
-    pb = get_pocketbase_client()
-    autenticar_admin_pocketbase(pb)
+    """Inserta datos demo solo si el esquema PocketBase ya existe y responde."""
+    if not os.getenv("ADMIN_EMAIL", "").strip() or not os.getenv("ADMIN_PASSWORD", ""):
+        raise RuntimeError("ADMIN_EMAIL y ADMIN_PASSWORD requeridos para el bootstrap.")
+
+    pb = get_pocketbase_client(os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090").rstrip("/"))
+    preparar_esquema_pocketbase(pb)
     verificar_colecciones_completas(pb)
 
     db = SessionLocal()
@@ -119,8 +123,8 @@ def asegurar_usuario_admin() -> None:
         db.rollback()
         if getattr(exc, "status", None) == 404:
             raise RuntimeError(
-                "Bootstrap abortado: colección PocketBase inexistente. "
-                "Ejecute asegurar_colecciones antes de insertar registros."
+                "Bootstrap abortado: la colección no existe en PocketBase. "
+                "El arranque debe crear el esquema antes de insertar registros."
             ) from exc
         raise
     except Exception:
