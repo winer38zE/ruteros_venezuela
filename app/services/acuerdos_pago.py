@@ -14,6 +14,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.pb_orm.ids import nuevo_id_pocketbase
 from app.models.core import (
     AcuerdoPago,
     EstadoVenta,
@@ -230,7 +231,7 @@ def crear_acuerdo(
 
     ahora = datetime.utcnow()
     acuerdo = AcuerdoPago(
-        id=uuid.uuid4(),
+        id=nuevo_id_pocketbase(),
         empresa_id=empresa_id,
         cliente_id=cliente_id,
         usuario_id=usuario_id,

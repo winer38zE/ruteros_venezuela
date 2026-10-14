@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from copy import deepcopy
 from typing import Any
 
@@ -10,6 +9,12 @@ from pocketbase.errors import ClientResponseError
 from sqlalchemy.exc import IntegrityError
 
 from app.core.pb_orm import mapper
+from app.core.pb_orm.ids import (
+    es_id_pocketbase,
+    id_pocketbase_desde_cualquiera,
+    id_para_payload_creacion,
+    nuevo_id_pocketbase,
+)
 from app.core.pb_orm.query import PbQuery
 
 logger = logging.getLogger(__name__)
@@ -40,8 +45,11 @@ class PbSession:
         return q
 
     def add(self, obj: Any) -> None:
-        if getattr(obj, "id", None) is None:
-            obj.id = uuid.uuid4()
+        raw_id = getattr(obj, "id", None)
+        if raw_id is None:
+            obj.id = nuevo_id_pocketbase()
+        elif not es_id_pocketbase(raw_id):
+            obj.id = id_pocketbase_desde_cualquiera(raw_id)
         rid = mapper.record_id(obj)
         self._registry[rid] = obj
         self._new.add(rid)
@@ -140,9 +148,13 @@ class PbSession:
         name = mapper.collection_name(type(obj))
         body = mapper.model_to_record(obj)
         rid = mapper.record_id(obj)
-        body["id"] = rid
+        body.pop("id", None)
+        id_envio = id_para_payload_creacion(rid)
+        if id_envio is not None:
+            body["id"] = id_envio
+            obj.id = id_envio
         try:
-            self.pb.collection(name).create(body)
+            created = self.pb.collection(name).create(body)
         except ClientResponseError as exc:
             if exc.status == 404:
                 raise RuntimeError(
@@ -150,8 +162,16 @@ class PbSession:
                     "El arranque debe crear el esquema antes del bootstrap."
                 ) from exc
             raise _as_integrity(exc) from exc
-        self._snapshots[rid] = mapper.model_to_record(obj)
-        self._new.discard(rid)
+        data = mapper.record_payload(created)
+        nuevo_rid = str(data.get("id") or obj.id)
+        if nuevo_rid != rid:
+            self._registry.pop(rid, None)
+            self._snapshots.pop(rid, None)
+            self._new.discard(rid)
+            obj.id = nuevo_rid
+            self._registry[nuevo_rid] = obj
+        self._snapshots[nuevo_rid] = mapper.model_to_record(obj)
+        self._new.discard(nuevo_rid)
 
     def _update_record(self, obj: Any) -> None:
         name = mapper.collection_name(type(obj))

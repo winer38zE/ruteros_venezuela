@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Text, inspect as sa_inspect
 
+from app.core.pb_orm.ids import es_id_pocketbase, id_pocketbase_desde_cualquiera
 from app.models import core as models
 
 # (modelo padre, atributo relación) → (tipo, modelo hijo/padre, columna FK en hijo o en padre)
@@ -78,7 +79,10 @@ def record_id(obj: Any) -> str:
 
 def _coerce_storage(val: Any) -> Any:
     if isinstance(val, uuid.UUID):
-        return str(val)
+        s = str(val)
+        return s if es_id_pocketbase(s) else id_pocketbase_desde_cualquiera(val)
+    if isinstance(val, str) and len(val) > 15 and not es_id_pocketbase(val):
+        return id_pocketbase_desde_cualquiera(val)
     if isinstance(val, enum.Enum):
         return val.value
     if isinstance(val, Decimal):
@@ -99,7 +103,13 @@ def _coerce_python(col, raw: Any) -> Any:
     except Exception:
         py_type = str
     if py_type is uuid.UUID:
-        return uuid.UUID(str(raw))
+        s = str(raw)
+        if es_id_pocketbase(s):
+            return s
+        try:
+            return uuid.UUID(s)
+        except ValueError:
+            return s
     if isinstance(col.type, Numeric):
         return Decimal(str(raw))
     if py_type is bool:
