@@ -23,9 +23,11 @@ EAGER_RELATIONS: dict[tuple[type, str], tuple[str, type, str]] = {
 
 
 def all_models() -> list[type]:
+    """Modelos ORM registrados (no usar inspect() sobre la clase Base)."""
     return [
-        c.class_
-        for c in sa_inspect(models.Base).mapper.registry.mappers
+        m.class_
+        for m in models.Base.registry.mappers
+        if getattr(m, "class_", None) is not None
     ]
 
 

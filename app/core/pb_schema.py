@@ -1,4 +1,4 @@
-"""Crea colecciones PocketBase equivalentes a las tablas SQLAlchemy."""
+"""Crea y sincroniza colecciones PocketBase equivalentes a las tablas SQLAlchemy."""
 from __future__ import annotations
 
 import logging
@@ -6,6 +6,7 @@ import os
 import secrets
 from typing import Any
 
+import app.models.core  # noqa: F401 — registra todos los mappers en Base.registry
 from pocketbase.errors import ClientResponseError
 from pocketbase import PocketBase
 from sqlalchemy import Integer, inspect as sa_inspect
@@ -15,7 +16,6 @@ from app.core.pb_orm import mapper
 
 logger = logging.getLogger(__name__)
 
-# Colecciones críticas (deben responder en /records antes del bootstrap).
 _COLECCIONES_NUCLEO: tuple[str, ...] = (
     "empresas",
     "usuarios",
@@ -23,7 +23,6 @@ _COLECCIONES_NUCLEO: tuple[str, ...] = (
     "almacenes",
 )
 
-# Mismo orden que scripts/migrate_sqlite_to_pocketbase.py (FK lógicas al insertar datos).
 _ORDEN_COLECCIONES: tuple[str, ...] = (
     "empresas",
     "cuentas_bancarias",
@@ -51,6 +50,17 @@ _ORDEN_COLECCIONES: tuple[str, ...] = (
     "eventos_buro_credito",
 )
 
+_SNAKE_A_API: dict[str, str] = {
+    "auto_generate_pattern": "autogeneratePattern",
+    "primary_key": "primaryKey",
+    "max_size": "maxSize",
+    "only_int": "onlyInt",
+    "collection_id": "collectionId",
+    "cascade_delete": "cascadeDelete",
+    "min_select": "minSelect",
+    "max_select": "maxSelect",
+}
+
 
 def nombres_colecciones_requeridas() -> list[str]:
     return [mapper.collection_name(m) for m in mapper.all_models()]
@@ -77,7 +87,6 @@ def colecciones_faltantes(pb: PocketBase) -> list[str]:
 
 
 def confirmar_acceso_registros(pb: PocketBase, nombres: tuple[str, ...] | None = None) -> None:
-    """Comprueba que la API de registros responde (no basta con listar metadatos de colección)."""
     objetivos = nombres or _COLECCIONES_NUCLEO
     for nombre in objetivos:
         try:
@@ -185,6 +194,70 @@ def _ids_por_tabla(pb: PocketBase) -> dict[str, str]:
     return {c.name: c.id for c in pb.collections.get_full_list()}
 
 
+def _campo_api_a_patch(field: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, val in field.items():
+        if val is None:
+            continue
+        api_key = _SNAKE_A_API.get(key, key)
+        out[api_key] = val
+    return out
+
+
+def _nombres_campos_coleccion(coll: Any) -> set[str]:
+    nombres: set[str] = set()
+    for f in coll.fields or []:
+        nombre = f.get("name")
+        if nombre and nombre != "id":
+            nombres.add(nombre)
+    return nombres
+
+
+def _sincronizar_campos_coleccion(
+    pb: PocketBase,
+    model: type,
+    coll: Any,
+    ids_por_tabla: dict[str, str],
+) -> int:
+    """Añade campos faltantes a una colección ya existente (p. ej. empresas solo con nombre)."""
+    deseados = _fields_for_model(model, ids_por_tabla, usar_relaciones=True)
+    existentes = _nombres_campos_coleccion(coll)
+    nuevos = [f for f in deseados if f["name"] not in existentes]
+    if not nuevos:
+        return 0
+    try:
+        payload = [_campo_api_a_patch(f) for f in coll.fields] + nuevos
+        pb.collections.update(
+            coll.id,
+            {"fields": payload},
+        )
+        logger.info(
+            "Colección '%s' ampliada con %d campo(s): %s",
+            coll.name,
+            len(nuevos),
+            ", ".join(f["name"] for f in nuevos),
+        )
+        return len(nuevos)
+    except ClientResponseError as exc:
+        logger.warning(
+            "Sync con relaciones falló en '%s' (%s); reintento campos texto.",
+            coll.name,
+            getattr(exc, "status", "?"),
+        )
+        deseados_txt = _fields_for_model(model, ids_por_tabla, usar_relaciones=False)
+        nuevos_txt = [f for f in deseados_txt if f["name"] not in existentes]
+        if not nuevos_txt:
+            return 0
+        payload = [_campo_api_a_patch(f) for f in coll.fields] + nuevos_txt
+        pb.collections.update(coll.id, {"fields": payload})
+        logger.info(
+            "Colección '%s' ampliada (texto) con %d campo(s).",
+            coll.name,
+            len(nuevos_txt),
+        )
+        return len(nuevos_txt)
+
+
 def _crear_coleccion(
     pb: PocketBase,
     model: type,
@@ -218,17 +291,28 @@ def _crear_coleccion(
 def asegurar_colecciones(pb: PocketBase) -> None:
     _autenticar_admin_api(pb)
     try:
-        ids_por_tabla = _ids_por_tabla(pb)
-        existentes = set(ids_por_tabla.keys())
+        mapa = _mapa_colecciones(pb)
     except ClientResponseError as exc:
         logger.error("No se pudo listar colecciones PocketBase: %s", exc)
         raise
 
+    if "users" in mapa and "usuarios" not in mapa:
+        logger.warning(
+            "Existe la colección auth 'users' de PocketBase, pero la app usa 'usuarios' "
+            "(colección base Ruteros). Se creará 'usuarios' con el esquema completo."
+        )
+
     creadas = 0
+    ampliadas = 0
     for model in _modelos_ordenados():
         nombre = mapper.collection_name(model)
-        if nombre in existentes:
+        ids_por_tabla = _ids_por_tabla(pb)
+
+        if nombre in mapa:
+            ampliadas += _sincronizar_campos_coleccion(pb, model, mapa[nombre], ids_por_tabla)
+            mapa = _mapa_colecciones(pb)
             continue
+
         try:
             _crear_coleccion(pb, model, ids_por_tabla, usar_relaciones=True)
         except ClientResponseError as exc:
@@ -247,17 +331,17 @@ def asegurar_colecciones(pb: PocketBase) -> None:
                     getattr(exc2, "data", exc2),
                 )
                 raise RuntimeError(f"Fallo al crear colección '{nombre}' en PocketBase") from exc2
-        existentes.add(nombre)
         creadas += 1
+        mapa = _mapa_colecciones(pb)
 
     verificar_colecciones_completas(pb)
 
-    if creadas:
-        logger.info("Esquema PocketBase: %d colección(es) nueva(s).", creadas)
-    else:
-        logger.info("Esquema PocketBase: todas las colecciones ya existían.")
+    logger.info(
+        "Esquema PocketBase: %d colección(es) nueva(s), %d colección(es) ampliada(s).",
+        creadas,
+        ampliadas,
+    )
 
 
 def preparar_esquema_pocketbase(pb: PocketBase) -> None:
-    """Auth admin + crear colecciones + verificar acceso a registros (obligatorio antes del bootstrap)."""
     asegurar_colecciones(pb)

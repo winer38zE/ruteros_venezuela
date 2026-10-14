@@ -56,6 +56,22 @@ def _asegurar_almacen_principal(db, empresa_id) -> None:
     )
 
 
+def _confirmar_demo_listo(db) -> None:
+    dueno = db.query(Usuario).filter(Usuario.username == DEFAULT_USERNAME, Usuario.activo.is_(True)).first()
+    empresa = db.query(Empresa).first()
+    if not dueno or not empresa:
+        raise RuntimeError(
+            "Bootstrap incompleto: falta empresa o usuario 'dueno' tras el commit."
+        )
+    logger.info(
+        "Bootstrap OK — empresa '%s' (id=%s), dueño '%s' (id=%s).",
+        empresa.nombre,
+        empresa.id,
+        dueno.username,
+        dueno.id,
+    )
+
+
 def asegurar_usuario_admin() -> None:
     """Inserta datos demo solo si el esquema PocketBase ya existe y responde."""
     if not os.getenv("ADMIN_EMAIL", "").strip() or not os.getenv("ADMIN_PASSWORD", ""):
@@ -75,6 +91,7 @@ def asegurar_usuario_admin() -> None:
                 for username, nombre, rol, pwd in DEMO_USUARIOS:
                     _crear_usuario_si_no_existe(db, empresa.id, username, nombre, rol, pwd)
                 db.commit()
+                _confirmar_demo_listo(db)
             return
 
         admin_existente = (
@@ -92,6 +109,7 @@ def asegurar_usuario_admin() -> None:
                     _crear_usuario_si_no_existe(db, empresa.id, username, nombre, rol, pwd)
             db.commit()
             logger.info("Usuario '%s' reactivado.", admin_existente.username)
+            _confirmar_demo_listo(db)
             return
 
         empresa = db.query(Empresa).first()
@@ -119,6 +137,7 @@ def asegurar_usuario_admin() -> None:
             "Usuarios demo creados (dueno, vendedor, cobrador) — empresa '%s'.",
             empresa.nombre,
         )
+        _confirmar_demo_listo(db)
     except ClientResponseError as exc:
         db.rollback()
         if getattr(exc, "status", None) == 404:
