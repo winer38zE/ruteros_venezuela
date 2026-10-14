@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, inspect as sa_inspect
+from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Text, inspect as sa_inspect
 
 from app.models import core as models
 
@@ -118,8 +118,15 @@ def _coerce_python(col, raw: Any) -> Any:
         if isinstance(raw, date):
             return raw
         return date.fromisoformat(str(raw)[:10])
-    if issubclass(py_type, enum.Enum):
-        return py_type(str(raw))
+    if isinstance(py_type, type) and issubclass(py_type, enum.Enum):
+        texto = str(raw)
+        try:
+            return py_type(texto)
+        except ValueError:
+            for member in py_type:
+                if member.value == texto or member.name == texto:
+                    return member
+            return texto
     return raw
 
 
@@ -130,4 +137,6 @@ def pb_field_type(col) -> str:
         return "number"
     if isinstance(col.type, (DateTime, Date)):
         return "date"
+    if isinstance(col.type, Text):
+        return "editor"
     return "text"

@@ -25,11 +25,10 @@ def get_pocketbase_client() -> PocketBase:
 
 def autenticar_admin_pocketbase(client: PocketBase | None = None) -> None:
     if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-        logger.warning(
-            "ADMIN_EMAIL / ADMIN_PASSWORD no configurados; "
-            "el backend no autenticará contra PocketBase."
+        raise RuntimeError(
+            "ADMIN_EMAIL y ADMIN_PASSWORD deben estar configurados en el servidor "
+            "(variables de entorno del contenedor API)."
         )
-        return
 
     pb = client or get_pocketbase_client()
     intentos = (
@@ -48,6 +47,16 @@ def autenticar_admin_pocketbase(client: PocketBase | None = None) -> None:
     mensaje = "; ".join(errores)
     logger.error("No se pudo autenticar admin PocketBase: %s", mensaje)
     raise RuntimeError(f"Login admin PocketBase falló: {mensaje}")
+
+
+def reautenticar_admin_pocketbase(client: PocketBase | None = None) -> bool:
+    """Reintenta login admin (p. ej. token expirado). Devuelve False si falla."""
+    try:
+        autenticar_admin_pocketbase(client)
+        return True
+    except Exception:
+        logger.exception("Re-autenticación admin PocketBase falló.")
+        return False
 
 
 def get_pocketbase() -> Generator[PocketBase, None, None]:
