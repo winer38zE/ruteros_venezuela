@@ -107,7 +107,7 @@ class AppState extends ChangeNotifier {
       usuario = await auth.login(correo, password, recordar: recordar);
       if (usuario != null) _arrancarSync();
     } catch (e) {
-      error = e.toString();
+      error = e is ApiException ? e.message : e.toString();
       usuario = null;
     } finally {
       cargando = false;
@@ -128,7 +128,7 @@ class AppState extends ChangeNotifier {
       usuario = user;
       _arrancarSync();
     } catch (e) {
-      error = e.toString();
+      error = e is ApiException ? e.message : e.toString();
       usuario = null;
     } finally {
       cargando = false;
