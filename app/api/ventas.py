@@ -189,7 +189,9 @@ def crear_venta(
     else:
         estado_inicial = EstadoVenta.PENDIENTE
 
-    venta_id = uuid.UUID(venta.id) if venta.id else uuid.uuid4()
+    from app.core.pb_orm.ids import id_pocketbase_desde_cualquiera, nuevo_id_pocketbase
+
+    venta_id = id_pocketbase_desde_cualquiera(venta.id) if venta.id else nuevo_id_pocketbase()
     nueva_venta = Venta(
         id=venta_id,
         empresa_id=empresa_actual.id,

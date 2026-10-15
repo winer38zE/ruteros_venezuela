@@ -7,8 +7,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, inspect as sa_inspect
+from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Text, inspect as sa_inspect
 
+from app.core.pb_orm.ids import es_id_pocketbase, id_pocketbase_desde_cualquiera
 from app.models import core as models
 
 # (modelo padre, atributo relación) → (tipo, modelo hijo/padre, columna FK en hijo o en padre)
@@ -22,9 +23,11 @@ EAGER_RELATIONS: dict[tuple[type, str], tuple[str, type, str]] = {
 
 
 def all_models() -> list[type]:
+    """Modelos ORM registrados (no usar inspect() sobre la clase Base)."""
     return [
-        c.class_
-        for c in sa_inspect(models.Base).mapper.registry.mappers
+        m.class_
+        for m in models.Base.registry.mappers
+        if getattr(m, "class_", None) is not None
     ]
 
 
@@ -78,7 +81,10 @@ def record_id(obj: Any) -> str:
 
 def _coerce_storage(val: Any) -> Any:
     if isinstance(val, uuid.UUID):
-        return str(val)
+        s = str(val)
+        return s if es_id_pocketbase(s) else id_pocketbase_desde_cualquiera(val)
+    if isinstance(val, str) and len(val) > 15 and not es_id_pocketbase(val):
+        return id_pocketbase_desde_cualquiera(val)
     if isinstance(val, enum.Enum):
         return val.value
     if isinstance(val, Decimal):
@@ -99,7 +105,13 @@ def _coerce_python(col, raw: Any) -> Any:
     except Exception:
         py_type = str
     if py_type is uuid.UUID:
-        return uuid.UUID(str(raw))
+        s = str(raw)
+        if es_id_pocketbase(s):
+            return s
+        try:
+            return uuid.UUID(s)
+        except ValueError:
+            return s
     if isinstance(col.type, Numeric):
         return Decimal(str(raw))
     if py_type is bool:
@@ -118,8 +130,15 @@ def _coerce_python(col, raw: Any) -> Any:
         if isinstance(raw, date):
             return raw
         return date.fromisoformat(str(raw)[:10])
-    if issubclass(py_type, enum.Enum):
-        return py_type(str(raw))
+    if isinstance(py_type, type) and issubclass(py_type, enum.Enum):
+        texto = str(raw)
+        try:
+            return py_type(texto)
+        except ValueError:
+            for member in py_type:
+                if member.value == texto or member.name == texto:
+                    return member
+            return texto
     return raw
 
 
@@ -130,4 +149,6 @@ def pb_field_type(col) -> str:
         return "number"
     if isinstance(col.type, (DateTime, Date)):
         return "date"
+    if isinstance(col.type, Text):
+        return "editor"
     return "text"

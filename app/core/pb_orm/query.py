@@ -8,6 +8,7 @@ from pocketbase.errors import ClientResponseError
 from sqlalchemy import func
 from sqlalchemy.orm.interfaces import LoaderOption
 
+from app.core.db import reautenticar_admin_pocketbase
 from app.core.pb_orm import filter_compiler, mapper
 
 
@@ -109,6 +110,7 @@ class PbQuery:
         page = 1
         per_page = 200
         items: list[Any] = []
+        reintentar_auth = True
         while True:
             try:
                 params: dict[str, str] = {"sort": sort}
@@ -117,7 +119,16 @@ class PbQuery:
                 batch = pb.collection(name).get_list(page, per_page, query_params=params)
             except ClientResponseError as exc:
                 if exc.status == 404:
-                    return []
+                    raise ClientResponseError(
+                        f"La colección '{name}' no existe en PocketBase.",
+                        url=exc.url,
+                        status=exc.status,
+                        data=exc.data,
+                    ) from exc
+                if reintentar_auth and exc.status in (401, 403):
+                    reintentar_auth = False
+                    if reautenticar_admin_pocketbase(pb):
+                        continue
                 raise
             for rec in batch.items:
                 data = mapper.record_payload(rec)

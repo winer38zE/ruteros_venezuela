@@ -15,26 +15,33 @@ logger = logging.getLogger(__name__)
 _pb_client: PocketBase | None = None
 
 
-def get_pocketbase_client() -> PocketBase:
+def get_pocketbase_client(base_url: str | None = None) -> PocketBase:
     global _pb_client
-    if _pb_client is None:
-        _pb_client = PocketBase(POCKETBASE_URL)
-        logger.info("Cliente PocketBase inicializado (%s).", POCKETBASE_URL)
+    url = (base_url or POCKETBASE_URL).rstrip("/")
+    if _pb_client is None or getattr(_pb_client, "base_url", "").rstrip("/") != url:
+        _pb_client = PocketBase(url)
+        logger.info("Cliente PocketBase inicializado (%s).", url)
     return _pb_client
 
 
-def autenticar_admin_pocketbase(client: PocketBase | None = None) -> None:
-    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-        logger.warning(
-            "ADMIN_EMAIL / ADMIN_PASSWORD no configurados; "
-            "el backend no autenticará contra PocketBase."
+def autenticar_admin_pocketbase(
+    client: PocketBase | None = None,
+    *,
+    email: str | None = None,
+    password: str | None = None,
+) -> None:
+    admin_email = (email if email is not None else ADMIN_EMAIL).strip()
+    admin_password = password if password is not None else ADMIN_PASSWORD
+    if not admin_email or not admin_password:
+        raise RuntimeError(
+            "ADMIN_EMAIL y ADMIN_PASSWORD deben estar configurados en el servidor "
+            "(variables de entorno del contenedor API)."
         )
-        return
 
     pb = client or get_pocketbase_client()
     intentos = (
-        ("_superusers", lambda: pb.collection("_superusers").auth_with_password(ADMIN_EMAIL, ADMIN_PASSWORD)),
-        ("admins (legacy)", lambda: pb.admins.auth_with_password(ADMIN_EMAIL, ADMIN_PASSWORD)),
+        ("_superusers", lambda: pb.collection("_superusers").auth_with_password(admin_email, admin_password)),
+        ("admins (legacy)", lambda: pb.admins.auth_with_password(admin_email, admin_password)),
     )
     errores: list[str] = []
     for etiqueta, auth in intentos:
@@ -48,6 +55,16 @@ def autenticar_admin_pocketbase(client: PocketBase | None = None) -> None:
     mensaje = "; ".join(errores)
     logger.error("No se pudo autenticar admin PocketBase: %s", mensaje)
     raise RuntimeError(f"Login admin PocketBase falló: {mensaje}")
+
+
+def reautenticar_admin_pocketbase(client: PocketBase | None = None) -> bool:
+    """Reintenta login admin (p. ej. token expirado). Devuelve False si falla."""
+    try:
+        autenticar_admin_pocketbase(client)
+        return True
+    except Exception:
+        logger.exception("Re-autenticación admin PocketBase falló.")
+        return False
 
 
 def get_pocketbase() -> Generator[PocketBase, None, None]:

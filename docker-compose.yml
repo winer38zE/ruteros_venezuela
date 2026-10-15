@@ -1,26 +1,11 @@
+version: '3.8'
+
 services:
-  pocketbase:
-    image: ghcr.io/muchobien/pocketbase:latest
-    container_name: ruteros-pocketbase
-    restart: unless-stopped
-    ports:
-      - "8090:8090"
-    volumes:
-      - pocketbase_data:/pb_data
-
-  api:
+  api-ruteros:
     build: .
-    container_name: ruteros-api
-    restart: unless-stopped
-    depends_on:
-      - pocketbase
+    container_name: api-ruteros
     ports:
-      - "8000:8000"
+      - "8086:8000"
     environment:
-      - POCKETBASE_URL=http://pocketbase:8090
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@ruteros.local}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin12345678}
-      - SECRET_KEY=${SECRET_KEY:-cambiar-esta-clave-en-produccion}
-
-volumes:
-  pocketbase_data:
+      - POCKETBASE_URL=https://ruteros.edwuarcardenas.online
+    restart: always

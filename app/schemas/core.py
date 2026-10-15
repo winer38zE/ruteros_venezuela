@@ -1,14 +1,15 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List, Literal
+from pydantic import BaseModel, Field, ConfigDict, BeforeValidator
+from typing import Annotated, Optional, List, Literal
 from datetime import datetime, date
-from uuid import UUID
+
+RecordId = Annotated[str, BeforeValidator(lambda v: str(v))]
 
 # --- EMPRESAS ---
 class EmpresaCreate(BaseModel):
     nombre: str
 
 class EmpresaResponse(BaseModel):
-    id: UUID
+    id: RecordId
     nombre: str
     activa: bool
     fecha_creacion: datetime
@@ -38,8 +39,8 @@ class CuentaBancariaCreate(BaseModel):
     documento: str = Field(min_length=1, max_length=32)
 
 class CuentaBancariaResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     banco: str
     tipo_cuenta: str
     numero_cuenta: str
@@ -59,8 +60,8 @@ class UsuarioCreate(BaseModel):
     rol: str = Field(pattern="^(DUEÑO|ADMINISTRADOR|VENDEDOR|COBRADOR)$")
 
 class UsuarioResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     nombre: str
     username: str
     rol: str
@@ -95,7 +96,7 @@ class ClienteCreate(BaseModel):
     ref_familiar_telefono: Optional[str] = None
     email: Optional[str] = None
     tipo_cliente: Optional[str] = Field(default="detal", pattern="^(mayorista|detal)$")
-    vendedor_id: Optional[UUID] = None
+    vendedor_id: Optional[RecordId] = None
     dia_visita: Optional[str] = Field(
         default=None,
         pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
@@ -122,7 +123,7 @@ class ClienteUpdate(BaseModel):
     ref_familiar_telefono: Optional[str] = None
     email: Optional[str] = None
     tipo_cliente: Optional[str] = Field(default=None, pattern="^(mayorista|detal)$")
-    vendedor_id: Optional[UUID] = None
+    vendedor_id: Optional[RecordId] = None
     dia_visita: Optional[str] = Field(
         default=None,
         pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$",
@@ -133,8 +134,8 @@ class ClienteUpdate(BaseModel):
     tipo_visita_ruta: Optional[str] = Field(default=None, pattern="^(frecuente|nuevo)$")
 
 class ClienteResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     nombre: str
     identificacion: str
     telefono: Optional[str] = None
@@ -162,7 +163,7 @@ class ClienteResponse(BaseModel):
     estado_morosidad: str = "al_dia"
     es_moroso: bool = False
     tipo_cliente: str = "detal"
-    vendedor_id: Optional[UUID] = None
+    vendedor_id: Optional[RecordId] = None
     dia_visita: Optional[str] = None
     orden_secuencial: Optional[int] = None
     dia_ruta: Optional[str] = None
@@ -207,7 +208,7 @@ class ClienteSyncRequest(BaseModel):
 class ClienteSyncResultado(BaseModel):
     local_id: Optional[str] = None
     cedula: str = ""
-    servidor_id: Optional[UUID] = None
+    servidor_id: Optional[RecordId] = None
     accion: str
     es_moroso: bool = False
     score: int = 70
@@ -220,8 +221,8 @@ class ClienteSyncResponse(BaseModel):
 
 
 class RutaClienteResponse(BaseModel):
-    id: UUID
-    vendedor_id: Optional[UUID] = None
+    id: RecordId
+    vendedor_id: Optional[RecordId] = None
     nombre: str
     direccion: Optional[str] = None
     dia_visita: str
@@ -239,7 +240,7 @@ class RutaClienteResponse(BaseModel):
 
 
 class RutasDiaResponse(BaseModel):
-    vendedor_id: UUID
+    vendedor_id: RecordId
     dia: str
     fecha: date
     total_clientes: int
@@ -249,19 +250,19 @@ class RutasDiaResponse(BaseModel):
 
 
 class OrdenRutaItem(BaseModel):
-    cliente_id: UUID
+    cliente_id: RecordId
     orden_ruta: Optional[int] = Field(default=None, ge=1)
     orden_secuencial: int = Field(ge=1)
 
 
 class ReordenarRutaRequest(BaseModel):
-    vendedor_id: Optional[UUID] = None
+    vendedor_id: Optional[RecordId] = None
     dia: str = Field(pattern="^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)$")
     orden: List[OrdenRutaItem] = Field(min_length=1)
 
 
 class VisitaCreate(BaseModel):
-    cliente_id: UUID
+    cliente_id: RecordId
     estado: str = Field(default="visitado", pattern="^(pendiente|visitado|no_encontrado)$")
     notas: Optional[str] = None
     latitud_visita: Optional[float] = None
@@ -274,9 +275,9 @@ class VisitaLoteRequest(BaseModel):
 
 
 class VisitaResponse(BaseModel):
-    id: UUID
-    cliente_id: UUID
-    vendedor_id: UUID
+    id: RecordId
+    cliente_id: RecordId
+    vendedor_id: RecordId
     fecha: date
     estado: str
     notas: Optional[str] = None
@@ -288,7 +289,7 @@ class VisitaResponse(BaseModel):
 
 
 class ResumenVendedorRuta(BaseModel):
-    vendedor_id: UUID
+    vendedor_id: RecordId
     vendedor_nombre: str
     total_clientes: int
     visitados: int
@@ -370,7 +371,7 @@ class ProductoCreate(BaseModel):
     stock_minimo: int = 0
     precio_mayorista_usd: Optional[float] = None
     precio_detal_usd: Optional[float] = None
-    proveedor_id: Optional[UUID] = None
+    proveedor_id: Optional[RecordId] = None
     tipo_tasa_usd: Optional[str] = Field(default="bcv", pattern="^(bcv|paralelo)$")
 
 class ProductoUpdate(BaseModel):
@@ -385,12 +386,12 @@ class ProductoUpdate(BaseModel):
     activo: Optional[bool] = None
     precio_mayorista_usd: Optional[float] = None
     precio_detal_usd: Optional[float] = None
-    proveedor_id: Optional[UUID] = None
+    proveedor_id: Optional[RecordId] = None
     tipo_tasa_usd: Optional[str] = Field(default=None, pattern="^(bcv|paralelo)$")
 
 class ProductoResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     nombre: str
     sku: Optional[str] = None
     categoria: Optional[str] = None
@@ -401,7 +402,7 @@ class ProductoResponse(BaseModel):
     stock: int
     stock_minimo: int = 0
     activo: bool = True
-    proveedor_id: Optional[UUID] = None
+    proveedor_id: Optional[RecordId] = None
     proveedor_nombre: Optional[str] = None
     precio_ves_calculado: Optional[float] = None
     precio_cop_calculado: Optional[float] = None
@@ -410,13 +411,13 @@ class ProductoResponse(BaseModel):
 
 # --- VENTAS ---
 class DetalleVentaCreate(BaseModel):
-    producto_id: UUID
+    producto_id: RecordId
     cantidad: int = Field(gt=0)
     tipo_precio: Optional[str] = Field(default="detal", pattern="^(mayorista|detal)$")
 
 class DetalleVentaResponse(BaseModel):
-    id: UUID
-    producto_id: UUID
+    id: RecordId
+    producto_id: RecordId
     cantidad: int
     precio_unitario_usd: float
 
@@ -427,10 +428,10 @@ class VentaCreate(BaseModel):
     tasa_usd_aplicada: float
     tasa_eur_aplicada: float
     frecuencia_pago: str  # Ej: "semanal", "quincenal"
-    cliente_id: Optional[UUID] = None
+    cliente_id: Optional[RecordId] = None
     id: Optional[str] = None
     detalles: Optional[List[DetalleVentaCreate]] = None
-    almacen_id: Optional[UUID] = None
+    almacen_id: Optional[RecordId] = None
     numero_cuotas: Optional[int] = Field(default=None, ge=1, le=60)
     tipo_tasa_usd: Optional[str] = Field(default="bcv", pattern="^(bcv|paralelo)$")
     es_borrador: bool = False
@@ -441,11 +442,11 @@ class VentaCreate(BaseModel):
     metodo_pago: Optional[str] = Field(default="efectivo", pattern="^(efectivo|transferencia|pago_movil)$")
     referencia_pago: Optional[str] = Field(default=None, max_length=80)
     comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
-    cuenta_bancaria_id: Optional[UUID] = None
+    cuenta_bancaria_id: Optional[RecordId] = None
 
 class CuotaAmortizacionResponse(BaseModel):
-    id: UUID
-    venta_id: UUID
+    id: RecordId
+    venta_id: RecordId
     numero_cuota: int
     fecha_vencimiento: datetime
     monto_usd: float
@@ -458,10 +459,10 @@ class CuotaAmortizacionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class VentaResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
-    cliente_id: UUID
-    vendedor_id: UUID
+    id: RecordId
+    empresa_id: RecordId
+    cliente_id: RecordId
+    vendedor_id: RecordId
     total_usd: float
     estado: str
     frecuencia_pago: str = "contado"
@@ -470,7 +471,7 @@ class VentaResponse(BaseModel):
     metodo_pago: str = "efectivo"
     referencia_pago: Optional[str] = None
     tiene_comprobante: bool = False
-    cuenta_bancaria_id: Optional[UUID] = None
+    cuenta_bancaria_id: Optional[RecordId] = None
     detalles: List[DetalleVentaResponse] = []
     cuotas: List[CuotaAmortizacionResponse] = []
 
@@ -485,8 +486,8 @@ class TasaCambioCreate(BaseModel):
     eur_bs: float = 0.0
 
 class TasaCambioResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     fecha: datetime
     momento: str
     usd_bs: float
@@ -528,8 +529,8 @@ class ConversionMonedaResponse(BaseModel):
 # --- COBROS ---
 class CobroCreate(BaseModel):
     id: Optional[str] = None
-    venta_id: UUID
-    cobrador_id: Optional[UUID] = None
+    venta_id: RecordId
+    cobrador_id: Optional[RecordId] = None
     fecha: Optional[datetime] = None
     monto_usd: float
     moneda_pago: str = Field(
@@ -541,13 +542,13 @@ class CobroCreate(BaseModel):
     canal: Optional[str] = Field(default=None, pattern="^(transferencia|pago_movil)$")
     referencia_pago: Optional[str] = Field(default=None, max_length=80)
     comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
-    cuenta_bancaria_id: Optional[UUID] = None
+    cuenta_bancaria_id: Optional[RecordId] = None
 
 class CobroResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
-    venta_id: UUID
-    cobrador_id: UUID
+    id: RecordId
+    empresa_id: RecordId
+    venta_id: RecordId
+    cobrador_id: RecordId
     fecha: datetime
     monto_usd: float
     moneda_pago: str
@@ -560,13 +561,13 @@ class CobroResponse(BaseModel):
     referencia_pago: Optional[str] = None
     tiene_comprobante: bool = False
     estado_venta: Optional[str] = None
-    cuenta_bancaria_id: Optional[UUID] = None
+    cuenta_bancaria_id: Optional[RecordId] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 class VentaPendienteResponse(BaseModel):
-    id: UUID
-    cliente_id: UUID
+    id: RecordId
+    cliente_id: RecordId
     cliente_nombre: str
     cliente_telefono: Optional[str] = None
     cliente_email: Optional[str] = None
@@ -619,8 +620,8 @@ class ConfiguracionFiscalUpdate(BaseModel):
     rif: Optional[str] = None
 
 class ConfiguracionFiscalResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     pais: str
     moneda_base: str
     iva_porcentaje: float
@@ -672,8 +673,8 @@ class AlmacenCreate(BaseModel):
     es_principal: bool = False
 
 class AlmacenResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     nombre: str
     ubicacion: Optional[str] = None
     es_principal: bool
@@ -682,20 +683,20 @@ class AlmacenResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class LoteInventarioCreate(BaseModel):
-    producto_id: UUID
-    almacen_id: UUID
+    producto_id: RecordId
+    almacen_id: RecordId
     numero_lote: str
     cantidad: int = Field(ge=0)
     costo_unitario_usd: float = 0.0
     fecha_vencimiento: Optional[datetime] = None
-    proveedor_id: Optional[UUID] = None
+    proveedor_id: Optional[RecordId] = None
     genera_deuda_proveedor: bool = False
 
 class LoteInventarioResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
-    producto_id: UUID
-    almacen_id: UUID
+    id: RecordId
+    empresa_id: RecordId
+    producto_id: RecordId
+    almacen_id: RecordId
     numero_lote: str
     cantidad: int
     costo_unitario_usd: float
@@ -708,8 +709,8 @@ class PrecioProductoCreate(BaseModel):
     precio_usd: float
 
 class PrecioProductoResponse(BaseModel):
-    id: UUID
-    producto_id: UUID
+    id: RecordId
+    producto_id: RecordId
     tipo_cliente: str
     precio_usd: float
 
@@ -717,21 +718,21 @@ class PrecioProductoResponse(BaseModel):
 
 # --- INVENTARIO FASE 2 ---
 class StockAlmacenResponse(BaseModel):
-    almacen_id: UUID
+    almacen_id: RecordId
     almacen_nombre: str
     stock_lotes: int
     stock_general_asignado: int
     stock_total: int
 
 class StockProductoResponse(BaseModel):
-    producto_id: UUID
+    producto_id: RecordId
     producto_nombre: str
     stock_general: int
     stock_total_global: int
     por_almacen: List[StockAlmacenResponse]
 
 class InventarioValoradoItem(BaseModel):
-    producto_id: UUID
+    producto_id: RecordId
     producto_nombre: str
     stock_general: int
     stock_lotes: int
@@ -740,28 +741,28 @@ class InventarioValoradoItem(BaseModel):
     valor_total_usd: float
 
 class MovimientoInventarioResponse(BaseModel):
-    id: UUID
-    producto_id: UUID
-    almacen_id: UUID
-    lote_id: Optional[UUID] = None
+    id: RecordId
+    producto_id: RecordId
+    almacen_id: RecordId
+    lote_id: Optional[RecordId] = None
     tipo: str
     cantidad: int
     referencia_tipo: Optional[str] = None
-    referencia_id: Optional[UUID] = None
+    referencia_id: Optional[RecordId] = None
     fecha: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 class AjusteInventarioCreate(BaseModel):
-    producto_id: UUID
+    producto_id: RecordId
     tipo: str = Field(pattern="^(entrada|salida)$")
     cantidad: int = Field(gt=0)
     motivo: str = Field(min_length=2, max_length=120)
-    almacen_id: Optional[UUID] = None
+    almacen_id: Optional[RecordId] = None
 
 # --- CONTABILIDAD ---
 class LineaAsientoResponse(BaseModel):
-    id: UUID
+    id: RecordId
     cuenta_codigo: str
     cuenta_nombre: str
     debito_usd: float
@@ -772,11 +773,11 @@ class LineaAsientoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class AsientoContableResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     fecha: datetime
     referencia_tipo: str
-    referencia_id: UUID
+    referencia_id: RecordId
     descripcion: str
     tasa_usd_aplicada: float
     lineas: List[LineaAsientoResponse] = []
@@ -790,7 +791,7 @@ class ConfiguracionNominaUpdate(BaseModel):
     sueldo_base_cobrador_usd: Optional[float] = None
 
 class ConfiguracionNominaResponse(BaseModel):
-    empresa_id: UUID
+    empresa_id: RecordId
     comision_vendedor_por_articulo_usd: float
     comision_cobrador_porcentaje: float
     sueldo_base_cobrador_usd: float
@@ -814,13 +815,13 @@ class MovimientoFinancieroCreate(BaseModel):
     tasa_aplicada: Optional[float] = None
     descripcion: str
     fecha: Optional[datetime] = None
-    empleado_id: Optional[UUID] = None
-    proveedor_id: Optional[UUID] = None
+    empleado_id: Optional[RecordId] = None
+    proveedor_id: Optional[RecordId] = None
     comprobante_base64: Optional[str] = None
 
 class MovimientoFinancieroResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     tipo: str
     categoria: str
     monto_usd: float
@@ -830,9 +831,9 @@ class MovimientoFinancieroResponse(BaseModel):
     tasa_aplicada: Optional[float] = None
     descripcion: str
     fecha: datetime
-    registrado_por_id: UUID
-    empleado_id: Optional[UUID] = None
-    proveedor_id: Optional[UUID] = None
+    registrado_por_id: RecordId
+    empleado_id: Optional[RecordId] = None
+    proveedor_id: Optional[RecordId] = None
     tiene_comprobante: bool = False
     aprobado: bool
     fecha_creacion: datetime
@@ -848,7 +849,7 @@ class ResumenFinancieroResponse(BaseModel):
     total_cobros_operativos_usd: float
 
 class DetalleNominaEmpleado(BaseModel):
-    empleado_id: UUID
+    empleado_id: RecordId
     empleado_nombre: str
     rol: str
     articulos_vendidos: int = 0
@@ -869,7 +870,7 @@ class NominaCalculadaResponse(BaseModel):
     total_pendiente_usd: float
 
 class AprobarPagoNominaRequest(BaseModel):
-    empleado_id: UUID
+    empleado_id: RecordId
     monto_usd: float = Field(gt=0)
     periodo_desde: Optional[datetime] = None
     periodo_hasta: Optional[datetime] = None
@@ -892,8 +893,8 @@ class ProveedorUpdate(BaseModel):
     activo: Optional[bool] = None
 
 class ProveedorResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
+    id: RecordId
+    empresa_id: RecordId
     nombre: str
     telefono: Optional[str] = None
     rif: Optional[str] = None
@@ -936,7 +937,7 @@ class CatalogoCarteraCriticaResponse(BaseModel):
 
 
 class CreditoCriticoResponse(BaseModel):
-    venta_id: UUID
+    venta_id: RecordId
     saldo_pendiente_usd: float
     dias_atraso: int
     fecha_referencia: datetime
@@ -944,7 +945,7 @@ class CreditoCriticoResponse(BaseModel):
 
 
 class AcuerdoPagoResumen(BaseModel):
-    id: UUID
+    id: RecordId
     monto_acordado_usd: float
     fecha_limite: date
     cuotas_pactadas: int
@@ -954,7 +955,7 @@ class AcuerdoPagoResumen(BaseModel):
 
 
 class ClienteCriticoResponse(BaseModel):
-    cliente_id: UUID
+    cliente_id: RecordId
     cliente_nombre: str
     cliente_telefono: Optional[str] = None
     cliente_direccion: Optional[str] = None
@@ -986,7 +987,7 @@ class CarteraCriticaListResponse(BaseModel):
 
 
 class AcuerdoPagoCreate(BaseModel):
-    cliente_id: UUID
+    cliente_id: RecordId
     monto_acordado_usd: float = Field(gt=0)
     fecha_limite: date
     cuotas_pactadas: int = Field(ge=1, le=120)
@@ -994,10 +995,10 @@ class AcuerdoPagoCreate(BaseModel):
 
 
 class AcuerdoPagoResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
-    cliente_id: UUID
-    usuario_id: UUID
+    id: RecordId
+    empresa_id: RecordId
+    cliente_id: RecordId
+    usuario_id: RecordId
     usuario_nombre: str
     monto_acordado_usd: float
     fecha_limite: date
@@ -1017,10 +1018,10 @@ class NotaSeguimientoCreate(BaseModel):
 
 
 class NotaSeguimientoResponse(BaseModel):
-    id: UUID
-    empresa_id: UUID
-    cliente_id: UUID
-    usuario_id: UUID
+    id: RecordId
+    empresa_id: RecordId
+    cliente_id: RecordId
+    usuario_id: RecordId
     usuario_nombre: str
     fecha: datetime
     motivo: str

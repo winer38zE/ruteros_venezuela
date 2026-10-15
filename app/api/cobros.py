@@ -265,7 +265,9 @@ def registrar_cobro(
     except ValueError:
         raise HTTPException(status_code=400, detail="Moneda de pago inválida")
 
-    cobro_id = uuid.UUID(cobro.id) if cobro.id else uuid.uuid4()
+    from app.core.pb_orm.ids import id_pocketbase_desde_cualquiera, nuevo_id_pocketbase
+
+    cobro_id = id_pocketbase_desde_cualquiera(cobro.id) if cobro.id else nuevo_id_pocketbase()
     canal = cobro.canal or ("transferencia" if cobro.es_transferencia else None)
     electronico = canal in ("transferencia", "pago_movil")
     cuenta_destino = None

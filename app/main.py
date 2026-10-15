@@ -5,9 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.seguridad import CabecerasSeguridadMiddleware
-from app.core.db import PocketBaseDep, autenticar_admin_pocketbase, get_pocketbase_client
-from app.core.pb_schema import asegurar_colecciones
-from app.core.bootstrap import asegurar_usuario_admin
+from app.core.db import PocketBaseDep
+from app.core.pocketbase_init import preparar_pocketbase_al_arranque_seguro
 from app.core.scheduler import iniciar_scheduler, detener_scheduler
 
 # Importamos todas tus rutas organizadas
@@ -28,17 +27,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        autenticar_admin_pocketbase()
-        asegurar_colecciones(get_pocketbase_client())
-    except Exception:
-        logger.exception(
-            "Autenticación admin PocketBase falló; revisa POCKETBASE_URL, ADMIN_EMAIL y ADMIN_PASSWORD."
-        )
-    try:
-        asegurar_usuario_admin()
-    except Exception:
-        logger.exception("Bootstrap de datos falló; el servidor continuará arrancando.")
+    preparar_pocketbase_al_arranque_seguro()
     try:
         iniciar_scheduler()
     except Exception:
