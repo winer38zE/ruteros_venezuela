@@ -54,10 +54,11 @@ class AuthService {
   Future<Usuario> login(
     String correo,
     String password, {
-    bool recordar = true,
+    bool guardarBiometria = false,
   }) async {
+    final usuarioNorm = correo.trim();
     final data = await _api.post('/auth/login', {
-      'username': correo.trim(),
+      'username': usuarioNorm,
       'password': password,
     });
     final user = Usuario.fromJson(data);
@@ -67,25 +68,40 @@ class AuthService {
       usuarioJson: jsonEncode(user.toJson()),
     );
 
-    try {
-      if (recordar) {
-        await _biometric.guardarCredenciales(correo: correo, password: password);
-      }
-    } catch (_) {}
+    if (guardarBiometria) {
+      try {
+        await _biometric.guardarCredenciales(
+          correo: usuarioNorm,
+          password: password,
+        );
+      } catch (_) {}
+    }
     return user;
   }
 
-  /// Huella válida → login con credenciales guardadas y sesión persistente.
+  /// Huella válida → login con credenciales guardadas.
   Future<Usuario?> loginConBiometria() async {
     final ok = await _biometric.autenticar();
     if (!ok) return null;
     final credenciales = await _biometric.leerCredenciales();
     if (credenciales == null) return null;
-    return login(
-      credenciales.correo,
-      credenciales.password,
-      recordar: true,
-    );
+    try {
+      return await login(
+        credenciales.correo,
+        credenciales.password,
+        guardarBiometria: true,
+      );
+    } on ApiException catch (e) {
+      if (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429) {
+        await _invalidarSesionLocal();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _invalidarSesionLocal() async {
+    await _biometric.borrarCredenciales();
+    await _api.clearSession();
   }
 
   Future<Usuario?> restoreSession() async {
@@ -101,5 +117,8 @@ class AuthService {
     }
   }
 
-  Future<void> logout() => _api.clearSession();
+  Future<void> logout() async {
+    await _biometric.borrarCredenciales();
+    await _api.clearSession();
+  }
 }

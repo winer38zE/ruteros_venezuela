@@ -120,7 +120,7 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
       return _decode(res);
     } on SocketException {
-      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
     } on TimeoutException {
       throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
     } on ApiException {
@@ -145,7 +145,7 @@ class ApiService {
           .timeout(timeout);
       return _decode(res);
     } on SocketException {
-      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
     } on TimeoutException {
       throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
     } on ApiException {
@@ -166,7 +166,7 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
       return _decode(res);
     } on SocketException {
-      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
     } on TimeoutException {
       throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
     } on ApiException {
@@ -194,7 +194,7 @@ class ApiService {
       final res = await http.Response.fromStream(streamed);
       return _decode(res);
     } on SocketException {
-      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
     } on TimeoutException {
       throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
     } on ApiException {
@@ -215,7 +215,7 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
       return _decode(res);
     } on SocketException {
-      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor: $baseUrl');
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
     } on TimeoutException {
       throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
     } on ApiException {
@@ -254,6 +254,12 @@ class ApiService {
   }
 
   String _errorMessage(http.Response res) {
+    if (res.statusCode == 401) {
+      return 'Usuario o contraseña incorrectos';
+    }
+    if (res.statusCode == 502 || res.statusCode == 503) {
+      return 'Error del servidor (${res.statusCode}). Intenta de nuevo en unos minutos.';
+    }
     try {
       final data = jsonDecode(res.body);
       if (data is Map && data['detail'] != null) {

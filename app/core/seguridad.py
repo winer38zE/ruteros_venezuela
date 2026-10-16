@@ -10,6 +10,8 @@ _FALLOS: dict[str, list[float]] = {}
 _VENTANA_SEGUNDOS = 600
 _MAX_FALLOS = 8
 
+_DEMO_USERNAMES = frozenset({"dueno", "admin", "vendedor", "cobrador"})
+
 
 class CabecerasSeguridadMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -21,6 +23,10 @@ class CabecerasSeguridadMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+
+def _es_usuario_demo(username: str) -> bool:
+    return (username or "").strip().lower() in _DEMO_USERNAMES
 
 
 def _clave_login(request: Request, username: str) -> str:
@@ -38,7 +44,18 @@ def _marcar(clave: str, ahora: float) -> list[float]:
     return marcas
 
 
+def cuenta_bloqueada_login(request: Request, username: str) -> bool:
+    if _es_usuario_demo(username):
+        return False
+    ahora = time.time()
+    with _LOCK:
+        marcas = _marcar(_clave_login(request, username), ahora)
+        return len(marcas) >= _MAX_FALLOS
+
+
 def exigir_cupo_login(request: Request, username: str) -> None:
+    if _es_usuario_demo(username):
+        return
     ahora = time.time()
     with _LOCK:
         marcas = _marcar(_clave_login(request, username), ahora)
@@ -50,11 +67,14 @@ def exigir_cupo_login(request: Request, username: str) -> None:
 
 
 def registrar_fallo_login(request: Request, username: str) -> None:
+    if _es_usuario_demo(username):
+        return
     ahora = time.time()
     with _LOCK:
-        marcas = _marcar(_clave_login(request, username), ahora)
+        clave = _clave_login(request, username)
+        marcas = _marcar(clave, ahora)
         marcas.append(ahora)
-        _FALLOS[_clave_login(request, username)] = marcas
+        _FALLOS[clave] = marcas
 
 
 def limpiar_fallos_login(request: Request, username: str) -> None:

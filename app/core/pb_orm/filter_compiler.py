@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import and_, or_
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList, Grouping
+from sqlalchemy.sql.functions import Function
 
 
 def compile_filters(model: type, criteria: tuple[Any, ...]) -> str:
@@ -37,8 +38,16 @@ def _compile_one(model: type, crit: Any) -> str:
     return ""
 
 
+def _field_name(expr_left: Any) -> str:
+    if isinstance(expr_left, Function) and getattr(expr_left, "name", "") == "lower":
+        inner = expr_left.clauses.clauses[0]
+        base = getattr(inner, "key", None) or str(inner)
+        return f"{base}:lower"
+    return getattr(expr_left, "key", None) or str(expr_left)
+
+
 def _compile_binary(expr: BinaryExpression) -> str:
-    key = getattr(expr.left, "key", None) or str(expr.left)
+    key = _field_name(expr.left)
     op = expr.operator
     right = expr.right
     val = getattr(right, "value", right)

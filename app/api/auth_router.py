@@ -5,13 +5,19 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pocketbase.errors import ClientResponseError
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.auth import verify_password
 from app.core.config import POCKETBASE_URL
 from app.core.db import autenticar_admin_pocketbase, get_db
-from app.core.seguridad import exigir_cupo_login, limpiar_fallos_login, registrar_fallo_login
+from app.core.seguridad import (
+    cuenta_bloqueada_login,
+    exigir_cupo_login,
+    limpiar_fallos_login,
+    registrar_fallo_login,
+)
 from app.models.core import Usuario
 from app.schemas.core import UsuarioResponse
 
@@ -43,12 +49,18 @@ def _usuario_a_respuesta(usuario: Usuario) -> UsuarioResponse:
     )
 
 
-def _buscar_usuario_activo(db: Session, username: str) -> Usuario | None:
-    username = username.strip()
+def _normalizar_username(username: str) -> str:
+    return (username or "").strip()
+
+
+def _buscar_usuario_por_username(db: Session, username: str) -> Usuario | None:
+    clave = _normalizar_username(username).lower()
+    if not clave:
+        return None
     try:
         return (
             db.query(Usuario)
-            .filter(Usuario.username == username, Usuario.activo.is_(True))
+            .filter(func.lower(Usuario.username) == clave)
             .first()
         )
     except ClientResponseError as exc:
@@ -57,7 +69,7 @@ def _buscar_usuario_activo(db: Session, username: str) -> Usuario | None:
         autenticar_admin_pocketbase(getattr(db, "pb", None))
         return (
             db.query(Usuario)
-            .filter(Usuario.username == username, Usuario.activo.is_(True))
+            .filter(func.lower(Usuario.username) == clave)
             .first()
         )
 
@@ -75,29 +87,71 @@ def _error_base_datos(exc: Exception) -> HTTPException:
 
 @router.post("/login", response_model=UsuarioResponse)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    exigir_cupo_login(request, body.username)
+    username_entrada = _normalizar_username(body.username)
+    if cuenta_bloqueada_login(request, username_entrada):
+        logger.warning(
+            "Login fallido: cuenta bloqueada por intentos (username=%r, ip=%s)",
+            username_entrada,
+            request.client.host if request.client else "sin-ip",
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados intentos de ingreso. Espera unos minutos e inténtalo de nuevo.",
+        )
+    exigir_cupo_login(request, username_entrada)
     try:
-        usuario = _buscar_usuario_activo(db, body.username)
+        usuario = _buscar_usuario_por_username(db, username_entrada)
     except HTTPException:
         raise
     except ClientResponseError as exc:
         if exc.status == 404:
             raise _error_base_datos(exc) from exc
         if exc.status in (401, 403):
-            registrar_fallo_login(request, body.username)
+            logger.warning(
+                "Login fallido: PocketBase rechazó la consulta (%s) username=%r",
+                exc.status,
+                username_entrada,
+            )
+            registrar_fallo_login(request, username_entrada)
             raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
         raise _error_base_datos(exc) from exc
     except (httpx.HTTPError, OSError, SQLAlchemyError, RuntimeError) as exc:
         raise _error_base_datos(exc) from exc
 
-    valido = False
-    if usuario is not None:
-        try:
-            valido = verify_password(body.password, usuario.password_hash)
-        except Exception:
-            valido = False
-    if not valido or usuario is None:
-        registrar_fallo_login(request, body.username)
+    if usuario is None:
+        logger.warning("Login fallido: usuario no encontrado (username=%r)", username_entrada)
+        registrar_fallo_login(request, username_entrada)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
-    limpiar_fallos_login(request, body.username)
+
+    if not usuario.activo:
+        logger.warning(
+            "Login fallido: usuario inactivo (id=%s, username=%r)",
+            usuario.id,
+            usuario.username,
+        )
+        registrar_fallo_login(request, username_entrada)
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+
+    valido = False
+    try:
+        valido = verify_password(body.password, usuario.password_hash)
+    except Exception:
+        logger.warning(
+            "Login fallido: hash de contraseña inválido (id=%s, username=%r)",
+            usuario.id,
+            usuario.username,
+        )
+        valido = False
+
+    if not valido:
+        logger.warning(
+            "Login fallido: contraseña incorrecta (id=%s, username=%r)",
+            usuario.id,
+            usuario.username,
+        )
+        registrar_fallo_login(request, username_entrada)
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+
+    limpiar_fallos_login(request, username_entrada)
+    logger.info("Login OK (id=%s, username=%r)", usuario.id, usuario.username)
     return _usuario_a_respuesta(usuario)

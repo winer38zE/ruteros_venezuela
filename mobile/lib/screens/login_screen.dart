@@ -19,7 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
   final _bio = BiometricService();
 
-  bool _recordar = true;
   bool _ocultarPassword = true;
   bool _tieneSesionGuardada = false;
   bool _biometriaDisponible = false;
@@ -53,6 +52,30 @@ class _LoginScreenState extends State<LoginScreen> {
     await context.read<AppState>().loginConBiometria();
   }
 
+  Future<void> _ofrecerActivarHuella(String correo, String password) async {
+    if (!await _bio.soportaBiometria()) return;
+    if (!mounted) return;
+    final activar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Huella dactilar'),
+        content: const Text(
+          '¿Activar ingreso con huella dactilar para este usuario en este dispositivo?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Ahora no')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Activar')),
+        ],
+      ),
+    );
+    if (activar == true) {
+      await _bio.guardarCredenciales(correo: correo, password: password);
+    } else {
+      await _bio.borrarCredenciales();
+    }
+    await _cargarOpcionesBiometria();
+  }
+
   Future<void> _login() async {
     final correo = _correoCtrl.text.trim();
     final password = _passwordCtrl.text;
@@ -62,7 +85,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     }
-    await context.read<AppState>().login(correo, password, recordar: _recordar);
+    final ok = await context.read<AppState>().login(correo, password);
+    if (!mounted || !ok) return;
+    await _ofrecerActivarHuella(correo, password);
   }
 
   @override
@@ -152,16 +177,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             onSubmitted: (_) => _login(),
-                          ),
-                          CheckboxListTile(
-                            contentPadding: EdgeInsets.zero,
-                            value: _recordar,
-                            activeColor: AppColors.neonCyan,
-                            title: const Text('Recordar sesión'),
-                            controlAffinity: ListTileControlAffinity.leading,
-                            onChanged: state.cargando
-                                ? null
-                                : (v) => setState(() => _recordar = v ?? false),
                           ),
                           if (state.error != null)
                             Padding(
