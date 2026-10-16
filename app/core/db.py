@@ -9,6 +9,7 @@ from fastapi import Depends
 from pocketbase import PocketBase
 
 from app.core.config import ADMIN_EMAIL, ADMIN_PASSWORD, POCKETBASE_URL
+from app.core.pb_collections_cache import instalar_cache_colecciones
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ def get_pocketbase_client(base_url: str | None = None) -> PocketBase:
     url = (base_url or POCKETBASE_URL).rstrip("/")
     if _pb_client is None or getattr(_pb_client, "base_url", "").rstrip("/") != url:
         _pb_client = PocketBase(url)
+        instalar_cache_colecciones(_pb_client)
         logger.info("Cliente PocketBase inicializado (%s).", url)
     return _pb_client
 

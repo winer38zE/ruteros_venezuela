@@ -7,6 +7,10 @@ API FastAPI para el sistema Ruteros (ventas, cobros, inventario, contabilidad y 
 - Python 3.12+ **o** Docker
 - Git
 
+## Despliegue en Coolify
+
+Ver **[DEPLOY_COOLIFY.md](./DEPLOY_COOLIFY.md)** (puerto **8000**, healthchecks, variables de entorno y alineación del proxy).
+
 ## Despliegue en VPS con Docker (recomendado)
 
 ### 1. Subir el proyecto a GitHub

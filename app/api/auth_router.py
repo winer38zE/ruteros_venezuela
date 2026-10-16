@@ -1,5 +1,6 @@
 import enum
 import logging
+import time
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.auth import verify_password
 from app.core.config import POCKETBASE_URL
 from app.core.db import autenticar_admin_pocketbase, get_db
+from app.core.pb_retry import es_error_transitorio
 from app.core.seguridad import (
     cuenta_bloqueada_login,
     exigir_cupo_login,
@@ -53,25 +55,40 @@ def _normalizar_username(username: str) -> str:
     return (username or "").strip()
 
 
+def _consultar_usuario_activo(db: Session, clave: str) -> Usuario | None:
+    return (
+        db.query(Usuario)
+        .filter(func.lower(Usuario.username) == clave)
+        .first()
+    )
+
+
 def _buscar_usuario_por_username(db: Session, username: str) -> Usuario | None:
     clave = _normalizar_username(username).lower()
     if not clave:
         return None
-    try:
-        return (
-            db.query(Usuario)
-            .filter(func.lower(Usuario.username) == clave)
-            .first()
-        )
-    except ClientResponseError as exc:
-        if exc.status not in (401, 403):
+    ultimo: BaseException | None = None
+    for intento in range(2):
+        try:
+            return _consultar_usuario_activo(db, clave)
+        except ClientResponseError as exc:
+            ultimo = exc
+            if exc.status in (401, 403):
+                autenticar_admin_pocketbase(getattr(db, "pb", None))
+                return _consultar_usuario_activo(db, clave)
+            if exc.status in (502, 503, 504) and intento == 0:
+                time.sleep(1.5)
+                continue
             raise
-        autenticar_admin_pocketbase(getattr(db, "pb", None))
-        return (
-            db.query(Usuario)
-            .filter(func.lower(Usuario.username) == clave)
-            .first()
-        )
+        except (httpx.HTTPError, OSError) as exc:
+            ultimo = exc
+            if es_error_transitorio(exc) and intento == 0:
+                time.sleep(1.5)
+                continue
+            raise
+    if ultimo:
+        raise ultimo
+    return None
 
 
 def _error_base_datos(exc: Exception) -> HTTPException:

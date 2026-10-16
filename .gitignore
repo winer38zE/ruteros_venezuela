@@ -5,9 +5,21 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
 
 # SQLite local / pruebas
 *.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Build / cachés
+build/
+dist/
+.pytest_cache/
+htmlcov/
+.coverage
 
 # IDE
 .idea/
