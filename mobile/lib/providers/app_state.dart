@@ -5,7 +5,6 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/contabilidad_service.dart';
 import '../services/inventario_service.dart';
-import '../services/productos_service.dart';
 import '../services/catalogo_service.dart';
 import '../services/ventas_service.dart';
 import '../services/cobros_service.dart';

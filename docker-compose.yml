@@ -5,7 +5,7 @@ services:
     build: .
     container_name: api-ruteros
     ports:
-      - "8086:8000"
+      - "8000:8000"
     environment:
       - POCKETBASE_URL=https://ruteros.edwuarcardenas.online
       - ADMIN_EMAIL=${ADMIN_EMAIL}

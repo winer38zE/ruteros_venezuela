@@ -12,6 +12,11 @@ from pocketbase import PocketBase
 from sqlalchemy import Integer, inspect as sa_inspect
 
 from app.core.db import autenticar_admin_pocketbase
+from app.core.pb_collections_cache import (
+    ids_colecciones_por_nombre,
+    invalidar_cache_colecciones,
+    mapa_colecciones_por_nombre,
+)
 from app.core.pb_orm import mapper
 
 logger = logging.getLogger(__name__)
@@ -78,7 +83,7 @@ def _autenticar_admin_api(pb: PocketBase) -> None:
 
 
 def _mapa_colecciones(pb: PocketBase) -> dict[str, Any]:
-    return {c.name: c for c in pb.collections.get_full_list()}
+    return mapa_colecciones_por_nombre(pb)
 
 
 def colecciones_faltantes(pb: PocketBase) -> list[str]:
@@ -196,7 +201,7 @@ def _modelos_ordenados() -> list[type]:
 
 
 def _ids_por_tabla(pb: PocketBase) -> dict[str, str]:
-    return {c.name: c.id for c in pb.collections.get_full_list()}
+    return ids_colecciones_por_nombre(pb)
 
 
 def _campo_api_a_patch(field: dict[str, Any]) -> dict[str, Any]:
@@ -236,6 +241,7 @@ def _sincronizar_campos_coleccion(
             coll.id,
             {"fields": payload},
         )
+        invalidar_cache_colecciones(pb)
         logger.info(
             "Colección '%s' ampliada con %d campo(s): %s",
             coll.name,
@@ -255,6 +261,7 @@ def _sincronizar_campos_coleccion(
             return 0
         payload = [_campo_api_a_patch(f) for f in coll.fields] + nuevos_txt
         pb.collections.update(coll.id, {"fields": payload})
+        invalidar_cache_colecciones(pb)
         logger.info(
             "Colección '%s' ampliada (texto) con %d campo(s).",
             coll.name,
@@ -282,6 +289,7 @@ def _crear_coleccion(
         "deleteRule": "",
     }
     created = pb.collections.create(body)
+    invalidar_cache_colecciones(pb)
     coll_id = getattr(created, "id", None)
     if coll_id:
         ids_por_tabla[nombre] = str(coll_id)
@@ -316,6 +324,7 @@ def asegurar_colecciones(pb: PocketBase) -> None:
         if nombre in mapa:
             ampliadas += _sincronizar_campos_coleccion(pb, model, mapa[nombre], ids_por_tabla)
             mapa = _mapa_colecciones(pb)
+            ids_por_tabla = _ids_por_tabla(pb)
             continue
 
         try:
@@ -338,6 +347,7 @@ def asegurar_colecciones(pb: PocketBase) -> None:
                 raise RuntimeError(f"Fallo al crear colección '{nombre}' en PocketBase") from exc2
         creadas += 1
         mapa = _mapa_colecciones(pb)
+        ids_por_tabla = _ids_por_tabla(pb)
 
     verificar_colecciones_completas(pb)
 

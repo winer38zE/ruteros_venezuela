@@ -6,7 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.seguridad import CabecerasSeguridadMiddleware
 from app.core.db import PocketBaseDep
-from app.core.pocketbase_init import preparar_pocketbase_al_arranque_seguro
+from app.core.pocketbase_init import (
+    detener_init_pocketbase_en_segundo_plano,
+    preparar_pocketbase_al_arranque_seguro,
+)
+from app.api import health as health_router
 from app.core.scheduler import iniciar_scheduler, detener_scheduler
 
 # Importamos todas tus rutas organizadas
@@ -33,6 +37,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Scheduler de tasas no pudo iniciarse.")
     yield
+    detener_init_pocketbase_en_segundo_plano()
     detener_scheduler()
 
 
@@ -55,6 +60,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Usuario-Id"],
 )
 app.add_middleware(CabecerasSeguridadMiddleware)
+
+app.include_router(health_router.router)
 
 # Registro de Routers principales
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
