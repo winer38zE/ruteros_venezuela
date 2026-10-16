@@ -95,20 +95,26 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> login(
+  Future<bool> login(
     String correo,
     String password, {
-    bool recordar = true,
+    bool guardarBiometria = false,
   }) async {
     cargando = true;
     error = null;
     notifyListeners();
     try {
-      usuario = await auth.login(correo, password, recordar: recordar);
+      usuario = await auth.login(
+        correo,
+        password,
+        guardarBiometria: guardarBiometria,
+      );
       if (usuario != null) _arrancarSync();
+      return usuario != null;
     } catch (e) {
       error = e is ApiException ? e.message : e.toString();
       usuario = null;
+      return false;
     } finally {
       cargando = false;
       notifyListeners();
@@ -122,6 +128,7 @@ class AppState extends ChangeNotifier {
     try {
       final user = await auth.loginConBiometria();
       if (user == null) {
+        error = 'No hay credenciales guardadas para huella dactilar.';
         usuario = null;
         return;
       }
@@ -130,6 +137,10 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       error = e is ApiException ? e.message : e.toString();
       usuario = null;
+      if (e is ApiException &&
+          (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429)) {
+        error = 'Sesión expirada. Ingresa con contraseña.';
+      }
     } finally {
       cargando = false;
       notifyListeners();

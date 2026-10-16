@@ -182,7 +182,7 @@ class Usuario(Base):
     username = Column(String, unique=True, index=True) # <-- AQUÍ ESTÁ AGREGADO EL USERNAME
     telefono = Column(String, nullable=True)
     rol = Column(Enum(RolUsuario), nullable=False)
-    password_hash = Column(String, nullable=False)
+    password_hash = Column(String(255), nullable=False)
     activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 

@@ -154,7 +154,12 @@ def _field_for_column(
     if ftype == "text":
         length = getattr(col.type, "length", None)
         entry["min"] = 0
-        entry["max"] = int(length) if length else 0
+        if length:
+            entry["max"] = int(length)
+        elif col.key == "password_hash":
+            entry["max"] = 255
+        else:
+            entry["max"] = 0
     elif ftype == "editor":
         entry["maxSize"] = 5_000_000
     elif ftype == "number":
