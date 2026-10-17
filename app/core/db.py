@@ -10,6 +10,8 @@ from pocketbase import PocketBase
 
 from app.core.config import ADMIN_EMAIL, ADMIN_PASSWORD, POCKETBASE_URL
 from app.core.pb_collections_cache import instalar_cache_colecciones
+from app.core.pb_http import instalar_cliente_http_pocketbase
+from app.core.pb_retry import ejecutar_con_reintentos
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,7 @@ def get_pocketbase_client(base_url: str | None = None) -> PocketBase:
     url = (base_url or POCKETBASE_URL).rstrip("/")
     if _pb_client is None or getattr(_pb_client, "base_url", "").rstrip("/") != url:
         _pb_client = PocketBase(url)
+        instalar_cliente_http_pocketbase(_pb_client)
         instalar_cache_colecciones(_pb_client)
         logger.info("Cliente PocketBase inicializado (%s).", url)
     return _pb_client
@@ -48,7 +51,11 @@ def autenticar_admin_pocketbase(
     errores: list[str] = []
     for etiqueta, auth in intentos:
         try:
-            auth()
+            ejecutar_con_reintentos(
+                auth,
+                max_intentos=5,
+                etiqueta=f"Auth admin PocketBase ({etiqueta})",
+            )
             logger.info("Sesión admin PocketBase establecida (%s).", etiqueta)
             return
         except Exception as exc:
@@ -78,7 +85,15 @@ PocketBaseDep = Annotated[PocketBase, Depends(get_pocketbase)]
 
 def get_db() -> Generator:
     """Dependencia FastAPI: sesión PocketBase con API compatible SQLAlchemy."""
+    from fastapi import HTTPException
+
     from app.core.pb_orm.session import SessionLocal
+    from app.core.pb_ready import PocketBaseNoDisponible, asegurar_pocketbase_minimo
+
+    try:
+        asegurar_pocketbase_minimo()
+    except PocketBaseNoDisponible as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     session = SessionLocal()
     try:

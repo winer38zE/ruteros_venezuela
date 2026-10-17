@@ -11,6 +11,7 @@ import httpx
 from pocketbase.errors import ClientResponseError
 
 from app.core.bootstrap import asegurar_usuario_admin
+from app.core.config import POCKETBASE_URL
 from app.core.db import get_pocketbase_client
 from app.core.pb_retry import ejecutar_con_reintentos, es_error_transitorio
 from app.core.pb_schema import preparar_esquema_pocketbase, verificar_colecciones_completas
@@ -42,7 +43,7 @@ def _marcar_listo(valor: bool) -> None:
 
 
 def _credenciales_desde_entorno() -> tuple[str, str, str]:
-    url = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090").rstrip("/")
+    url = POCKETBASE_URL
     email = os.getenv("ADMIN_EMAIL", "").strip()
     password = os.getenv("ADMIN_PASSWORD", "")
     if not email or not password:

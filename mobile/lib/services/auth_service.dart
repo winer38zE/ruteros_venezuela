@@ -95,6 +95,12 @@ class AuthService {
       if (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429) {
         await _invalidarSesionLocal();
       }
+      if (e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504) {
+        throw ApiException(
+          e.statusCode,
+          'Servidor no disponible (${e.statusCode}). Pulsa Reintentar.',
+        );
+      }
       rethrow;
     }
   }

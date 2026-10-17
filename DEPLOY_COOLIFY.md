@@ -7,7 +7,7 @@ Guía para alinear **puerto del contenedor**, **proxy** y **healthchecks** con e
 | Concepto | Valor |
 |----------|--------|
 | Dominio API | `https://api-ruteros.edwuarcardenas.online` |
-| PocketBase (externo) | `https://ruteros.edwuarcardenas.online` → variable `POCKETBASE_URL` |
+| PocketBase | Variable `POCKETBASE_URL` (URL pública **o** interna Docker; ver abajo) |
 | Puerto interno del contenedor | **8000** |
 | Comando de arranque | `uvicorn app.main:app --host 0.0.0.0 --port 8000` |
 
@@ -66,6 +66,45 @@ Recomendación:
 | `POCKETBASE_INIT_RETRY_SECONDS` | Opcional | Segundos entre ciclos de init en segundo plano (default 30) |
 
 No configures en el repo secretos reales; solo en el panel de Coolify.
+
+## PocketBase y API en la red interna de Docker (recomendado)
+
+Si la API y PocketBase están en el **mismo servidor Coolify**, evita salir a internet y volver por Traefik (502 intermitentes): conecta ambos contenedores a la red **`coolify`** y apunta `POCKETBASE_URL` al **nombre del contenedor** de PocketBase en el puerto interno (8090).
+
+Ejemplo (sustituye el nombre real del contenedor PB):
+
+```env
+POCKETBASE_URL=http://ruteros-db-aislada-poi5og3l9bhcek4n5yq5p6ub:8090
+```
+
+### Pasos en Coolify
+
+1. En el servicio **PocketBase** → **Network** / redes: adjuntar la red `coolify` (si no está ya).
+2. En el servicio **API** (FastAPI) → **Network**: la misma red `coolify`.
+3. En **Variables de entorno** de la API, setear `POCKETBASE_URL` con `http://<nombre-contenedor-pb>:8090` (sin barra final).
+4. Redeploy de la API.
+
+### Comprobar que comparten red (terminal del contenedor API)
+
+```bash
+# Nombre del host PocketBase (debe resolver)
+getent hosts ruteros-db-aislada-poi5og3l9bhcek4n5yq5p6ub
+
+# Health directo a PocketBase (debe ser 200)
+curl -s -o /dev/null -w "%{http_code}\n" http://ruteros-db-aislada-poi5og3l9bhcek4n5yq5p6ub:8090/api/health
+
+# Diagnóstico 30 peticiones (script del repo)
+python scripts/diagnostico_pb.py
+```
+
+Si `getent` no resuelve, los contenedores **no** están en la misma red Docker.
+
+Variables opcionales de afinado HTTP hacia PocketBase:
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `PB_HTTP_KEEPALIVE_EXPIRY` | `5` | Segundos de keepalive (conexiones cortas ante proxies) |
+| `PB_COLLECTIONS_CACHE_TTL` | `300` | Caché del listado de colecciones |
 
 ## Verificar que proxy y app usan el mismo puerto
 

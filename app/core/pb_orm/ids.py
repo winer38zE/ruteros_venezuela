@@ -34,6 +34,19 @@ def id_pocketbase_desde_cualquiera(value: object | None) -> str:
     return nuevo_id_pocketbase()
 
 
+def resolver_id_registro(raw: str) -> str:
+    """Acepta id PocketBase (15 chars) o UUID legacy en cabeceras y filtros."""
+    s = (raw or "").strip()
+    if not s:
+        raise ValueError("id vacío")
+    if es_id_pocketbase(s):
+        return s
+    try:
+        return str(uuid.UUID(s))
+    except ValueError as exc:
+        raise ValueError("id inválido") from exc
+
+
 def id_para_payload_creacion(value: object | None) -> str | None:
     """
     Devuelve id válido para POST /records o None para que PocketBase lo genere.

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import random
 import time
 from collections.abc import Callable
 from typing import TypeVar
@@ -15,6 +14,13 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 _TRANSIENT_HTTP = frozenset({502, 503, 504})
+_ESPERAS_CRECIENTES = (0.5, 1.0, 2.0, 4.0)
+
+
+def pausa_reintento(intento: int) -> float:
+    """Espera creciente: 0.5s, 1s, 2s, 4s (último valor se repite)."""
+    idx = min(max(intento - 1, 0), len(_ESPERAS_CRECIENTES) - 1)
+    return _ESPERAS_CRECIENTES[idx]
 
 
 def es_error_transitorio(exc: BaseException) -> bool:
@@ -30,9 +36,7 @@ def es_error_transitorio(exc: BaseException) -> bool:
 def ejecutar_con_reintentos(
     operacion: Callable[[], T],
     *,
-    max_intentos: int = 10,
-    espera_min: float = 3.0,
-    espera_max: float = 5.0,
+    max_intentos: int = 5,
     etiqueta: str = "PocketBase",
 ) -> T:
     ultimo: BaseException | None = None
@@ -43,7 +47,7 @@ def ejecutar_con_reintentos(
             ultimo = exc
             if not es_error_transitorio(exc) or intento >= max_intentos:
                 raise
-            pausa = random.uniform(espera_min, espera_max)
+            pausa = pausa_reintento(intento)
             logger.warning(
                 "%s no disponible (intento %d/%d, %s); reintento en %.1fs.",
                 etiqueta,

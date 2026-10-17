@@ -22,6 +22,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _ocultarPassword = true;
   bool _tieneSesionGuardada = false;
   bool _biometriaDisponible = false;
+  String? _diagnosticoConexion;
+  bool _probandoConexion = false;
   @override
   void initState() {
     super.initState();
@@ -74,6 +76,35 @@ class _LoginScreenState extends State<LoginScreen> {
       await _bio.borrarCredenciales();
     }
     await _cargarOpcionesBiometria();
+  }
+
+  Future<void> _probarConexion() async {
+    setState(() {
+      _probandoConexion = true;
+      _diagnosticoConexion = null;
+    });
+    final api = context.read<AppState>().api;
+    try {
+      final data = await api.fetchHealthReady();
+      if (!mounted) return;
+      setState(() {
+        _diagnosticoConexion =
+            'Listo: ${data['status'] ?? 'ready'} · PB init=${data['pocketbase_initialized']} · '
+            'latencia=${data['ultima_latencia_ms'] ?? '?'} ms';
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _diagnosticoConexion = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _diagnosticoConexion = e.toString();
+      });
+    } finally {
+      if (mounted) setState(() => _probandoConexion = false);
+    }
   }
 
   Future<void> _login() async {
@@ -140,11 +171,31 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 6),
                     const Text('Sistema Ruteros Multimoneda'),
                     const SizedBox(height: 8),
-                    Text(
-                      ApiConfig.apiBaseUrl,
-                      style: Theme.of(context).textTheme.bodySmall,
-                      textAlign: TextAlign.center,
+                    GestureDetector(
+                      onLongPress: _probandoConexion ? null : _probarConexion,
+                      child: Text(
+                        ApiConfig.apiBaseUrl,
+                        style: Theme.of(context).textTheme.bodySmall,
+                        textAlign: TextAlign.center,
+                      ),
                     ),
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: _probandoConexion ? null : _probarConexion,
+                      child: Text(
+                        _probandoConexion ? 'Probando conexión…' : 'Probar conexión',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ),
+                    if (_diagnosticoConexion != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _diagnosticoConexion!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
                     const SizedBox(height: 32),
                     GlassContainer(
                       accentColor: AppColors.neonBlue,

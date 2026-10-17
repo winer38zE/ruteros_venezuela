@@ -113,6 +113,36 @@ class ApiService {
     return Uri.parse('$baseUrl$normalized').replace(queryParameters: query);
   }
 
+  /// GET `/health/ready` en el origen del servidor (fuera de `/api/v1`).
+  Future<Map<String, dynamic>> fetchHealthReady() async {
+    final uri = Uri.parse('${ApiConfig.serverOrigin}/health/ready');
+    try {
+      final res = await _client
+          .get(uri, headers: const {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final data = jsonDecode(res.body);
+        if (data is Map<String, dynamic>) return data;
+        return {'status': 'ready', 'raw': data};
+      }
+      if (res.statusCode == 502 || res.statusCode == 503 || res.statusCode == 504) {
+        throw ApiException(
+          res.statusCode,
+          'Servidor no disponible (${res.statusCode}). Intenta de nuevo.',
+        );
+      }
+      throw ApiException(res.statusCode, _errorMessage(res));
+    } on SocketException {
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
+    } on TimeoutException {
+      throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(0, 'Error de red: $e');
+    }
+  }
+
   Future<dynamic> get(String path, {Map<String, String>? query}) async {
     try {
       final res = await _client
@@ -257,8 +287,8 @@ class ApiService {
     if (res.statusCode == 401) {
       return 'Usuario o contraseña incorrectos';
     }
-    if (res.statusCode == 502 || res.statusCode == 503) {
-      return 'Error del servidor (${res.statusCode}). Intenta de nuevo en unos minutos.';
+    if (res.statusCode == 502 || res.statusCode == 503 || res.statusCode == 504) {
+      return 'Servidor no disponible (${res.statusCode}). Intenta de nuevo.';
     }
     try {
       final data = jsonDecode(res.body);

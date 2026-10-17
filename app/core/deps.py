@@ -1,21 +1,26 @@
 """Utilidades de deps.py"""
-from uuid import UUID
 from typing import Optional
+
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
+
 from app.core.db import get_db
+from app.core.pb_orm.ids import resolver_id_registro
 from app.models.core import Usuario, RolUsuario
+
+
+def _id_desde_header(x_usuario_id: str) -> str:
+    try:
+        return resolver_id_registro(x_usuario_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="X-Usuario-Id inválido")
 
 
 def obtener_usuario_actual(
     x_usuario_id: str = Header(..., alias="X-Usuario-Id"),
     db: Session = Depends(get_db),
 ) -> Usuario:
-    try:
-        usuario_id = UUID(x_usuario_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="X-Usuario-Id inválido")
-
+    usuario_id = _id_desde_header(x_usuario_id)
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario or not usuario.activo:
         raise HTTPException(status_code=400, detail="Usuario no encontrado o inactivo")
@@ -60,10 +65,7 @@ def obtener_usuario_opcional(
 ) -> Optional[Usuario]:
     if not x_usuario_id:
         return None
-    try:
-        usuario_id = UUID(x_usuario_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="X-Usuario-Id inválido")
+    usuario_id = _id_desde_header(x_usuario_id)
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario or not usuario.activo:
         raise HTTPException(status_code=400, detail="Usuario no encontrado o inactivo")

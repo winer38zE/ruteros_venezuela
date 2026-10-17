@@ -100,7 +100,9 @@ def asegurar_usuario_admin() -> None:
     if not os.getenv("ADMIN_EMAIL", "").strip() or not os.getenv("ADMIN_PASSWORD", ""):
         raise RuntimeError("ADMIN_EMAIL y ADMIN_PASSWORD requeridos para el bootstrap.")
 
-    pb = get_pocketbase_client(os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090").rstrip("/"))
+    from app.core.config import POCKETBASE_URL
+
+    pb = get_pocketbase_client(POCKETBASE_URL)
     preparar_esquema_pocketbase(pb)
     verificar_colecciones_completas(pb)
 
