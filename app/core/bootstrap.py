@@ -6,6 +6,8 @@ from sqlalchemy import func
 
 from app.api.auth import get_password_hash, log_huella_demo_password_configurada, obtener_demo_password
 from app.core.db import get_pocketbase_client
+from app.core.demo_hash_verificacion import verificar_hashes_usuarios_demo
+from app.core.pb_orm import mapper
 from app.core.pb_schema import preparar_esquema_pocketbase, verificar_colecciones_completas
 from app.core.pb_orm.session import SessionLocal
 from app.models.core import Almacen, Empresa, RolUsuario, Usuario
@@ -121,6 +123,19 @@ def asegurar_usuario_admin() -> None:
         )
         log_huella_demo_password_configurada(logger, contexto="Bootstrap")
         _confirmar_demo_listo(db)
+
+        demo_ids: list[tuple[str, str]] = []
+        for username, _nombre, _rol in DEMO_USUARIOS:
+            username_norm = username.strip().lower()
+            u = (
+                db.query(Usuario)
+                .filter(func.lower(Usuario.username) == username_norm)
+                .first()
+            )
+            if u is not None:
+                demo_ids.append((username_norm, mapper.record_id(u)))
+        if demo_ids:
+            verificar_hashes_usuarios_demo(pb, demo_ids)
     except ClientResponseError as exc:
         db.rollback()
         if getattr(exc, "status", None) == 404:

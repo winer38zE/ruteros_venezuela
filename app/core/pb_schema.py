@@ -18,8 +18,12 @@ from app.core.pb_collections_cache import (
     mapa_colecciones_por_nombre,
 )
 from app.core.pb_orm import mapper
+from app.core.usuario_password_hash import CAMPO_HASH_USUARIO
+from app.models.core import Usuario
 
 logger = logging.getLogger(__name__)
+
+_MIN_MAX_PASSWORD_HASH = 101
 
 _COLECCIONES_NUCLEO: tuple[str, ...] = (
     "empresas",
@@ -351,11 +355,84 @@ def asegurar_colecciones(pb: PocketBase) -> None:
 
     verificar_colecciones_completas(pb)
 
+    asegurar_campo_password_hash_usuarios(pb)
+
     logger.info(
         "Esquema PocketBase: %d colección(es) nueva(s), %d colección(es) ampliada(s).",
         creadas,
         ampliadas,
     )
+
+
+def asegurar_campo_password_hash_usuarios(pb: PocketBase) -> None:
+    """Campo password_hash presente, editable y con max > 100."""
+    mapa = mapa_colecciones_por_nombre(pb)
+    coll = mapa.get("usuarios")
+    if coll is None:
+        logger.warning("Colección 'usuarios' ausente; no se validó password_hash.")
+        return
+
+    ids_por_tabla = ids_colecciones_por_nombre(pb)
+    nombres = _nombres_campos_coleccion(coll)
+    if CAMPO_HASH_USUARIO not in nombres:
+        _sincronizar_campos_coleccion(pb, Usuario, coll, ids_por_tabla)
+        invalidar_cache_colecciones(pb)
+        mapa = mapa_colecciones_por_nombre(pb)
+        coll = mapa.get("usuarios")
+        if coll is None:
+            return
+        nombres = _nombres_campos_coleccion(coll)
+
+    if CAMPO_HASH_USUARIO not in nombres:
+        logger.error(
+            "Esquema usuarios: falta el campo %r; PocketBase ignorará el hash en PATCH.",
+            CAMPO_HASH_USUARIO,
+        )
+        return
+
+    fields_raw = list(coll.fields or [])
+    nuevos_fields: list[dict[str, Any]] = []
+    cambio = False
+    for field in fields_raw:
+        f = dict(field)
+        if f.get("name") != CAMPO_HASH_USUARIO:
+            nuevos_fields.append(f)
+            continue
+        if f.get("type") != "text":
+            logger.error(
+                "Campo %r en usuarios tiene type=%r; se esperaba 'text'.",
+                CAMPO_HASH_USUARIO,
+                f.get("type"),
+            )
+        max_val = int(f.get("max") or 0)
+        if max_val != 0 and max_val < _MIN_MAX_PASSWORD_HASH:
+            f["max"] = 255
+            cambio = True
+            logger.info(
+                "Ampliando max de %r de %d a 255 en usuarios.",
+                CAMPO_HASH_USUARIO,
+                max_val,
+            )
+        elif max_val == 0:
+            f["max"] = 255
+            cambio = True
+        if f.get("hidden") is True:
+            f["hidden"] = False
+            cambio = True
+        nuevos_fields.append(f)
+
+    if not cambio:
+        logger.debug(
+            "Campo %r en usuarios OK (type=text, max>= %d, no oculto).",
+            CAMPO_HASH_USUARIO,
+            _MIN_MAX_PASSWORD_HASH,
+        )
+        return
+
+    payload = [_campo_api_a_patch(f) for f in nuevos_fields]
+    pb.collections.update(coll.id, {"fields": payload})
+    invalidar_cache_colecciones(pb)
+    logger.info("Esquema usuarios: campo %r actualizado (max/hidden).", CAMPO_HASH_USUARIO)
 
 
 def preparar_esquema_pocketbase(pb: PocketBase) -> None:
