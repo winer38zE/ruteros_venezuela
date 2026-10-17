@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import httpx
 from pocketbase.errors import ClientResponseError
 
+from app.api.auth import log_huella_demo_password_configurada
 from app.core.bootstrap import asegurar_usuario_admin
 from app.core.config import POCKETBASE_URL
 from app.core.db import get_pocketbase_client
@@ -109,6 +110,7 @@ def preparar_pocketbase_al_arranque() -> None:
         logger.info("PocketBase init paso 3/3: bootstrap (empresa y usuarios demo).")
         asegurar_usuario_admin()
 
+    log_huella_demo_password_configurada(logger, contexto="Arranque PocketBase")
     logger.info(
         "PocketBase listo — usuarios demo sincronizados (dueno, vendedor, cobrador). "
         "Clave demo: variable DEMO_PASSWORD."
