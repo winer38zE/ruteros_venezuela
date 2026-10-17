@@ -69,20 +69,59 @@ class AuthService {
     );
 
     if (guardarBiometria) {
-      try {
-        await _biometric.guardarCredenciales(
-          correo: usuarioNorm,
-          password: password,
-        );
-      } catch (_) {}
+      await activarAccesoBiometrico(
+        correo: usuarioNorm,
+        password: password,
+      );
     }
     return user;
   }
 
-  /// Huella válida → login con credenciales guardadas.
+  /// Guarda credenciales + token de sesión cifrados (tras confirmar huella).
+  Future<void> activarAccesoBiometrico({
+    required String correo,
+    required String password,
+  }) async {
+    try {
+      await _biometric.guardarCredenciales(correo: correo, password: password);
+      if (_api.token != null &&
+          _api.usuarioId != null &&
+          _api.usuarioJson != null) {
+        await _biometric.guardarSesion(
+          token: _api.token!,
+          usuarioId: _api.usuarioId!,
+          usuarioJson: _api.usuarioJson!,
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<Usuario?> _restaurarSesionDesdeAlmacenSeguro() async {
+    final sesion = await _biometric.leerSesion();
+    if (sesion == null) return null;
+    await _api.saveSession(
+      token: sesion.token,
+      usuarioId: sesion.usuarioId,
+      usuarioJson: sesion.usuarioJson,
+    );
+    try {
+      return Usuario.fromJson(jsonDecode(sesion.usuarioJson));
+    } catch (_) {
+      await _biometric.borrarSesionSegura();
+      return null;
+    }
+  }
+
+  /// Huella válida → restaura sesión o re-login con credenciales guardadas.
   Future<Usuario?> loginConBiometria() async {
     final ok = await _biometric.autenticar();
     if (!ok) return null;
+
+    final restaurado = await _restaurarSesionDesdeAlmacenSeguro();
+    if (restaurado != null) {
+      return restaurado;
+    }
+
     final credenciales = await _biometric.leerCredenciales();
     if (credenciales == null) return null;
     try {
@@ -106,7 +145,7 @@ class AuthService {
   }
 
   Future<void> _invalidarSesionLocal() async {
-    await _biometric.borrarCredenciales();
+    await _biometric.borrarTodoAccesoBiometrico();
     await _api.clearSession();
   }
 
@@ -124,7 +163,7 @@ class AuthService {
   }
 
   Future<void> logout() async {
-    await _biometric.borrarCredenciales();
+    await _biometric.borrarTodoAccesoBiometrico();
     await _api.clearSession();
   }
 }

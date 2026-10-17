@@ -14,6 +14,7 @@ import '../services/usuarios_service.dart';
 import '../services/proveedores_service.dart';
 import '../services/clientes_service.dart';
 import '../services/tasas_service.dart';
+import '../services/tasas_login_cache.dart';
 import '../services/rutas_service.dart';
 import '../services/empresa_service.dart';
 import '../services/whatsapp_service.dart';
@@ -108,7 +109,10 @@ class AppState extends ChangeNotifier {
         password,
         guardarBiometria: guardarBiometria,
       );
-      if (usuario != null) _arrancarSync();
+      if (usuario != null) {
+        _arrancarSync();
+        unawaited(_actualizarCacheTasasLogin());
+      }
       return usuario != null;
     } catch (e) {
       error = e is ApiException ? e.message : e.toString();
@@ -127,12 +131,14 @@ class AppState extends ChangeNotifier {
     try {
       final user = await auth.loginConBiometria();
       if (user == null) {
-        error = 'No hay credenciales guardadas para huella dactilar.';
+        error =
+            'Huella no reconocida o ingreso biométrico no configurado. Entra con contraseña y activa la huella.';
         usuario = null;
         return;
       }
       usuario = user;
       _arrancarSync();
+      unawaited(_actualizarCacheTasasLogin());
     } catch (e) {
       error = e is ApiException ? e.message : e.toString();
       usuario = null;
@@ -161,5 +167,15 @@ class AppState extends ChangeNotifier {
   void _arrancarSync() {
     sync.escucharRed();
     unawaited(sync.sincronizar());
+  }
+
+  Future<void> _actualizarCacheTasasLogin() async {
+    try {
+      final t = await tasas.ultima();
+      await TasasLoginCache.guardar(
+        usdBcvBs: t.usdBcvBs,
+        usdParaleloBs: t.usdParaleloBs,
+      );
+    } catch (_) {}
   }
 }

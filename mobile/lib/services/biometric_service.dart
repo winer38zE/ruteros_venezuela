@@ -14,6 +14,9 @@ class BiometricService {
 
   static const _kCorreo = 'session_correo';
   static const _kPassword = 'session_password';
+  static const _kToken = 'session_token';
+  static const _kUsuarioId = 'session_usuario_id';
+  static const _kUsuarioJson = 'session_usuario_json';
 
   final LocalAuthentication _localAuth;
   final FlutterSecureStorage _storage;
@@ -49,6 +52,17 @@ class BiometricService {
     return credenciales != null;
   }
 
+  Future<bool> tieneSesionSegura() async {
+    final sesion = await leerSesion();
+    return sesion != null;
+  }
+
+  /// Huella disponible si hay sesión cifrada y/o credenciales para re-login.
+  Future<bool> puedeIngresarConBiometria() async {
+    if (!await soportaBiometria()) return false;
+    return (await tieneSesionSegura()) || (await tieneCredenciales());
+  }
+
   Future<({String correo, String password})?> leerCredenciales() async {
     String? correo;
     String? password;
@@ -72,8 +86,48 @@ class BiometricService {
     await _storage.write(key: _kPassword, value: password);
   }
 
+  Future<void> guardarSesion({
+    required String token,
+    required String usuarioId,
+    required String usuarioJson,
+  }) async {
+    await _storage.write(key: _kToken, value: token);
+    await _storage.write(key: _kUsuarioId, value: usuarioId);
+    await _storage.write(key: _kUsuarioJson, value: usuarioJson);
+  }
+
+  Future<({String token, String usuarioId, String usuarioJson})?> leerSesion() async {
+    try {
+      final token = await _storage.read(key: _kToken);
+      final usuarioId = await _storage.read(key: _kUsuarioId);
+      final usuarioJson = await _storage.read(key: _kUsuarioJson);
+      if (token == null ||
+          token.isEmpty ||
+          usuarioId == null ||
+          usuarioId.isEmpty ||
+          usuarioJson == null ||
+          usuarioJson.isEmpty) {
+        return null;
+      }
+      return (token: token, usuarioId: usuarioId, usuarioJson: usuarioJson);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> borrarCredenciales() async {
     await _storage.delete(key: _kCorreo);
     await _storage.delete(key: _kPassword);
+  }
+
+  Future<void> borrarSesionSegura() async {
+    await _storage.delete(key: _kToken);
+    await _storage.delete(key: _kUsuarioId);
+    await _storage.delete(key: _kUsuarioJson);
+  }
+
+  Future<void> borrarTodoAccesoBiometrico() async {
+    await borrarCredenciales();
+    await borrarSesionSegura();
   }
 }
