@@ -1,7 +1,5 @@
 import enum
 import logging
-import time
-
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pocketbase.errors import ClientResponseError
@@ -13,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.api.auth import verify_password
 from app.core.config import POCKETBASE_URL
 from app.core.db import autenticar_admin_pocketbase, get_db
-from app.core.pb_retry import es_error_transitorio
+from app.core.pb_ready import PocketBaseNoDisponible
+from app.core.pb_retry import ejecutar_con_reintentos, es_error_transitorio
 from app.core.seguridad import (
     cuenta_bloqueada_login,
     exigir_cupo_login,
@@ -63,42 +62,39 @@ def _consultar_usuario_activo(db: Session, clave: str) -> Usuario | None:
     )
 
 
+def _consultar_con_reintentos(db: Session, clave: str) -> Usuario | None:
+    reintentar_auth = True
+
+    def operacion() -> Usuario | None:
+        nonlocal reintentar_auth
+        try:
+            return _consultar_usuario_activo(db, clave)
+        except ClientResponseError as exc:
+            if reintentar_auth and exc.status in (401, 403):
+                reintentar_auth = False
+                autenticar_admin_pocketbase(getattr(db, "pb", None))
+                return _consultar_usuario_activo(db, clave)
+            raise
+
+    return ejecutar_con_reintentos(
+        operacion,
+        max_intentos=5,
+        etiqueta="Consulta usuarios PocketBase",
+    )
+
+
 def _buscar_usuario_por_username(db: Session, username: str) -> Usuario | None:
     clave = _normalizar_username(username).lower()
     if not clave:
         return None
-    ultimo: BaseException | None = None
-    for intento in range(2):
-        try:
-            return _consultar_usuario_activo(db, clave)
-        except ClientResponseError as exc:
-            ultimo = exc
-            if exc.status in (401, 403):
-                autenticar_admin_pocketbase(getattr(db, "pb", None))
-                return _consultar_usuario_activo(db, clave)
-            if exc.status in (502, 503, 504) and intento == 0:
-                time.sleep(1.5)
-                continue
-            raise
-        except (httpx.HTTPError, OSError) as exc:
-            ultimo = exc
-            if es_error_transitorio(exc) and intento == 0:
-                time.sleep(1.5)
-                continue
-            raise
-    if ultimo:
-        raise ultimo
-    return None
+    return _consultar_con_reintentos(db, clave)
 
 
 def _error_base_datos(exc: Exception) -> HTTPException:
     logger.exception("Login: fallo al consultar usuarios en PocketBase (%s)", POCKETBASE_URL)
     return HTTPException(
         status_code=503,
-        detail=(
-            "El servidor no puede acceder a la base de datos. "
-            "Verifica POCKETBASE_URL, ADMIN_EMAIL y ADMIN_PASSWORD en el servidor."
-        ),
+        detail="Base de datos no disponible, intenta de nuevo",
     )
 
 
@@ -120,6 +116,8 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         usuario = _buscar_usuario_por_username(db, username_entrada)
     except HTTPException:
         raise
+    except PocketBaseNoDisponible as exc:
+        raise _error_base_datos(exc) from exc
     except ClientResponseError as exc:
         if exc.status == 404:
             raise _error_base_datos(exc) from exc

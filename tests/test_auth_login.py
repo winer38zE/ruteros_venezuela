@@ -5,9 +5,13 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException
+from pocketbase.errors import ClientResponseError
 
 from app.api.auth import get_password_hash, verify_password
 from app.api.auth_router import LoginRequest, login
+from app.core.pb_ready import PocketBaseNoDisponible
+from app.core.pb_orm.ids import es_id_pocketbase, resolver_id_registro
+from app.core.deps import obtener_usuario_actual
 from app.models.core import RolUsuario, Usuario
 
 
@@ -63,6 +67,57 @@ def test_login_falla_con_clave_incorrecta(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         login(LoginRequest(username="dueno", password="000000"), request, db=MagicMock())
     assert exc_info.value.status_code == 401
+
+
+def test_login_503_si_pocketbase_caido(monkeypatch):
+    def _falla(_db, _u):
+        raise ClientResponseError("bad gateway", url="", status=502, data={})
+
+    monkeypatch.setattr("app.api.auth_router._buscar_usuario_por_username", _falla)
+    request = MagicMock()
+    request.client.host = "127.0.0.1"
+    with pytest.raises(HTTPException) as exc_info:
+        login(LoginRequest(username="dueno", password="123456"), request, db=MagicMock())
+    assert exc_info.value.status_code == 503
+    assert "no disponible" in str(exc_info.value.detail).lower()
+
+
+def test_login_503_si_pocketbase_no_disponible(monkeypatch):
+    def _raise(_db, _u):
+        raise PocketBaseNoDisponible("Base de datos no disponible, intenta de nuevo")
+
+    monkeypatch.setattr("app.api.auth_router._buscar_usuario_por_username", _raise)
+    request = MagicMock()
+    request.client.host = "127.0.0.1"
+    with pytest.raises(HTTPException) as exc_info:
+        login(LoginRequest(username="dueno", password="123456"), request, db=MagicMock())
+    assert exc_info.value.status_code == 503
+
+
+def test_resolver_id_pocketbase_15_chars():
+    pid = "abc123def456789"
+    assert es_id_pocketbase(pid)
+    assert resolver_id_registro(pid) == pid
+
+
+def test_obtener_usuario_acepta_id_pocketbase(monkeypatch):
+    usuario = Usuario(
+        id="abc123def456789",
+        empresa_id="emp123456789012",
+        nombre="Admin",
+        username="dueno",
+        password_hash="x",
+        rol=RolUsuario.DUENO,
+        activo=True,
+    )
+    db = MagicMock()
+    q = MagicMock()
+    q.filter.return_value = q
+    q.first.return_value = usuario
+    db.query.return_value = q
+
+    out = obtener_usuario_actual(x_usuario_id="abc123def456789", db=db)
+    assert out.username == "dueno"
 
 
 def test_filter_compiler_username_lower():

@@ -139,6 +139,9 @@ class AppState extends ChangeNotifier {
       if (e is ApiException &&
           (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429)) {
         error = 'Sesión expirada. Ingresa con contraseña.';
+      } else if (e is ApiException &&
+          (e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504)) {
+        error = e.message;
       }
     } finally {
       cargando = false;
