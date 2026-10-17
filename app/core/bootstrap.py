@@ -4,7 +4,7 @@ import os
 from pocketbase.errors import ClientResponseError
 from sqlalchemy import func
 
-from app.api.auth import get_password_hash
+from app.api.auth import get_password_hash, log_huella_demo_password_configurada, obtener_demo_password
 from app.core.db import get_pocketbase_client
 from app.core.pb_schema import preparar_esquema_pocketbase, verificar_colecciones_completas
 from app.core.pb_orm.session import SessionLocal
@@ -24,14 +24,10 @@ DEMO_USUARIOS = [
 ]
 
 
-def _demo_password() -> str:
-    return os.getenv("DEMO_PASSWORD", "123456")
-
-
 def _asegurar_usuario_demo(db, empresa_id, username: str, nombre: str, rol) -> None:
     """Crea o restablece un usuario demo (activo + hash bcrypt actualizado)."""
     username_norm = username.strip().lower()
-    password = _demo_password()
+    password = obtener_demo_password()
     existente = (
         db.query(Usuario)
         .filter(func.lower(Usuario.username) == username_norm)
@@ -123,6 +119,7 @@ def asegurar_usuario_admin() -> None:
             "Usuarios demo sincronizados (dueno, admin, vendedor, cobrador) — empresa '%s'.",
             empresa.nombre,
         )
+        log_huella_demo_password_configurada(logger, contexto="Bootstrap")
         _confirmar_demo_listo(db)
     except ClientResponseError as exc:
         db.rollback()

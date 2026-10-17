@@ -7,12 +7,38 @@ import pytest
 from fastapi import HTTPException
 from pocketbase.errors import ClientResponseError
 
-from app.api.auth import get_password_hash, verify_password
+from app.api.auth import (
+    get_password_hash,
+    huella_contraseña_log,
+    obtener_demo_password,
+    verify_password,
+)
 from app.api.auth_router import LoginRequest, login
 from app.core.pb_ready import PocketBaseNoDisponible
 from app.core.pb_orm.ids import es_id_pocketbase, resolver_id_registro
 from app.core.deps import obtener_usuario_actual
 from app.models.core import RolUsuario, Usuario
+
+
+def test_demo_password_hash_misma_funcion_que_verificacion():
+    clave = "mi_clave_demo"
+    hashed = get_password_hash(clave)
+    assert verify_password(clave, hashed)
+    assert not verify_password(clave + "x", hashed)
+
+
+def test_obtener_demo_password_strip_entorno(monkeypatch):
+    monkeypatch.setenv("DEMO_PASSWORD", "  abcdef  ")
+    assert obtener_demo_password() == "abcdef"
+    monkeypatch.delenv("DEMO_PASSWORD", raising=False)
+    assert obtener_demo_password() == "123456"
+
+
+def test_huella_contraseña_sin_revelar_contenido():
+    ln, pref = huella_contraseña_log("123456")
+    assert ln == 6
+    assert len(pref) == 6
+    assert pref.isalnum()
 
 
 def test_bootstrap_y_login_usan_mismo_hash_bcrypt():
