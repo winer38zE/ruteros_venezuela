@@ -21,7 +21,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
 
   bool _ocultarPassword = true;
-  bool _puedeHuella = false;
+  /// Lector biométrico en el dispositivo (el botón siempre visible si true).
+  bool _dispositivoConHuella = false;
+  /// Sesión/credenciales ya guardadas para entrar con huella.
+  bool _huellaHabilitada = false;
   String? _diagnosticoConexion;
   bool _probandoConexion = false;
   double? _tasaBcv;
@@ -47,10 +50,12 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _cargarOpcionesBiometria() async {
     final auth = context.read<AppState>().auth;
     final credenciales = await auth.biometric.leerCredenciales();
-    final puede = await auth.biometric.puedeIngresarConBiometria();
+    final conLector = await auth.biometric.soportaBiometria();
+    final habilitada = await auth.biometric.puedeIngresarConBiometria();
     if (!mounted) return;
     setState(() {
-      _puedeHuella = puede;
+      _dispositivoConHuella = conLector;
+      _huellaHabilitada = habilitada;
       if (credenciales != null && _correoCtrl.text.isEmpty) {
         _correoCtrl.text = credenciales.correo;
       }
@@ -67,6 +72,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _ingresarConBiometria() async {
+    if (!_huellaHabilitada) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Primero ingresa con contraseña y acepta habilitar el inicio con huella.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
     await context.read<AppState>().loginConBiometria();
     if (!mounted) return;
     await _cargarOpcionesBiometria();
@@ -76,13 +93,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _ofrecerActivarHuella(String correo, String password) async {
     final auth = context.read<AppState>().auth;
     if (!await auth.biometric.soportaBiometria()) return;
+    if (await auth.biometric.tieneSesionSegura()) return;
     if (!mounted) return;
     final activar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Huella dactilar'),
         content: const Text(
-          '¿Activar ingreso con huella dactilar para este usuario en este dispositivo?',
+          '¿Deseas habilitar el inicio de sesión con huella?',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Ahora no')),
@@ -326,6 +344,33 @@ class _LoginScreenState extends State<LoginScreen> {
                                 textAlign: TextAlign.center,
                               ),
                             ),
+                          if (_dispositivoConHuella) ...[
+                            SizedBox(
+                              width: double.infinity,
+                              height: 56,
+                              child: FilledButton.tonalIcon(
+                                onPressed: state.cargando ? null : _ingresarConBiometria,
+                                icon: const Icon(Icons.fingerprint_rounded, size: 28),
+                                label: const Text(
+                                  'Ingresar con Huella',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (!_huellaHabilitada)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                                child: Text(
+                                  'Tras tu primer ingreso con contraseña podrás activar la huella.',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            const SizedBox(height: 12),
+                          ],
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
@@ -340,17 +385,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               label: Text(state.cargando ? 'Conectando...' : 'Ingresar con contraseña'),
                             ),
                           ),
-                          if (_puedeHuella) ...[
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: state.cargando ? null : _ingresarConBiometria,
-                                icon: const Icon(Icons.fingerprint_rounded),
-                                label: const Text('Ingresar con huella dactilar'),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),

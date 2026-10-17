@@ -21,25 +21,39 @@ class BiometricService {
   final LocalAuthentication _localAuth;
   final FlutterSecureStorage _storage;
 
+  /// True si el dispositivo puede mostrar el prompt de huella/rostro.
   Future<bool> soportaBiometria() async {
     try {
-      final soportado = await _localAuth.isDeviceSupported();
-      if (!soportado) return false;
-      final puede = await _localAuth.canCheckBiometrics;
+      if (await _localAuth.isDeviceSupported()) return true;
+      if (await _localAuth.canCheckBiometrics) return true;
       final disponibles = await _localAuth.getAvailableBiometrics();
-      return puede || disponibles.isNotEmpty;
+      return disponibles.isNotEmpty;
     } catch (_) {
       return false;
     }
   }
 
   Future<bool> autenticar() async {
+    const razon = 'Confirma tu huella para entrar a ED NET PRO';
+    const optsHuella = AuthenticationOptions(
+      biometricOnly: true,
+      stickyAuth: true,
+      useErrorDialogs: true,
+    );
+    try {
+      final ok = await _localAuth.authenticate(
+        localizedReason: razon,
+        options: optsHuella,
+      );
+      if (ok) return true;
+    } catch (_) {}
     try {
       return await _localAuth.authenticate(
-        localizedReason: 'Ingresar con huella dactilar o rostro',
+        localizedReason: razon,
         options: const AuthenticationOptions(
-          biometricOnly: true,
+          biometricOnly: false,
           stickyAuth: true,
+          useErrorDialogs: true,
         ),
       );
     } catch (_) {
