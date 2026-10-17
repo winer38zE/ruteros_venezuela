@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../config/api_config.dart';
-import '../services/biometric_service.dart';
+import '../services/api_service.dart';
+import '../services/tasas_login_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_background.dart';
 import '../widgets/glass_container.dart';
@@ -17,17 +19,22 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _correoCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _bio = BiometricService();
 
   bool _ocultarPassword = true;
-  bool _tieneSesionGuardada = false;
-  bool _biometriaDisponible = false;
+  bool _puedeHuella = false;
   String? _diagnosticoConexion;
   bool _probandoConexion = false;
+  double? _tasaBcv;
+  double? _tasaParalelo;
+  final _fmtTasa = NumberFormat('#,##0.00', 'es_VE');
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _cargarOpcionesBiometria());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarOpcionesBiometria();
+      _cargarTasasLogin();
+    });
   }
 
   @override
@@ -38,24 +45,37 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _cargarOpcionesBiometria() async {
-    final credenciales = await _bio.leerCredenciales();
-    final soporta = await _bio.soportaBiometria();
+    final auth = context.read<AppState>().auth;
+    final credenciales = await auth.biometric.leerCredenciales();
+    final puede = await auth.biometric.puedeIngresarConBiometria();
     if (!mounted) return;
     setState(() {
-      _tieneSesionGuardada = credenciales != null;
-      _biometriaDisponible = soporta;
+      _puedeHuella = puede;
       if (credenciales != null && _correoCtrl.text.isEmpty) {
         _correoCtrl.text = credenciales.correo;
       }
     });
   }
 
+  Future<void> _cargarTasasLogin() async {
+    final cache = await TasasLoginCache.leer();
+    if (!mounted) return;
+    setState(() {
+      _tasaBcv = cache.bcv;
+      _tasaParalelo = cache.paralelo;
+    });
+  }
+
   Future<void> _ingresarConBiometria() async {
     await context.read<AppState>().loginConBiometria();
+    if (!mounted) return;
+    await _cargarOpcionesBiometria();
+    await _cargarTasasLogin();
   }
 
   Future<void> _ofrecerActivarHuella(String correo, String password) async {
-    if (!await _bio.soportaBiometria()) return;
+    final auth = context.read<AppState>().auth;
+    if (!await auth.biometric.soportaBiometria()) return;
     if (!mounted) return;
     final activar = await showDialog<bool>(
       context: context,
@@ -71,9 +91,9 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
     if (activar == true) {
-      await _bio.guardarCredenciales(correo: correo, password: password);
+      await auth.activarAccesoBiometrico(correo: correo, password: password);
     } else {
-      await _bio.borrarCredenciales();
+      await auth.biometric.borrarTodoAccesoBiometrico();
     }
     await _cargarOpcionesBiometria();
   }
@@ -119,12 +139,79 @@ class _LoginScreenState extends State<LoginScreen> {
     final ok = await context.read<AppState>().login(correo, password);
     if (!mounted || !ok) return;
     await _ofrecerActivarHuella(correo, password);
+    await _cargarTasasLogin();
+  }
+
+  String _textoTasa(double? valor) {
+    if (valor == null) return '—';
+    return '${_fmtTasa.format(valor)} Bs';
+  }
+
+  Widget _panelTasas() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GlassContainer(
+        accentColor: AppColors.neonCyan,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          children: [
+            Text(
+              'Tasa de cambio (referencia)',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('USD BCV (oficial)', style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        _textoTasa(_tasaBcv),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: AppColors.neonCyan,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('USD paralelo', style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        _textoTasa(_tasaParalelo),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: AppColors.neonBlue,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (_tasaBcv == null && _tasaParalelo == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Tras el primer ingreso se actualizarán aquí.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final mostrarHuella = _tieneSesionGuardada && _biometriaDisponible;
 
     return Scaffold(
       body: FuturisticBackground(
@@ -196,7 +283,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           textAlign: TextAlign.center,
                         ),
                       ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 16),
+                    _panelTasas(),
                     GlassContainer(
                       accentColor: AppColors.neonBlue,
                       padding: const EdgeInsets.all(20),
@@ -231,7 +319,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           if (state.error != null)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.only(top: 12, bottom: 12),
                               child: Text(
                                 state.error!,
                                 style: const TextStyle(color: Color(0xFFEF4444)),
@@ -252,7 +340,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               label: Text(state.cargando ? 'Conectando...' : 'Ingresar con contraseña'),
                             ),
                           ),
-                          if (mostrarHuella) ...[
+                          if (_puedeHuella) ...[
                             const SizedBox(height: 12),
                             SizedBox(
                               width: double.infinity,
