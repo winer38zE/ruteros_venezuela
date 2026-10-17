@@ -9,6 +9,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.auth import huella_contraseña_log, verify_password
+from app.core.usuario_password_hash import (
+    hash_desde_modelo_usuario,
+    nombre_campo_hash_lectura_login,
+    prefijo_bcrypt,
+)
 from app.core.config import POCKETBASE_URL
 from app.core.db import autenticar_admin_pocketbase, get_db
 from app.core.pb_ready import PocketBaseNoDisponible
@@ -90,13 +95,23 @@ def _buscar_usuario_por_username(db: Session, username: str) -> Usuario | None:
     return _consultar_con_reintentos(db, clave)
 
 
-def _log_huella_clave_login_fallido(username: str, password: str) -> None:
-    longitud, prefijo = huella_contraseña_log(password)
+def _log_login_401(
+    username: str,
+    password: str,
+    *,
+    hash_guardado: str | None = None,
+) -> None:
+    longitud_clave, sha_prefijo = huella_contraseña_log(password)
+    hash_str = hash_guardado or ""
     logger.warning(
-        "Login fallido: huella clave recibida (username=%r) longitud=%d, sha256_prefijo=%s",
+        "Login 401: username=%r clave_longitud=%d clave_sha256_prefijo=%s "
+        "hash_campo=%r hash_longitud=%d hash_bcrypt_prefijo=%r",
         username,
-        longitud,
-        prefijo,
+        longitud_clave,
+        sha_prefijo,
+        nombre_campo_hash_lectura_login(),
+        len(hash_str),
+        prefijo_bcrypt(hash_str),
     )
 
 
@@ -137,7 +152,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
                 exc.status,
                 username_entrada,
             )
-            _log_huella_clave_login_fallido(username_entrada, body.password)
+            _log_login_401(username_entrada, body.password)
             registrar_fallo_login(request, username_entrada)
             raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
         raise _error_base_datos(exc) from exc
@@ -146,7 +161,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     if usuario is None:
         logger.warning("Login fallido: usuario no encontrado (username=%r)", username_entrada)
-        _log_huella_clave_login_fallido(username_entrada, body.password)
+        _log_login_401(username_entrada, body.password)
         registrar_fallo_login(request, username_entrada)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
@@ -156,33 +171,28 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             usuario.id,
             usuario.username,
         )
-        _log_huella_clave_login_fallido(username_entrada, body.password)
+        _log_login_401(username_entrada, body.password, hash_guardado=hash_desde_modelo_usuario(usuario))
         registrar_fallo_login(request, username_entrada)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
-    hash_guardado = usuario.password_hash if isinstance(usuario.password_hash, str) else str(
-        usuario.password_hash or ""
-    )
+    hash_guardado = hash_desde_modelo_usuario(usuario)
     valido = False
     try:
         valido = verify_password(body.password, hash_guardado)
     except Exception:
         logger.warning(
-            "Login fallido: hash de contraseña inválido (id=%s, username=%r, bcrypt_prefijo=%r)",
+            "Login fallido: hash de contraseña inválido (id=%s, username=%r)",
             usuario.id,
             usuario.username,
-            hash_guardado[:7] if hash_guardado else "",
         )
         valido = False
 
     if not valido:
-        logger.warning(
-            "Login fallido: contraseña incorrecta (id=%s, username=%r, bcrypt_prefijo=%r)",
-            usuario.id,
-            usuario.username,
-            hash_guardado[:7] if hash_guardado else "",
+        _log_login_401(
+            username_entrada,
+            body.password,
+            hash_guardado=hash_guardado,
         )
-        _log_huella_clave_login_fallido(username_entrada, body.password)
         registrar_fallo_login(request, username_entrada)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
