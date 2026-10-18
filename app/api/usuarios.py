@@ -82,6 +82,8 @@ def actualizar_usuario(
         user.activo = body.activo
     if body.password:
         user.password_hash = get_password_hash(body.password)
+    if body.sueldo_base_usd is not None:
+        user.sueldo_base_usd = body.sueldo_base_usd
 
     db.commit()
     db.refresh(user)

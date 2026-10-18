@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import require_dueno
-from app.models.core import MovimientoFinanciero, Usuario
+from app.models.core import MovimientoFinanciero, PagoNomina, Usuario
 from app.schemas.core import (
     ConfiguracionNominaUpdate,
     ConfiguracionNominaResponse,
@@ -13,6 +13,10 @@ from app.schemas.core import (
     ResumenFinancieroResponse,
     NominaCalculadaResponse,
     AprobarPagoNominaRequest,
+    PeriodoNominaResponse,
+    PagoNominaResponse,
+    GenerarCorteNominaRequest,
+    MarcarPagoNominaRealizadoRequest,
 )
 from app.services.finanzas import (
     _obtener_config_nomina,
@@ -20,6 +24,11 @@ from app.services.finanzas import (
     calcular_nomina,
     registrar_movimiento,
     aprobar_pago_nomina,
+)
+from app.services.nomina import (
+    generar_corte_nomina,
+    marcar_pago_nomina_realizado,
+    periodo_nomina_actual,
 )
 
 router = APIRouter()
@@ -148,3 +157,101 @@ def aprobar_pago(
         return _serializar_movimiento(mov)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _serializar_pago_nomina(p: PagoNomina) -> dict:
+    nombre = p.usuario.nombre if p.usuario else ""
+    rol = p.rol.value if hasattr(p.rol, "value") else str(p.rol)
+    estado = p.estado.value if hasattr(p.estado, "value") else str(p.estado)
+    return {
+        "id": p.id,
+        "empresa_id": p.empresa_id,
+        "usuario_id": p.usuario_id,
+        "empleado_nombre": nombre,
+        "rol": rol,
+        "periodo_desde": p.periodo_desde,
+        "periodo_hasta": p.periodo_hasta,
+        "num_ventas": p.num_ventas,
+        "total_cobrado_usd": float(p.total_cobrado_usd),
+        "sueldo_base_usd": float(p.sueldo_base_usd),
+        "comision_usd": float(p.comision_usd),
+        "total_calculado_usd": float(p.total_calculado_usd),
+        "estado": estado,
+        "movimiento_financiero_id": p.movimiento_financiero_id,
+        "fecha_pago": p.fecha_pago,
+        "notas": p.notas,
+        "fecha_creacion": p.fecha_creacion,
+    }
+
+
+@router.get("/nomina/periodo-actual", response_model=PeriodoNominaResponse)
+def periodo_actual_nomina(
+    db: Session = Depends(get_db),
+    dueno: Usuario = Depends(require_dueno),
+):
+    inicio, fin, cfg = periodo_nomina_actual(db, dueno.empresa_id)
+    db.commit()
+    return {
+        "periodo_desde": inicio,
+        "periodo_hasta": fin,
+        "dias_periodo": int(cfg.dias_periodo_nomina or 8),
+    }
+
+
+@router.get("/nomina/cortes", response_model=List[PagoNominaResponse])
+def listar_cortes_nomina(
+    db: Session = Depends(get_db),
+    dueno: Usuario = Depends(require_dueno),
+):
+    items = (
+        db.query(PagoNomina)
+        .options(joinedload(PagoNomina.usuario))
+        .filter(PagoNomina.empresa_id == dueno.empresa_id)
+        .order_by(PagoNomina.periodo_desde.desc(), PagoNomina.fecha_creacion.desc())
+        .all()
+    )
+    return [_serializar_pago_nomina(p) for p in items]
+
+
+@router.post("/nomina/generar-corte", response_model=List[PagoNominaResponse])
+def generar_corte(
+    body: GenerarCorteNominaRequest,
+    db: Session = Depends(get_db),
+    dueno: Usuario = Depends(require_dueno),
+):
+    pagos = generar_corte_nomina(
+        db,
+        dueno.empresa_id,
+        body.periodo_desde,
+        body.periodo_hasta,
+    )
+    db.commit()
+    for p in pagos:
+        db.refresh(p)
+        if p.usuario is None:
+            p.usuario = db.query(Usuario).filter(Usuario.id == p.usuario_id).first()
+    return [_serializar_pago_nomina(p) for p in pagos]
+
+
+@router.post("/nomina/cortes/{pago_id}/marcar-realizado", response_model=PagoNominaResponse)
+def marcar_corte_realizado(
+    pago_id: str,
+    body: MarcarPagoNominaRealizadoRequest,
+    db: Session = Depends(get_db),
+    dueno: Usuario = Depends(require_dueno),
+):
+    try:
+        pago = marcar_pago_nomina_realizado(
+            db,
+            dueno.empresa_id,
+            dueno.id,
+            pago_id,
+            body.notas,
+        )
+        db.commit()
+        db.refresh(pago)
+        if pago.usuario is None:
+            pago.usuario = db.query(Usuario).filter(Usuario.id == pago.usuario_id).first()
+        return _serializar_pago_nomina(pago)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
