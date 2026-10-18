@@ -97,6 +97,14 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("proveedor_id", "CHAR(36)"),
             ("genera_deuda_proveedor", "BOOLEAN DEFAULT 0"),
         ],
+        "usuarios": [
+            ("sueldo_base_usd", "NUMERIC(10, 2) DEFAULT 0"),
+        ],
+        "configuracion_nomina": [
+            ("comision_vendedor_por_venta_usd", "NUMERIC(10, 2) DEFAULT 10"),
+            ("dias_periodo_nomina", "INTEGER DEFAULT 8"),
+            ("fecha_ancla_periodo", "DATE"),
+        ],
     }
 
     with engine.begin() as conn:
@@ -129,6 +137,9 @@ def aplicar_migraciones_sqlite(engine) -> None:
         _ampliar_cuentas_bancarias(conn)
         if _tabla_sqlite(conn, "empresas") and _tabla_sqlite(conn, "cuentas_bancarias"):
             _sembrar_cuentas_bancarias(conn)
+
+        _asegurar_tabla_cuentas_bancarias_empleados(conn)
+        _asegurar_tabla_pagos_nomina(conn)
 
 
 def _tabla_sqlite(conn, nombre: str) -> bool:
@@ -274,3 +285,57 @@ def _rellenar_dia_y_orden_ruta(conn) -> None:
             ),
             {"dia": nuevo_dia, "orden": nuevo_orden, "id": cliente_id},
         )
+
+
+def _asegurar_tabla_cuentas_bancarias_empleados(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS cuentas_bancarias_empleados (
+                id CHAR(36) PRIMARY KEY,
+                empresa_id CHAR(36) NOT NULL,
+                usuario_id CHAR(36) NOT NULL UNIQUE,
+                banco VARCHAR(120) NOT NULL,
+                tipo_cuenta VARCHAR(40) NOT NULL,
+                numero_cuenta VARCHAR(64),
+                titular VARCHAR(160) NOT NULL,
+                documento_identidad VARCHAR(32) NOT NULL,
+                canal VARCHAR(20) NOT NULL DEFAULT 'transferencia',
+                telefono_pago_movil VARCHAR(20),
+                activa BOOLEAN NOT NULL DEFAULT 1,
+                verificada_por_dueno BOOLEAN NOT NULL DEFAULT 0,
+                fecha_actualizacion DATETIME,
+                fecha_creacion DATETIME
+            )
+            """
+        )
+    )
+
+
+def _asegurar_tabla_pagos_nomina(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS pagos_nomina (
+                id CHAR(36) PRIMARY KEY,
+                empresa_id CHAR(36) NOT NULL,
+                usuario_id CHAR(36) NOT NULL,
+                rol VARCHAR(20) NOT NULL,
+                periodo_desde DATE NOT NULL,
+                periodo_hasta DATE NOT NULL,
+                num_ventas INTEGER NOT NULL DEFAULT 0,
+                total_cobrado_usd NUMERIC(12, 2) NOT NULL DEFAULT 0,
+                sueldo_base_usd NUMERIC(10, 2) NOT NULL DEFAULT 0,
+                comision_usd NUMERIC(12, 2) NOT NULL DEFAULT 0,
+                total_calculado_usd NUMERIC(12, 2) NOT NULL DEFAULT 0,
+                estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+                movimiento_financiero_id CHAR(36),
+                fecha_pago DATETIME,
+                pagado_por_id CHAR(36),
+                notas VARCHAR(500),
+                fecha_creacion DATETIME,
+                UNIQUE (empresa_id, usuario_id, periodo_desde, periodo_hasta)
+            )
+            """
+        )
+    )

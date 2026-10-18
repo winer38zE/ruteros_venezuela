@@ -131,6 +131,16 @@ class MetodoPagoSalida(str, enum.Enum):
     OTRO = "otro"
 
 
+class EstadoPagoNomina(str, enum.Enum):
+    PENDIENTE = "pendiente"
+    REALIZADO = "realizado"
+
+
+class CanalCuentaEmpleado(str, enum.Enum):
+    TRANSFERENCIA = "transferencia"
+    PAGO_MOVIL = "pago_movil"
+
+
 # ---------- EMPRESA (tenant) ----------
 class Empresa(Base):
     __tablename__ = "empresas"
@@ -172,6 +182,32 @@ class CuentaBancaria(Base):
     empresa = relationship("Empresa", back_populates="cuentas_bancarias")
 
 
+class CuentaBancariaEmpleado(Base):
+    """Cuenta bancaria del empleado (vendedor/cobrador) para recibir nómina."""
+
+    __tablename__ = "cuentas_bancarias_empleados"
+    __table_args__ = (
+        Index("ix_cuenta_bancaria_empleado_usuario", "usuario_id"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False, unique=True)
+    banco = Column(String(120), nullable=False)
+    tipo_cuenta = Column(String(40), nullable=False)
+    numero_cuenta = Column(String(64), nullable=True)
+    titular = Column(String(160), nullable=False)
+    documento_identidad = Column(String(32), nullable=False)
+    canal = Column(String(20), nullable=False, default="transferencia")
+    telefono_pago_movil = Column(String(20), nullable=True)
+    activa = Column(Boolean, nullable=False, default=True)
+    verificada_por_dueno = Column(Boolean, nullable=False, default=False)
+    fecha_actualizacion = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    usuario = relationship("Usuario", back_populates="cuenta_bancaria_empleado")
+
+
 # ---------- USUARIO ----------
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -183,10 +219,16 @@ class Usuario(Base):
     telefono = Column(String, nullable=True)
     rol = Column(Enum(RolUsuario), nullable=False)
     password_hash = Column(String(255), nullable=False)
+    sueldo_base_usd = Column(Numeric(10, 2), nullable=False, default=0)
     activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     empresa = relationship("Empresa", back_populates="usuarios")
+    cuenta_bancaria_empleado = relationship(
+        "CuentaBancariaEmpleado",
+        back_populates="usuario",
+        uselist=False,
+    )
 
 
 # ---------- CLIENTE ----------
@@ -591,9 +633,50 @@ class ConfiguracionNomina(Base):
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, unique=True)
     comision_vendedor_por_articulo_usd = Column(Numeric(10, 2), nullable=False, default=10.00)
+    comision_vendedor_por_venta_usd = Column(Numeric(10, 2), nullable=False, default=10.00)
     comision_cobrador_porcentaje = Column(Numeric(5, 2), nullable=False, default=10.00)
     sueldo_base_cobrador_usd = Column(Numeric(10, 2), nullable=False, default=0.00)
+    dias_periodo_nomina = Column(Integer, nullable=False, default=8)
+    fecha_ancla_periodo = Column(Date, nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+
+class PagoNomina(Base):
+    """Corte de nómina por periodo (p. ej. cada 8 días) por empleado."""
+
+    __tablename__ = "pagos_nomina"
+    __table_args__ = (
+        UniqueConstraint(
+            "empresa_id",
+            "usuario_id",
+            "periodo_desde",
+            "periodo_hasta",
+            name="uq_pago_nomina_empleado_periodo",
+        ),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False, index=True)
+    rol = Column(Enum(RolUsuario), nullable=False)
+    periodo_desde = Column(Date, nullable=False)
+    periodo_hasta = Column(Date, nullable=False)
+    num_ventas = Column(Integer, nullable=False, default=0)
+    total_cobrado_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    sueldo_base_usd = Column(Numeric(10, 2), nullable=False, default=0)
+    comision_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    total_calculado_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    estado = Column(Enum(EstadoPagoNomina), nullable=False, default=EstadoPagoNomina.PENDIENTE)
+    movimiento_financiero_id = Column(
+        GUID(), ForeignKey("movimientos_financieros.id"), nullable=True
+    )
+    fecha_pago = Column(DateTime, nullable=True)
+    pagado_por_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=True)
+    notas = Column(String(500), nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    usuario = relationship("Usuario", foreign_keys=[usuario_id])
+    movimiento_financiero = relationship("MovimientoFinanciero", foreign_keys=[movimiento_financiero_id])
 
 
 class Proveedor(Base):

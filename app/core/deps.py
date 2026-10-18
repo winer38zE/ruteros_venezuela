@@ -83,6 +83,17 @@ def require_vendedor_o_superior(
     return usuario
 
 
+def require_vendedor_o_cobrador(
+    usuario: Usuario = Depends(obtener_usuario_actual),
+) -> Usuario:
+    if usuario.rol not in (RolUsuario.VENDEDOR, RolUsuario.COBRADOR):
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso restringido a VENDEDOR o COBRADOR",
+        )
+    return usuario
+
+
 def require_cobrador_o_superior(
     usuario: Usuario = Depends(obtener_usuario_actual),
 ) -> Usuario:

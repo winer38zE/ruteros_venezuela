@@ -1,7 +1,7 @@
 from decimal import Decimal
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from app.models.core import (
     ConfiguracionNomina,
     MovimientoFinanciero,
@@ -11,10 +11,9 @@ from app.models.core import (
     MetodoPagoSalida,
     Usuario,
     RolUsuario,
-    Venta,
     Cobro,
-    DetalleVenta,
 )
+from app.services.nomina import calcular_linea_empleado, _rango_datetime
 
 
 def _d(val) -> Decimal:
@@ -69,9 +68,6 @@ def calcular_nomina(
     fecha_hasta: Optional[datetime] = None,
 ) -> dict:
     cfg = _obtener_config_nomina(db, empresa_id)
-    comision_art = _d(cfg.comision_vendedor_por_articulo_usd)
-    pct_cobrador = _d(cfg.comision_cobrador_porcentaje)
-    sueldo_base = _d(cfg.sueldo_base_cobrador_usd)
 
     empleados = (
         db.query(Usuario)
@@ -83,38 +79,21 @@ def calcular_nomina(
         .all()
     )
 
-    ventas_q = db.query(Venta).options(joinedload(Venta.detalles)).filter(
-        Venta.empresa_id == empresa_id
-    )
-    ventas_q = _filtro_fecha(ventas_q, Venta.fecha, fecha_desde, fecha_hasta)
-    ventas = ventas_q.all()
+    if fecha_desde is None or fecha_hasta is None:
+        from datetime import date as date_cls
 
-    cobros_q = db.query(Cobro).filter(Cobro.empresa_id == empresa_id)
-    cobros_q = _filtro_fecha(cobros_q, Cobro.fecha, fecha_desde, fecha_hasta)
-    cobros = cobros_q.all()
+        from app.services.nomina import periodo_nomina_para_fecha
+
+        inicio, fin = periodo_nomina_para_fecha(cfg, date_cls.today())
+        fecha_desde, fecha_hasta = _rango_datetime(inicio, fin)
 
     detalle: List[dict] = []
 
     for emp in empleados:
-        articulos = 0
-        comision_ventas = _d("0")
-        total_cobrado = _d("0")
-        comision_cobros = _d("0")
-        base = _d("0")
-
-        ventas_emp = [v for v in ventas if v.vendedor_id == emp.id]
-        for v in ventas_emp:
-            for d in v.detalles:
-                articulos += d.cantidad
-        comision_ventas = _d(articulos) * comision_art
-
-        if emp.rol == RolUsuario.COBRADOR:
-            base = sueldo_base
-            cobros_emp = [c for c in cobros if c.cobrador_id == emp.id]
-            total_cobrado = sum(_d(c.monto_usd) for c in cobros_emp)
-            comision_cobros = total_cobrado * pct_cobrador / _d("100")
-
-        total_calc = comision_ventas + comision_cobros + base
+        linea = calcular_linea_empleado(
+            db, empresa_id, emp, cfg, fecha_desde, fecha_hasta
+        )
+        total_calc = _d(linea["total_calculado_usd"])
         pagado = _pagos_empleado(db, empresa_id, emp.id, fecha_desde, fecha_hasta)
         pendiente = max(_d("0"), total_calc - pagado)
 
@@ -123,14 +102,17 @@ def calcular_nomina(
                 "empleado_id": str(emp.id),
                 "empleado_nombre": emp.nombre,
                 "rol": emp.rol.value,
-                "articulos_vendidos": articulos,
-                "comision_ventas_usd": float(comision_ventas),
-                "total_cobrado_usd": float(total_cobrado),
-                "comision_cobros_usd": float(comision_cobros),
-                "sueldo_base_usd": float(base),
+                "num_ventas": linea["num_ventas"],
+                "articulos_vendidos": linea["articulos_vendidos"],
+                "comision_ventas_usd": linea["comision_ventas_usd"],
+                "total_cobrado_usd": linea["total_cobrado_usd"],
+                "comision_cobros_usd": linea["comision_cobros_usd"],
+                "sueldo_base_usd": linea["sueldo_base_usd"],
                 "total_calculado_usd": float(total_calc),
                 "total_pagado_usd": float(pagado),
                 "pendiente_usd": float(pendiente),
+                "tiene_cuenta_bancaria": linea["tiene_cuenta_bancaria"],
+                "cuenta_verificada": linea["cuenta_verificada"],
             })
 
     total_pendiente = sum(d["pendiente_usd"] for d in detalle)
@@ -138,8 +120,9 @@ def calcular_nomina(
     return {
         "periodo_desde": fecha_desde.isoformat() if fecha_desde else None,
         "periodo_hasta": fecha_hasta.isoformat() if fecha_hasta else None,
-        "comision_vendedor_por_articulo_usd": float(comision_art),
-        "comision_cobrador_porcentaje": float(pct_cobrador),
+        "comision_vendedor_por_articulo_usd": float(cfg.comision_vendedor_por_articulo_usd),
+        "comision_vendedor_por_venta_usd": float(cfg.comision_vendedor_por_venta_usd),
+        "comision_cobrador_porcentaje": float(cfg.comision_cobrador_porcentaje),
         "empleados": detalle,
         "total_pendiente_usd": round(total_pendiente, 2),
     }

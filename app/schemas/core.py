@@ -67,6 +67,7 @@ class UsuarioResponse(BaseModel):
     rol: str
     activo: bool
     telefono: Optional[str] = None
+    sueldo_base_usd: float = 0.0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,6 +76,36 @@ class UsuarioUpdate(BaseModel):
     telefono: Optional[str] = None
     activo: Optional[bool] = None
     password: Optional[str] = None
+    sueldo_base_usd: Optional[float] = Field(default=None, ge=0)
+
+
+class CuentaBancariaEmpleadoUpsert(BaseModel):
+    banco: str = Field(min_length=1, max_length=120)
+    tipo_cuenta: str = Field(min_length=1, max_length=40)
+    numero_cuenta: Optional[str] = Field(default=None, max_length=64)
+    titular: str = Field(min_length=1, max_length=160)
+    documento_identidad: str = Field(min_length=1, max_length=32)
+    canal: str = Field(default="transferencia", pattern="^(transferencia|pago_movil)$")
+    telefono_pago_movil: Optional[str] = Field(default=None, max_length=20)
+
+
+class CuentaBancariaEmpleadoResponse(BaseModel):
+    id: RecordId
+    empresa_id: RecordId
+    usuario_id: RecordId
+    banco: str
+    tipo_cuenta: str
+    numero_cuenta: Optional[str] = None
+    titular: str
+    documento_identidad: str
+    canal: str
+    telefono_pago_movil: Optional[str] = None
+    activa: bool
+    verificada_por_dueno: bool
+    fecha_actualizacion: Optional[datetime] = None
+    configurado: bool = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 # --- CLIENTES ---
 class ClienteCreate(BaseModel):
@@ -787,14 +818,20 @@ class AsientoContableResponse(BaseModel):
 # --- FINANZAS / NÓMINA ---
 class ConfiguracionNominaUpdate(BaseModel):
     comision_vendedor_por_articulo_usd: Optional[float] = None
+    comision_vendedor_por_venta_usd: Optional[float] = None
     comision_cobrador_porcentaje: Optional[float] = None
     sueldo_base_cobrador_usd: Optional[float] = None
+    dias_periodo_nomina: Optional[int] = Field(default=None, ge=1, le=31)
+    fecha_ancla_periodo: Optional[date] = None
 
 class ConfiguracionNominaResponse(BaseModel):
     empresa_id: RecordId
     comision_vendedor_por_articulo_usd: float
+    comision_vendedor_por_venta_usd: float
     comision_cobrador_porcentaje: float
     sueldo_base_cobrador_usd: float
+    dias_periodo_nomina: int
+    fecha_ancla_periodo: Optional[date] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -852,6 +889,7 @@ class DetalleNominaEmpleado(BaseModel):
     empleado_id: RecordId
     empleado_nombre: str
     rol: str
+    num_ventas: int = 0
     articulos_vendidos: int = 0
     comision_ventas_usd: float = 0.0
     total_cobrado_usd: float = 0.0
@@ -860,11 +898,14 @@ class DetalleNominaEmpleado(BaseModel):
     total_calculado_usd: float
     total_pagado_usd: float
     pendiente_usd: float
+    tiene_cuenta_bancaria: bool = False
+    cuenta_verificada: bool = False
 
 class NominaCalculadaResponse(BaseModel):
     periodo_desde: Optional[str] = None
     periodo_hasta: Optional[str] = None
     comision_vendedor_por_articulo_usd: float
+    comision_vendedor_por_venta_usd: float
     comision_cobrador_porcentaje: float
     empleados: List[DetalleNominaEmpleado]
     total_pendiente_usd: float
@@ -875,6 +916,41 @@ class AprobarPagoNominaRequest(BaseModel):
     periodo_desde: Optional[datetime] = None
     periodo_hasta: Optional[datetime] = None
     descripcion: Optional[str] = None
+
+
+class PeriodoNominaResponse(BaseModel):
+    periodo_desde: date
+    periodo_hasta: date
+    dias_periodo: int
+
+
+class PagoNominaResponse(BaseModel):
+    id: RecordId
+    empresa_id: RecordId
+    usuario_id: RecordId
+    empleado_nombre: str
+    rol: str
+    periodo_desde: date
+    periodo_hasta: date
+    num_ventas: int
+    total_cobrado_usd: float
+    sueldo_base_usd: float
+    comision_usd: float
+    total_calculado_usd: float
+    estado: str
+    movimiento_financiero_id: Optional[RecordId] = None
+    fecha_pago: Optional[datetime] = None
+    notas: Optional[str] = None
+    fecha_creacion: datetime
+
+
+class GenerarCorteNominaRequest(BaseModel):
+    periodo_desde: Optional[date] = None
+    periodo_hasta: Optional[date] = None
+
+
+class MarcarPagoNominaRealizadoRequest(BaseModel):
+    notas: Optional[str] = Field(default=None, max_length=500)
 
 # --- PROVEEDORES ---
 class ProveedorCreate(BaseModel):

@@ -18,6 +18,7 @@ from app.api import (
     empresas, clientes, usuarios, productos, ventas,
     tasas_cambio, cobros, configuracion_fiscal, inventario, contabilidad, finanzas,
     proveedores,
+    perfil,
     auth_router,
     rutas,
     whatsapp,
@@ -67,6 +68,7 @@ app.include_router(health_router.router)
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(empresas.router, prefix="/api/v1/empresas", tags=["Empresas"])
 app.include_router(usuarios.router, prefix="/api/v1/usuarios", tags=["Usuarios"])
+app.include_router(perfil.router, prefix="/api/v1/perfil", tags=["Perfil empleado"])
 app.include_router(proveedores.router, prefix="/api/v1/proveedores", tags=["Proveedores"])
 app.include_router(clientes.router, prefix="/api/v1/clientes", tags=["Clientes"])
 app.include_router(productos.router, prefix="/api/v1/productos", tags=["Productos"])
