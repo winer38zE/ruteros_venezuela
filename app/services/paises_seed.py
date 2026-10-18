@@ -5,6 +5,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.data.bancos_catalogo import fusionar_configuracion_bancaria
 from app.data.catalogo_paises import CATALOGO_PAISES, PAIS_ISO_POR_DEFECTO
 from app.models.core import Pais
 
@@ -21,6 +22,10 @@ def asegurar_catalogo_paises(db: Session) -> list[Pais]:
     guardados: list[Pais] = []
     for entrada in CATALOGO_PAISES:
         iso = entrada["codigo_iso"]
+        config_bancaria = fusionar_configuracion_bancaria(
+            entrada["configuracion_bancaria"],
+            iso,
+        )
         existente = obtener_pais_por_iso(db, iso)
         if existente is None:
             existente = Pais(
@@ -31,7 +36,7 @@ def asegurar_catalogo_paises(db: Session) -> list[Pais]:
                 locale=entrada.get("locale"),
                 zona_horaria=entrada.get("zona_horaria"),
                 activo=entrada.get("activo", True),
-                configuracion_bancaria=entrada["configuracion_bancaria"],
+                configuracion_bancaria=config_bancaria,
                 configuracion_fiscal=entrada.get("configuracion_fiscal"),
                 configuracion_ui=entrada.get("configuracion_ui"),
             )
@@ -43,7 +48,7 @@ def asegurar_catalogo_paises(db: Session) -> list[Pais]:
             existente.locale = entrada.get("locale")
             existente.zona_horaria = entrada.get("zona_horaria")
             existente.activo = entrada.get("activo", True)
-            existente.configuracion_bancaria = entrada["configuracion_bancaria"]
+            existente.configuracion_bancaria = config_bancaria
             existente.configuracion_fiscal = entrada.get("configuracion_fiscal")
             existente.configuracion_ui = entrada.get("configuracion_ui")
         guardados.append(existente)

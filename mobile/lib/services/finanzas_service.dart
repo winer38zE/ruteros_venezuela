@@ -113,12 +113,16 @@ class NominaCalculada {
   final double totalPendienteUsd;
   final double comisionVendedorPorArticulo;
   final double comisionCobradorPorcentaje;
+  final String monedaPrincipal;
+  final String simboloMoneda;
 
   NominaCalculada({
     required this.empleados,
     required this.totalPendienteUsd,
     required this.comisionVendedorPorArticulo,
     required this.comisionCobradorPorcentaje,
+    this.monedaPrincipal = 'USD',
+    this.simboloMoneda = r'$',
   });
 
   factory NominaCalculada.fromJson(Map<String, dynamic> j) => NominaCalculada(
@@ -126,6 +130,8 @@ class NominaCalculada {
         totalPendienteUsd: (j['total_pendiente_usd'] as num).toDouble(),
         comisionVendedorPorArticulo: (j['comision_vendedor_por_articulo_usd'] as num).toDouble(),
         comisionCobradorPorcentaje: (j['comision_cobrador_porcentaje'] as num).toDouble(),
+        monedaPrincipal: j['moneda_principal']?.toString() ?? 'USD',
+        simboloMoneda: j['simbolo_moneda']?.toString() ?? r'$',
       );
 }
 

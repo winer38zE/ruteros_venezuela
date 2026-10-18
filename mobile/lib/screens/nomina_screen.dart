@@ -20,7 +20,9 @@ class _NominaScreenState extends State<NominaScreen> {
   bool _cargando = true;
   bool _aprobando = false;
   String? _error;
-  final _fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  String _simbolo = r'$';
+
+  NumberFormat get _fmt => NumberFormat.currency(symbol: _simbolo, decimalDigits: 2);
 
   @override
   void initState() {
@@ -34,7 +36,12 @@ class _NominaScreenState extends State<NominaScreen> {
       _error = null;
     });
     try {
-      _nomina = await context.read<AppState>().finanzas.calcularNomina();
+      final state = context.read<AppState>();
+      _simbolo = await state.simboloMonedaPersistido();
+      _nomina = await state.finanzas.calcularNomina();
+      if (_nomina != null && _nomina!.simboloMoneda.isNotEmpty) {
+        _simbolo = _nomina!.simboloMoneda;
+      }
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -86,6 +93,7 @@ class _NominaScreenState extends State<NominaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final moneda = _nomina?.monedaPrincipal ?? context.watch<AppState>().monedaPrincipal;
     return FuturisticScaffold(
       title: 'Nómina de Personal',
       accentColor: AppColors.violet,
@@ -111,9 +119,14 @@ class _NominaScreenState extends State<NominaScreen> {
                                 'Total pendiente: ${_fmt.format(_nomina!.totalPendienteUsd)}',
                                 style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
                               ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Moneda operativa: $moneda',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                               const SizedBox(height: 8),
                               Text(
-                                'Vendedor: \$${_nomina!.comisionVendedorPorArticulo.toStringAsFixed(0)}/artículo · '
+                                'Vendedor: ${_fmt.format(_nomina!.comisionVendedorPorArticulo)}/artículo · '
                                 'Cobrador: ${_nomina!.comisionCobradorPorcentaje.toStringAsFixed(0)}% cobros',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
@@ -134,10 +147,16 @@ class _NominaScreenState extends State<NominaScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('Rol: ${emp.rol}'),
+                                  if (emp.sueldoBaseUsd > 0)
+                                    Text('Sueldo base: ${_fmt.format(emp.sueldoBaseUsd)}'),
                                   if (emp.articulosVendidos > 0)
-                                    Text('${emp.articulosVendidos} artículos → ${_fmt.format(emp.comisionVentasUsd)}'),
+                                    Text(
+                                      '${emp.articulosVendidos} artículos → comisión ${_fmt.format(emp.comisionVentasUsd)}',
+                                    ),
                                   if (emp.totalCobradoUsd > 0)
-                                    Text('Cobrado ${_fmt.format(emp.totalCobradoUsd)} → comisión ${_fmt.format(emp.comisionCobrosUsd)}'),
+                                    Text(
+                                      'Cobrado ${_fmt.format(emp.totalCobradoUsd)} → comisión ${_fmt.format(emp.comisionCobrosUsd)}',
+                                    ),
                                   Text(
                                     'Calculado: ${_fmt.format(emp.totalCalculadoUsd)} · Pagado: ${_fmt.format(emp.totalPagadoUsd)}',
                                   ),
