@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
+import '../services/api_service.dart';
 import '../services/tasas_service.dart';
+import '../services/tasas_login_cache.dart';
 import '../theme/app_theme.dart';
 import '../utils/conversion_helper.dart';
 import '../widgets/futuristic_screen.dart';
@@ -66,22 +68,48 @@ class _TasasScreenState extends State<TasasScreen> {
     super.dispose();
   }
 
+  void _aplicarTasaEnPantalla(TasaCambioDetalle t) {
+    setState(() {
+      _ultima = t;
+      _error = null;
+      _bcvCtrl.text = t.usdBcvBs.toString();
+      _paraleloCtrl.text = t.usdParaleloBs.toString();
+      _copCtrl.text = t.copUsd.toString();
+    });
+    _recalcularDesglose();
+  }
+
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
       _error = null;
     });
     try {
-      _ultima = await context.read<AppState>().tasas.ultima();
-      _bcvCtrl.text = _ultima!.usdBcvBs.toString();
-      _paraleloCtrl.text = _ultima!.usdParaleloBs.toString();
-      _copCtrl.text = _ultima!.copUsd.toString();
-      _recalcularDesglose();
+      final t = await context.read<AppState>().tasas.ultima();
+      if (!mounted) return;
+      _aplicarTasaEnPantalla(t);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _ultima = null;
+        _error = e.message;
+      });
     } catch (e) {
-      _error = e.toString();
+      if (!mounted) return;
+      setState(() {
+        _ultima = null;
+        _error = e.toString();
+      });
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
+  }
+
+  Future<void> _persistirCacheLogin(TasaCambioDetalle t) async {
+    await TasasLoginCache.guardar(
+      usdBcvBs: t.usdBcvBs,
+      usdParaleloBs: t.usdParaleloBs,
+    );
   }
 
   Future<void> _guardarTasa() async {
@@ -96,14 +124,24 @@ class _TasasScreenState extends State<TasasScreen> {
     }
     setState(() => _guardando = true);
     try {
-      _ultima = await context.read<AppState>().tasas.registrar(
+      final t = await context.read<AppState>().tasas.registrar(
             usdBcvBs: bcv,
             usdParaleloBs: par,
             copUsd: cop,
           );
+      if (!mounted) return;
+      _aplicarTasaEnPantalla(t);
+      await _persistirCacheLogin(t);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tasa registrada correctamente'),
+          backgroundColor: AppColors.emerald,
+        ),
+      );
+    } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tasa registrada correctamente')),
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -121,25 +159,44 @@ class _TasasScreenState extends State<TasasScreen> {
     setState(() => _sincronizando = true);
     try {
       final result = await context.read<AppState>().tasas.sincronizarAuto();
-      if (result.tasa != null) {
-        _ultima = result.tasa;
-        _bcvCtrl.text = _ultima!.usdBcvBs.toString();
-        _paraleloCtrl.text = _ultima!.usdParaleloBs.toString();
-        _copCtrl.text = _ultima!.copUsd.toString();
+      if (!mounted) return;
+
+      TasaCambioDetalle? t = result.tasa;
+      if (t == null && result.usdBcvBs > 0) {
+        t = TasaCambioDetalle(
+          id: '',
+          usdBcvBs: result.usdBcvBs,
+          usdParaleloBs: result.usdParaleloBs,
+          copUsd: result.copUsd,
+          eurBs: 0,
+          momento: result.momento,
+          fecha: DateTime.now().toIso8601String(),
+        );
+      }
+      if (t != null) {
+        _aplicarTasaEnPantalla(t);
+        await _persistirCacheLogin(t);
       } else {
         await _cargar();
       }
-      _ultimasFuentes = result.fuentes;
+
+      setState(() => _ultimasFuentes = result.fuentes);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.exito
+                ? 'Tasas actualizadas (${result.momento}): BCV ${result.usdBcvBs.toStringAsFixed(2)}'
+                : result.mensaje,
+          ),
+          backgroundColor: result.exito ? AppColors.emerald : Colors.orange,
+        ),
+      );
+    } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Tasas actualizadas (${result.momento}): BCV ${result.usdBcvBs.toStringAsFixed(2)}',
-            ),
-            backgroundColor: AppColors.emerald,
-          ),
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
         );
-        setState(() {});
       }
     } catch (e) {
       if (mounted) {
@@ -253,7 +310,7 @@ class _TasasScreenState extends State<TasasScreen> {
                     ),
                   ],
                 ],
-                if (_error != null) ...[
+                if (_ultima == null && _error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!, style: const TextStyle(color: Colors.red)),
                 ],

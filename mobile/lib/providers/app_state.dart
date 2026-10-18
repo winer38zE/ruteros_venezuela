@@ -124,21 +124,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> loginConBiometria() async {
+  Future<bool> loginConBiometria() async {
     cargando = true;
     error = null;
     notifyListeners();
     try {
       final user = await auth.loginConBiometria();
       if (user == null) {
-        error =
-            'Huella no reconocida o ingreso biométrico no configurado. Entra con contraseña y activa la huella.';
+        error = 'Huella no reconocida. Intenta de nuevo o usa contraseña.';
         usuario = null;
-        return;
+        return false;
       }
       usuario = user;
       _arrancarSync();
       unawaited(_actualizarCacheTasasLogin());
+      return true;
+    } on BiometricStorageEmptyException catch (e) {
+      error = e.toString();
+      usuario = null;
+      return false;
     } catch (e) {
       error = e is ApiException ? e.message : e.toString();
       usuario = null;
@@ -149,6 +153,7 @@ class AppState extends ChangeNotifier {
           (e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504)) {
         error = e.message;
       }
+      return false;
     } finally {
       cargando = false;
       notifyListeners();
@@ -159,7 +164,7 @@ class AppState extends ChangeNotifier {
     await sync.dejarDeEscuchar();
     await alertas.limpiar();
     await sync.limpiarLocal();
-    await auth.logout();
+    await auth.logout(borrarAccesoBiometrico: false);
     usuario = null;
     notifyListeners();
   }

@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime, date
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, Date, ForeignKey, Numeric, Enum, Integer, Text, TypeDecorator, CHAR,
+    Column, String, Boolean, DateTime, Date, ForeignKey, Numeric, Enum, Integer, Text, JSON, TypeDecorator, CHAR,
     UniqueConstraint, Index,
 )
 from sqlalchemy.orm import relationship, declarative_base
@@ -141,11 +141,31 @@ class CanalCuentaEmpleado(str, enum.Enum):
     PAGO_MOVIL = "pago_movil"
 
 
+# ---------- PAÍS (catálogo SaaS multiregión) ----------
+class Pais(Base):
+    __tablename__ = "paises"
+    __table_args__ = (UniqueConstraint("codigo_iso", name="uq_paises_codigo_iso"),)
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    nombre = Column(String(80), nullable=False)
+    codigo_iso = Column(String(3), nullable=False, index=True)
+    moneda_principal = Column(String(3), nullable=False)
+    simbolo_moneda = Column(String(8), nullable=False)
+    locale = Column(String(10), nullable=True)
+    zona_horaria = Column(String(40), nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    configuracion_bancaria = Column(JSON, nullable=False)
+    configuracion_fiscal = Column(JSON, nullable=True)
+    configuracion_ui = Column(JSON, nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+
 # ---------- EMPRESA (tenant) ----------
 class Empresa(Base):
     __tablename__ = "empresas"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     nombre = Column(String, nullable=False)
     activa = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
@@ -168,6 +188,7 @@ class CuentaBancaria(Base):
     __tablename__ = "cuentas_bancarias"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
     banco = Column(String(120), nullable=False)
     tipo_cuenta = Column(String(40), nullable=False)
@@ -191,6 +212,7 @@ class CuentaBancariaEmpleado(Base):
     )
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
     usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False, unique=True)
     banco = Column(String(120), nullable=False)
@@ -213,6 +235,7 @@ class Usuario(Base):
     __tablename__ = "usuarios"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     nombre = Column(String, nullable=False)
     username = Column(String, unique=True, index=True) # <-- AQUÍ ESTÁ AGREGADO EL USERNAME
@@ -384,6 +407,7 @@ class Producto(Base):
     __tablename__ = "productos"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     proveedor_id = Column(GUID(), ForeignKey("proveedores.id"), nullable=True)
     nombre = Column(String, nullable=False)
@@ -427,6 +451,7 @@ class Almacen(Base):
     __tablename__ = "almacenes"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     nombre = Column(String, nullable=False)
     ubicacion = Column(String, nullable=True)
@@ -442,6 +467,7 @@ class LoteInventario(Base):
     __tablename__ = "lotes_inventario"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     producto_id = Column(GUID(), ForeignKey("productos.id"), nullable=False)
     almacen_id = Column(GUID(), ForeignKey("almacenes.id"), nullable=False)
@@ -472,6 +498,7 @@ class MovimientoInventario(Base):
     __tablename__ = "movimientos_inventario"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     producto_id = Column(GUID(), ForeignKey("productos.id"), nullable=False)
     almacen_id = Column(GUID(), ForeignKey("almacenes.id"), nullable=False)
@@ -519,6 +546,7 @@ class TasaCambio(Base):
     __tablename__ = "tasas_cambio"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     fecha = Column(DateTime, default=datetime.utcnow)
     momento = Column(String, nullable=False, default="manana")
@@ -656,6 +684,7 @@ class PagoNomina(Base):
     )
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
     usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False, index=True)
     rol = Column(Enum(RolUsuario), nullable=False)
@@ -699,6 +728,7 @@ class MovimientoFinanciero(Base):
     __tablename__ = "movimientos_financieros"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
     empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False)
     tipo = Column(Enum(TipoMovimientoFinanciero), nullable=False)
     categoria = Column(Enum(CategoriaMovimientoFinanciero), nullable=False)

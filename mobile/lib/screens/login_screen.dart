@@ -8,6 +8,7 @@ import '../services/tasas_login_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_background.dart';
 import '../widgets/glass_container.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -72,20 +73,33 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _ingresarConBiometria() async {
-    if (!_huellaHabilitada) {
+    final auth = context.read<AppState>().auth;
+    final hayDatos = await auth.tieneDatosBiometricosGuardados();
+    if (!hayDatos) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
+          backgroundColor: Color(0xFFDC2626),
           content: Text(
-            'Primero ingresa con contraseña y acepta habilitar el inicio con huella.',
+            'Por favor, inicia sesión con tu usuario y contraseña por primera vez para activar la huella',
           ),
-          duration: Duration(seconds: 4),
+          duration: Duration(seconds: 5),
         ),
       );
       return;
     }
-    await context.read<AppState>().loginConBiometria();
+
+    final state = context.read<AppState>();
+    final ok = await state.loginConBiometria();
     if (!mounted) return;
+
+    if (ok && state.usuario != null) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+      return;
+    }
+
     await _cargarOpcionesBiometria();
     await _cargarTasasLogin();
   }
@@ -110,8 +124,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (activar == true) {
       await auth.activarAccesoBiometrico(correo: correo, password: password);
-    } else {
-      await auth.biometric.borrarTodoAccesoBiometrico();
     }
     await _cargarOpcionesBiometria();
   }

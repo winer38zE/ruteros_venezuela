@@ -21,16 +21,25 @@ class TasaCambioDetalle {
     required this.fecha,
   });
 
-  factory TasaCambioDetalle.fromJson(Map<String, dynamic> j) => TasaCambioDetalle(
-        id: j['id'],
-        usdBcvBs: (j['usd_bcv_bs'] ?? j['usd_bs'] as num).toDouble(),
-        usdParaleloBs: (j['usd_paralelo_bs'] ?? j['usd_bs'] as num).toDouble(),
-        copUsd: (j['cop_usd'] as num?)?.toDouble() ?? 0,
-        copVes: (j['cop_ves'] as num?)?.toDouble(),
-        eurBs: (j['eur_bs'] as num?)?.toDouble() ?? 0,
-        momento: j['momento'] ?? 'manana',
-        fecha: j['fecha'],
-      );
+  factory TasaCambioDetalle.fromJson(Map<String, dynamic> j) {
+    final usdBs = (j['usd_bs'] as num?)?.toDouble();
+    final bcv = (j['usd_bcv_bs'] as num?)?.toDouble() ?? usdBs ?? 0.0;
+    final paralelo = (j['usd_paralelo_bs'] as num?)?.toDouble() ?? bcv;
+    final rawFecha = j['fecha'];
+    final fechaStr = rawFecha is String
+        ? rawFecha
+        : (rawFecha != null ? rawFecha.toString() : DateTime.now().toIso8601String());
+    return TasaCambioDetalle(
+      id: j['id']?.toString() ?? '',
+      usdBcvBs: bcv,
+      usdParaleloBs: paralelo,
+      copUsd: (j['cop_usd'] as num?)?.toDouble() ?? 0,
+      copVes: (j['cop_ves'] as num?)?.toDouble(),
+      eurBs: (j['eur_bs'] as num?)?.toDouble() ?? 0,
+      momento: j['momento']?.toString() ?? 'manana',
+      fecha: fechaStr,
+    );
+  }
 }
 
 class ConversionResult {
@@ -96,8 +105,15 @@ class TasasService {
   final ApiClient _api;
 
   Future<TasaCambioDetalle> ultima() async {
-    final data = await _api.get('/tasas-cambio/ultima');
-    return TasaCambioDetalle.fromJson(data);
+    try {
+      final data = await _api.get('/tasas-cambio/ultima');
+      return TasaCambioDetalle.fromJson(data as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      if (e.statusCode != 404) rethrow;
+      final data = await _api.get('/tasas-cambio/') as List;
+      if (data.isEmpty) rethrow;
+      return TasaCambioDetalle.fromJson(data.first as Map<String, dynamic>);
+    }
   }
 
   Future<List<TasaCambioDetalle>> historial() async {
