@@ -80,17 +80,9 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final lista = await state.paises.listarActivos();
       final guardado = await state.regionSession.leer();
-      String? seleccion = guardado?.id;
-      if (seleccion == null || !lista.any((p) => p.id == seleccion)) {
-        PaisRegion? porDefecto;
-        for (final p in lista) {
-          if (p.codigoIso == 'VE') {
-            porDefecto = p;
-            break;
-          }
-        }
-        porDefecto ??= lista.isNotEmpty ? lista.first : null;
-        seleccion = porDefecto?.id;
+      String? seleccion;
+      if (guardado != null && lista.any((p) => p.id == guardado.id)) {
+        seleccion = guardado.id;
       }
       if (!mounted) return;
       setState(() {
@@ -106,7 +98,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() {
         _cargandoPaises = false;
-        _errorPaises = e.message;
+        _errorPaises = e.statusCode == 404
+            ? 'No se encontró la colección paises en PocketBase. '
+                'Verifica POCKETBASE_URL (${ApiConfig.pocketBaseUrl}).'
+            : e.message;
       });
     } catch (e) {
       if (!mounted) return;
@@ -115,6 +110,27 @@ class _LoginScreenState extends State<LoginScreen> {
         _errorPaises = e.toString();
       });
     }
+  }
+
+  bool get _puedeIniciarSesion =>
+      !_cargandoPaises &&
+      _errorPaises == null &&
+      _paises.isNotEmpty &&
+      _paisIdSeleccionado != null &&
+      _paisIdSeleccionado!.isNotEmpty;
+
+  Future<void> _alElegirPais(String? id) async {
+    setState(() => _paisIdSeleccionado = id);
+    if (id == null || id.isEmpty) return;
+    PaisRegion? elegido;
+    for (final p in _paises) {
+      if (p.id == id) {
+        elegido = p;
+        break;
+      }
+    }
+    if (elegido == null || !mounted) return;
+    await context.read<AppState>().regionSession.guardar(elegido);
   }
 
   Future<void> _cargarTasasLogin() async {
@@ -290,7 +306,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             )
             .toList(),
-        onChanged: (v) => setState(() => _paisIdSeleccionado = v),
+        onChanged: _alElegirPais,
         buttonStyleData: const ButtonStyleData(
           padding: EdgeInsets.only(right: 8),
         ),
@@ -373,6 +389,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final puedeIngresar = _puedeIniciarSesion && !state.cargando;
 
     return Scaffold(
       body: FuturisticBackground(
@@ -452,6 +469,20 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Column(
                         children: [
                           _selectorPais(),
+                          if (!_cargandoPaises &&
+                              _errorPaises == null &&
+                              _paisIdSeleccionado == null &&
+                              _paises.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                'Selecciona tu país para habilitar el ingreso.',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: AppColors.neonCyan,
+                                    ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
                           TextField(
                             controller: _correoCtrl,
                             keyboardType: TextInputType.emailAddress,
@@ -493,7 +524,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               width: double.infinity,
                               height: 56,
                               child: FilledButton.tonalIcon(
-                                onPressed: state.cargando ? null : _ingresarConBiometria,
+                                onPressed: puedeIngresar ? _ingresarConBiometria : null,
                                 icon: const Icon(Icons.fingerprint_rounded, size: 28),
                                 label: const Text(
                                   'Ingresar con Huella',
@@ -518,7 +549,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
-                              onPressed: state.cargando ? null : _login,
+                              onPressed: puedeIngresar ? _login : null,
                               icon: state.cargando
                                   ? const SizedBox(
                                       width: 18,

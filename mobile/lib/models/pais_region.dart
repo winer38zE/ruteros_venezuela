@@ -14,12 +14,18 @@ class PaisRegion {
   });
 
   factory PaisRegion.fromJson(Map<String, dynamic> j) => PaisRegion(
-        id: j['id'] as String,
-        nombre: j['nombre'] as String,
-        codigoIso: j['codigo_iso'] as String,
-        monedaPrincipal: j['moneda_principal'] as String,
-        simboloMoneda: j['simbolo_moneda'] as String,
+        id: (j['id'] ?? '').toString(),
+        nombre: (j['nombre'] ?? '').toString(),
+        codigoIso: (j['codigo_iso'] ?? '').toString(),
+        monedaPrincipal: (j['moneda_principal'] ?? '').toString(),
+        simboloMoneda: (j['simbolo_moneda'] ?? '').toString(),
       );
+
+  bool get valido =>
+      id.isNotEmpty &&
+      nombre.isNotEmpty &&
+      codigoIso.isNotEmpty &&
+      monedaPrincipal.isNotEmpty;
 
   Map<String, dynamic> toJson() => {
         'id': id,
