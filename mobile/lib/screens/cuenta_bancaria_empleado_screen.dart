@@ -73,50 +73,62 @@ class _CuentaBancariaEmpleadoScreenState extends State<CuentaBancariaEmpleadoScr
     if (ok == true) _cargar();
   }
 
+  Widget _buildDetalleCuenta(CuentaBancariaEmpleado cuenta) {
+    final telefono = cuenta.telefonoPagoMovil?.trim();
+    final usaTelefono = telefono != null && telefono.isNotEmpty;
+
+    return GlassContainer(
+      accentColor: AppColors.emerald,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${cuenta.banco} · ${cuenta.canal}',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          if (usaTelefono)
+            Text('Teléfono: ${cuenta.telefonoPagoMovil ?? "Sin asignar"}')
+          else
+            Text('Cuenta: ${cuenta.numeroCuenta ?? "No definida"}'),
+          Text('Titular: ${cuenta.titular.isNotEmpty ? cuenta.titular : "Sin asignar"}'),
+          Text(
+            'Documento: ${cuenta.documentoIdentidad.isNotEmpty ? cuenta.documentoIdentidad : "Sin asignar"}',
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cuenta = _cuenta;
+
     return FuturisticScaffold(
       title: 'Mi cuenta bancaria',
       accentColor: AppColors.emerald,
       actions: [
-        IconButton(onPressed: _editar, icon: const Icon(Icons.edit_rounded)),
+        if (!_cargando)
+          IconButton(onPressed: _editar, icon: const Icon(Icons.edit_rounded)),
       ],
       body: _cargando
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (_cuenta == null)
+                if (cuenta == null)
                   const EmptyState(
                     icon: Icons.account_balance_wallet_outlined,
                     message:
                         'Registra tu cuenta con los bancos de tu país para recibir pagos.',
                   )
                 else
-                  GlassContainer(
-                    accentColor: AppColors.emerald,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${_cuenta.banco} · ${_cuenta.canal}',
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                        ),
-                        const SizedBox(height: 8),
-                        if (_cuenta.telefonoPagoMovil != null)
-                          Text('Teléfono: ${_cuenta.telefonoPagoMovil}')
-                        else
-                          Text('Cuenta: ${_cuenta.numeroCuenta ?? "—"}'),
-                        Text('Titular: ${_cuenta.titular}'),
-                        Text('Documento: ${_cuenta.documentoIdentidad}'),
-                      ],
-                    ),
-                  ),
+                  _buildDetalleCuenta(cuenta),
                 const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: _editar,
+                  onPressed: _cargando ? null : _editar,
                   icon: const Icon(Icons.add_card_rounded),
-                  label: Text(_cuenta == null ? 'Registrar cuenta' : 'Actualizar cuenta'),
+                  label: Text(cuenta == null ? 'Registrar cuenta' : 'Actualizar cuenta'),
                 ),
               ],
             ),
