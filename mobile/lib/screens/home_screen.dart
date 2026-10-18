@@ -23,6 +23,7 @@ import 'cartera_critica_screen.dart';
 import 'proveedores_screen.dart';
 import 'rutas_list_screen.dart';
 import 'rutas_resumen_screen.dart';
+import 'login_screen.dart';
 import 'datos_bancarios_screen.dart';
 
 class _QuickAction {
@@ -363,7 +364,14 @@ class HomeScreen extends StatelessWidget {
                       ),
                       _StatusChip(label: user.rol),
                       IconButton(
-                        onPressed: () => state.logout(),
+                        onPressed: () async {
+                          await state.logout();
+                          if (!context.mounted) return;
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                            (route) => false,
+                          );
+                        },
                         icon: const Icon(Icons.logout_rounded, color: AppColors.textMuted),
                         tooltip: 'Cerrar sesión',
                       ),

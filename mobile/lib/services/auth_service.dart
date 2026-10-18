@@ -68,6 +68,11 @@ class AuthService {
       usuarioJson: jsonEncode(user.toJson()),
     );
 
+    await _persistirAccesoSeguro(
+      correo: usuarioNorm,
+      password: password,
+    );
+
     if (guardarBiometria) {
       await activarAccesoBiometrico(
         correo: usuarioNorm,
@@ -77,23 +82,29 @@ class AuthService {
     return user;
   }
 
+  /// Credenciales y sesión en flutter_secure_storage (base para huella).
+  Future<void> _persistirAccesoSeguro({
+    required String correo,
+    required String password,
+  }) async {
+    await _biometric.guardarCredenciales(correo: correo, password: password);
+    if (_api.token != null &&
+        _api.usuarioId != null &&
+        _api.usuarioJson != null) {
+      await _biometric.guardarSesion(
+        token: _api.token!,
+        usuarioId: _api.usuarioId!,
+        usuarioJson: _api.usuarioJson!,
+      );
+    }
+  }
+
   /// Guarda credenciales + token de sesión cifrados (tras confirmar huella).
   Future<void> activarAccesoBiometrico({
     required String correo,
     required String password,
   }) async {
-    try {
-      await _biometric.guardarCredenciales(correo: correo, password: password);
-      if (_api.token != null &&
-          _api.usuarioId != null &&
-          _api.usuarioJson != null) {
-        await _biometric.guardarSesion(
-          token: _api.token!,
-          usuarioId: _api.usuarioId!,
-          usuarioJson: _api.usuarioJson!,
-        );
-      }
-    } catch (_) {}
+    await _persistirAccesoSeguro(correo: correo, password: password);
   }
 
   Future<Usuario?> _restaurarSesionDesdeAlmacenSeguro() async {
@@ -112,8 +123,18 @@ class AuthService {
     }
   }
 
-  /// Huella válida → restaura sesión o re-login con credenciales guardadas.
+  /// True si hay credenciales o sesión cifrada para re-ingresar con huella.
+  Future<bool> tieneDatosBiometricosGuardados() async {
+    return (await _biometric.tieneSesionSegura()) ||
+        (await _biometric.tieneCredenciales());
+  }
+
+  /// Huella válida → lee almacén seguro → sesión o login en API.
   Future<Usuario?> loginConBiometria() async {
+    if (!await tieneDatosBiometricosGuardados()) {
+      throw BiometricStorageEmptyException();
+    }
+
     final ok = await _biometric.autenticar();
     if (!ok) return null;
 
@@ -123,12 +144,13 @@ class AuthService {
     }
 
     final credenciales = await _biometric.leerCredenciales();
-    if (credenciales == null) return null;
+    if (credenciales == null) {
+      throw BiometricStorageEmptyException();
+    }
     try {
       return await login(
         credenciales.correo,
         credenciales.password,
-        guardarBiometria: true,
       );
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429) {
@@ -162,8 +184,17 @@ class AuthService {
     }
   }
 
-  Future<void> logout() async {
-    await _biometric.borrarTodoAccesoBiometrico();
+  Future<void> logout({bool borrarAccesoBiometrico = false}) async {
+    if (borrarAccesoBiometrico) {
+      await _biometric.borrarTodoAccesoBiometrico();
+    }
     await _api.clearSession();
   }
+}
+
+/// Almacén seguro vacío: hace falta un login manual previo.
+class BiometricStorageEmptyException implements Exception {
+  @override
+  String toString() =>
+      'Por favor, inicia sesión con tu usuario y contraseña por primera vez para activar la huella';
 }
