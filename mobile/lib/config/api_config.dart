@@ -15,7 +15,7 @@ class ApiConfig {
     'ruteros.edwuarcardenas.online',
   };
 
-  /// PocketBase público (catálogo `paises` antes del login).
+  /// PocketBase (solo diagnóstico; el catálogo de países va por FastAPI `/paises`).
   static const String _productionPocketBaseUrl =
       'https://ruteros.edwuarcardenas.online';
 

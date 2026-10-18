@@ -24,8 +24,9 @@ from app.core.seguridad import (
     limpiar_fallos_login,
     registrar_fallo_login,
 )
-from app.models.core import Empresa, Pais, Usuario
+from app.models.core import Empresa, Pais, RolUsuario, Usuario
 from app.schemas.core import LoginResponse, PaisPublicoResponse
+from app.services.paises_seed import pais_por_defecto
 
 logger = logging.getLogger(__name__)
 
@@ -82,19 +83,52 @@ def _obtener_pais_activo(db: Session, pais_id: str) -> Pais:
     return pais
 
 
+def _es_dueno_cuenta(usuario: Usuario) -> bool:
+    if (usuario.username or "").strip().lower() == "dueno":
+        return True
+    rol = _rol_como_texto(usuario.rol).upper()
+    return rol in ("DUEÑO", "DUENO", "OWNER") or usuario.rol == RolUsuario.DUENO
+
+
+def _pais_para_login(db: Session, body: LoginRequest) -> Pais:
+    """País del login; para `dueno` sin país válido usa Venezuela (VE) por defecto."""
+    try:
+        return _obtener_pais_activo(db, body.pais_id)
+    except HTTPException:
+        if _normalizar_username(body.username).lower() != "dueno":
+            raise
+        defecto = pais_por_defecto(db)
+        if defecto is None or not bool(defecto.activo):
+            raise
+        logger.warning(
+            "Login dueno: pais_id=%r inválido; usando país por defecto %s",
+            body.pais_id,
+            defecto.codigo_iso,
+        )
+        return defecto
+
+
 def _resolver_y_validar_pais_usuario(
     db: Session,
     usuario: Usuario,
     pais_seleccionado: Pais,
 ) -> PaisPublicoResponse:
     empresa = db.query(Empresa).filter(Empresa.id == usuario.empresa_id).first()
+    es_dueno = _es_dueno_cuenta(usuario)
     pais_efectivo = usuario.pais_id or (empresa.pais_id if empresa else None)
     seleccion = str(pais_seleccionado.id)
 
-    if pais_efectivo and str(pais_efectivo) != seleccion:
+    if not es_dueno and pais_efectivo and str(pais_efectivo) != seleccion:
         raise HTTPException(
             status_code=403,
             detail="Este usuario no pertenece al país seleccionado. Elige el país correcto.",
+        )
+
+    if es_dueno and pais_efectivo and str(pais_efectivo) != seleccion:
+        logger.info(
+            "Login dueno: actualizando región %s → %s",
+            pais_efectivo,
+            seleccion,
         )
 
     if not usuario.pais_id:
@@ -199,7 +233,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     exigir_cupo_login(request, username_entrada)
 
     try:
-        pais_seleccionado = _obtener_pais_activo(db, body.pais_id)
+        pais_seleccionado = _pais_para_login(db, body)
     except HTTPException:
         raise
     except (ClientResponseError, SQLAlchemyError, RuntimeError) as exc:

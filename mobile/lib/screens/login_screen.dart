@@ -80,9 +80,14 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final lista = await state.paises.listarActivos();
       final guardado = await state.regionSession.leer();
+      final paisHuella = await state.auth.biometric.leerPaisLoginId();
       String? seleccion;
       if (guardado != null && lista.any((p) => p.id == guardado.id)) {
         seleccion = guardado.id;
+      } else if (paisHuella != null &&
+          paisHuella.isNotEmpty &&
+          lista.any((p) => p.id == paisHuella)) {
+        seleccion = paisHuella;
       }
       if (!mounted) return;
       setState(() {
@@ -99,8 +104,8 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() {
         _cargandoPaises = false;
         _errorPaises = e.statusCode == 404
-            ? 'No se encontró la colección paises en PocketBase. '
-                'Verifica POCKETBASE_URL (${ApiConfig.pocketBaseUrl}).'
+            ? 'Catálogo de países no disponible en la API. '
+                'Verifica ${ApiConfig.apiBaseUrl}/paises'
             : e.message;
       });
     } catch (e) {
@@ -118,6 +123,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _paises.isNotEmpty &&
       _paisIdSeleccionado != null &&
       _paisIdSeleccionado!.isNotEmpty;
+
+  bool get _puedeIngresarHuella =>
+      _dispositivoConHuella && _huellaHabilitada;
+
+  PaisRegion? get _paisSeleccionado {
+    final id = _paisIdSeleccionado;
+    if (id == null) return null;
+    for (final p in _paises) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
 
   Future<void> _alElegirPais(String? id) async {
     setState(() => _paisIdSeleccionado = id);
@@ -194,10 +211,12 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
     if (activar == true) {
+      final pais = _paisSeleccionado;
       await auth.activarAccesoBiometrico(
         correo: correo,
         password: password,
         paisId: _paisIdSeleccionado,
+        simboloMoneda: pais?.simboloMoneda,
       );
     }
     await _cargarOpcionesBiometria();
@@ -389,7 +408,8 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final puedeIngresar = _puedeIniciarSesion && !state.cargando;
+    final puedeIngresarPassword = _puedeIniciarSesion && !state.cargando;
+    final puedeIngresarHuella = _puedeIngresarHuella && !state.cargando;
 
     return Scaffold(
       body: FuturisticBackground(
@@ -524,7 +544,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               width: double.infinity,
                               height: 56,
                               child: FilledButton.tonalIcon(
-                                onPressed: puedeIngresar ? _ingresarConBiometria : null,
+                                onPressed: puedeIngresarHuella ? _ingresarConBiometria : null,
                                 icon: const Icon(Icons.fingerprint_rounded, size: 28),
                                 label: const Text(
                                   'Ingresar con Huella',
@@ -549,7 +569,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
-                              onPressed: puedeIngresar ? _login : null,
+                              onPressed: puedeIngresarPassword ? _login : null,
                               icon: state.cargando
                                   ? const SizedBox(
                                       width: 18,

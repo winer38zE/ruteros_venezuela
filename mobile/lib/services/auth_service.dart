@@ -97,10 +97,12 @@ class AuthService {
       await _regionSession.guardar(user.pais!);
     }
 
+    final simbolo = user.pais?.simboloMoneda;
     await _persistirAccesoSeguro(
       correo: usuarioNorm,
       password: password,
       paisId: paisId,
+      simboloMoneda: simbolo,
     );
 
     if (guardarBiometria) {
@@ -108,6 +110,7 @@ class AuthService {
         correo: usuarioNorm,
         password: password,
         paisId: paisId,
+        simboloMoneda: simbolo,
       );
     }
     return user;
@@ -118,11 +121,13 @@ class AuthService {
     required String correo,
     required String password,
     required String paisId,
+    String? simboloMoneda,
   }) async {
     await _biometric.guardarCredenciales(
       correo: correo,
       password: password,
       paisId: paisId,
+      simboloMoneda: simboloMoneda,
     );
     if (_api.token != null &&
         _api.usuarioId != null &&
@@ -140,15 +145,19 @@ class AuthService {
     required String correo,
     required String password,
     String? paisId,
+    String? simboloMoneda,
   }) async {
     final pid = paisId ?? await _biometric.leerPaisLoginId();
     if (pid == null || pid.isEmpty) {
       throw StateError('Falta el país de la sesión para activar la huella.');
     }
+    final simbolo =
+        simboloMoneda ?? await _biometric.leerPaisSimboloMoneda();
     await _persistirAccesoSeguro(
       correo: correo,
       password: password,
       paisId: pid,
+      simboloMoneda: simbolo,
     );
   }
 
@@ -189,6 +198,7 @@ class AuthService {
 
     final restaurado = await _restaurarSesionDesdeAlmacenSeguro();
     if (restaurado != null) {
+      await _sincronizarRegionDesdeAlmacenSeguro(restaurado);
       return restaurado;
     }
 
@@ -201,11 +211,13 @@ class AuthService {
       throw BiometricStorageEmptyException();
     }
     try {
-      return await login(
+      final user = await login(
         credenciales.correo,
         credenciales.password,
         paisId: paisId,
       );
+      await _sincronizarRegionDesdeAlmacenSeguro(user);
+      return user;
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429) {
         await _invalidarSesionLocal();
@@ -218,6 +230,26 @@ class AuthService {
       }
       rethrow;
     }
+  }
+
+  /// Asegura moneda/región cuando la sesión cifrada no trae `pais` completo.
+  Future<void> _sincronizarRegionDesdeAlmacenSeguro(Usuario user) async {
+    if (user.pais != null) {
+      await _regionSession.guardar(user.pais!);
+      return;
+    }
+    final pid = await _biometric.leerPaisLoginId();
+    final simbolo = await _biometric.leerPaisSimboloMoneda();
+    if (pid == null || pid.isEmpty) return;
+    await _regionSession.guardar(
+      PaisRegion(
+        id: pid,
+        nombre: user.pais?.nombre ?? '',
+        codigoIso: user.pais?.codigoIso ?? '',
+        monedaPrincipal: user.pais?.monedaPrincipal ?? '',
+        simboloMoneda: simbolo ?? user.pais?.simboloMoneda ?? 'Bs.',
+      ),
+    );
   }
 
   Future<void> _invalidarSesionLocal() async {

@@ -13,7 +13,7 @@ from app.api.auth import (
     obtener_demo_password,
     verify_password,
 )
-from app.api.auth_router import LoginRequest, login
+from app.api.auth_router import LoginRequest, _pais_para_login, login
 from app.core.pb_ready import PocketBaseNoDisponible
 from app.core.pb_orm.ids import es_id_pocketbase, resolver_id_registro
 from app.core.deps import obtener_usuario_actual
@@ -59,6 +59,24 @@ def _pais_demo() -> Pais:
         activo=True,
         configuracion_bancaria={},
     )
+
+
+def test_pais_para_login_dueno_usa_defecto_si_id_invalido(monkeypatch):
+    pais = _pais_demo()
+    db = MagicMock()
+    q = MagicMock()
+    q.filter.return_value = q
+    q.first.side_effect = [None, pais]
+    db.query.return_value = q
+    monkeypatch.setattr(
+        "app.api.auth_router.pais_por_defecto",
+        lambda _db: pais,
+    )
+    out = _pais_para_login(
+        db,
+        LoginRequest(username="dueno", password="123456", pais_id="id-invalido"),
+    )
+    assert out.codigo_iso == "VE"
 
 
 def test_login_ok_con_usuario_demo(monkeypatch):
