@@ -17,7 +17,8 @@ from app.api.auth_router import LoginRequest, login
 from app.core.pb_ready import PocketBaseNoDisponible
 from app.core.pb_orm.ids import es_id_pocketbase, resolver_id_registro
 from app.core.deps import obtener_usuario_actual
-from app.models.core import RolUsuario, Usuario
+from app.models.core import Pais, RolUsuario, Usuario
+from app.schemas.core import PaisPublicoResponse
 
 
 def test_demo_password_hash_misma_funcion_que_verificacion():
@@ -48,8 +49,21 @@ def test_bootstrap_y_login_usan_mismo_hash_bcrypt():
     assert not verify_password("otra", hashed)
 
 
+def _pais_demo() -> Pais:
+    return Pais(
+        id="pais12345678901",
+        nombre="Venezuela",
+        codigo_iso="VE",
+        moneda_principal="VES",
+        simbolo_moneda="Bs.",
+        activo=True,
+        configuracion_bancaria={},
+    )
+
+
 def test_login_ok_con_usuario_demo(monkeypatch):
     demo_hash = get_password_hash("123456")
+    pais = _pais_demo()
     usuario = Usuario(
         id="abc123def456789",
         empresa_id="emp123456789012",
@@ -58,18 +72,32 @@ def test_login_ok_con_usuario_demo(monkeypatch):
         password_hash=demo_hash,
         rol=RolUsuario.DUENO,
         activo=True,
+        pais_id=pais.id,
     )
 
     monkeypatch.setattr(
         "app.api.auth_router._buscar_usuario_por_username",
         lambda db, u: usuario,
     )
+    monkeypatch.setattr(
+        "app.api.auth_router._obtener_pais_activo",
+        lambda db, pid: pais,
+    )
+    monkeypatch.setattr(
+        "app.api.auth_router._resolver_y_validar_pais_usuario",
+        lambda db, u, p: PaisPublicoResponse.model_validate(p),
+    )
 
     request = MagicMock()
     request.client.host = "127.0.0.1"
-    resp = login(LoginRequest(username="  Dueno ", password="123456"), request, db=MagicMock())
+    resp = login(
+        LoginRequest(username="  Dueno ", password="123456", pais_id=pais.id),
+        request,
+        db=MagicMock(),
+    )
     assert resp.username == "dueno"
     assert resp.id == usuario.id
+    assert resp.pais.codigo_iso == "VE"
 
 
 def test_login_falla_con_clave_incorrecta(monkeypatch):
@@ -90,8 +118,16 @@ def test_login_falla_con_clave_incorrecta(monkeypatch):
 
     request = MagicMock()
     request.client.host = "127.0.0.1"
+    monkeypatch.setattr(
+        "app.api.auth_router._obtener_pais_activo",
+        lambda db, pid: _pais_demo(),
+    )
     with pytest.raises(HTTPException) as exc_info:
-        login(LoginRequest(username="dueno", password="000000"), request, db=MagicMock())
+        login(
+            LoginRequest(username="dueno", password="000000", pais_id="pais12345678901"),
+            request,
+            db=MagicMock(),
+        )
     assert exc_info.value.status_code == 401
 
 
@@ -102,8 +138,16 @@ def test_login_503_si_pocketbase_caido(monkeypatch):
     monkeypatch.setattr("app.api.auth_router._buscar_usuario_por_username", _falla)
     request = MagicMock()
     request.client.host = "127.0.0.1"
+    monkeypatch.setattr(
+        "app.api.auth_router._obtener_pais_activo",
+        lambda db, pid: _pais_demo(),
+    )
     with pytest.raises(HTTPException) as exc_info:
-        login(LoginRequest(username="dueno", password="123456"), request, db=MagicMock())
+        login(
+            LoginRequest(username="dueno", password="123456", pais_id="pais12345678901"),
+            request,
+            db=MagicMock(),
+        )
     assert exc_info.value.status_code == 503
     assert "no disponible" in str(exc_info.value.detail).lower()
 
@@ -115,8 +159,16 @@ def test_login_503_si_pocketbase_no_disponible(monkeypatch):
     monkeypatch.setattr("app.api.auth_router._buscar_usuario_por_username", _raise)
     request = MagicMock()
     request.client.host = "127.0.0.1"
+    monkeypatch.setattr(
+        "app.api.auth_router._obtener_pais_activo",
+        lambda db, pid: _pais_demo(),
+    )
     with pytest.raises(HTTPException) as exc_info:
-        login(LoginRequest(username="dueno", password="123456"), request, db=MagicMock())
+        login(
+            LoginRequest(username="dueno", password="123456", pais_id="pais12345678901"),
+            request,
+            db=MagicMock(),
+        )
     assert exc_info.value.status_code == 503
 
 

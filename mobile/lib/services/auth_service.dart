@@ -1,6 +1,8 @@
 import 'dart:convert';
+import '../models/pais_region.dart';
 import '../services/api_service.dart';
 import 'biometric_service.dart';
+import 'region_session_service.dart';
 
 class Usuario {
   final String id;
@@ -8,6 +10,8 @@ class Usuario {
   final String username;
   final String rol;
   final String empresaId;
+  final String? paisId;
+  final PaisRegion? pais;
 
   Usuario({
     required this.id,
@@ -15,15 +19,26 @@ class Usuario {
     required this.username,
     required this.rol,
     required this.empresaId,
+    this.paisId,
+    this.pais,
   });
 
-  factory Usuario.fromJson(Map<String, dynamic> j) => Usuario(
-        id: j['id'],
-        nombre: j['nombre'],
-        username: j['username'],
-        rol: j['rol'],
-        empresaId: j['empresa_id'],
-      );
+  factory Usuario.fromJson(Map<String, dynamic> j) {
+    PaisRegion? pais;
+    final rawPais = j['pais'];
+    if (rawPais is Map<String, dynamic>) {
+      pais = PaisRegion.fromJson(rawPais);
+    }
+    return Usuario(
+      id: j['id'],
+      nombre: j['nombre'],
+      username: j['username'],
+      rol: j['rol'],
+      empresaId: j['empresa_id'],
+      paisId: j['pais_id'] as String?,
+      pais: pais,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -31,6 +46,8 @@ class Usuario {
         'username': username,
         'rol': rol,
         'empresa_id': empresaId,
+        if (paisId != null) 'pais_id': paisId,
+        if (pais != null) 'pais': pais!.toJson(),
       };
 
   bool get esDueno => rol == 'DUEÑO' || rol.toLowerCase() == 'owner';
@@ -43,23 +60,31 @@ class Usuario {
 }
 
 class AuthService {
-  AuthService(this._api, {BiometricService? biometric})
-      : _biometric = biometric ?? BiometricService();
+  AuthService(
+    this._api, {
+    BiometricService? biometric,
+    RegionSessionService? regionSession,
+  })  : _biometric = biometric ?? BiometricService(),
+        _regionSession = regionSession ?? RegionSessionService();
 
   final ApiService _api;
   final BiometricService _biometric;
+  final RegionSessionService _regionSession;
 
   BiometricService get biometric => _biometric;
+  RegionSessionService get regionSession => _regionSession;
 
   Future<Usuario> login(
     String correo,
     String password, {
+    required String paisId,
     bool guardarBiometria = false,
   }) async {
     final usuarioNorm = correo.trim();
     final data = await _api.post('/auth/login', {
       'username': usuarioNorm,
       'password': password,
+      'pais_id': paisId,
     });
     final user = Usuario.fromJson(data);
     await _api.saveSession(
@@ -68,15 +93,21 @@ class AuthService {
       usuarioJson: jsonEncode(user.toJson()),
     );
 
+    if (user.pais != null) {
+      await _regionSession.guardar(user.pais!);
+    }
+
     await _persistirAccesoSeguro(
       correo: usuarioNorm,
       password: password,
+      paisId: paisId,
     );
 
     if (guardarBiometria) {
       await activarAccesoBiometrico(
         correo: usuarioNorm,
         password: password,
+        paisId: paisId,
       );
     }
     return user;
@@ -86,8 +117,13 @@ class AuthService {
   Future<void> _persistirAccesoSeguro({
     required String correo,
     required String password,
+    required String paisId,
   }) async {
-    await _biometric.guardarCredenciales(correo: correo, password: password);
+    await _biometric.guardarCredenciales(
+      correo: correo,
+      password: password,
+      paisId: paisId,
+    );
     if (_api.token != null &&
         _api.usuarioId != null &&
         _api.usuarioJson != null) {
@@ -103,8 +139,17 @@ class AuthService {
   Future<void> activarAccesoBiometrico({
     required String correo,
     required String password,
+    String? paisId,
   }) async {
-    await _persistirAccesoSeguro(correo: correo, password: password);
+    final pid = paisId ?? await _biometric.leerPaisLoginId();
+    if (pid == null || pid.isEmpty) {
+      throw StateError('Falta el país de la sesión para activar la huella.');
+    }
+    await _persistirAccesoSeguro(
+      correo: correo,
+      password: password,
+      paisId: pid,
+    );
   }
 
   Future<Usuario?> _restaurarSesionDesdeAlmacenSeguro() async {
@@ -116,7 +161,11 @@ class AuthService {
       usuarioJson: sesion.usuarioJson,
     );
     try {
-      return Usuario.fromJson(jsonDecode(sesion.usuarioJson));
+      final user = Usuario.fromJson(jsonDecode(sesion.usuarioJson));
+      if (user.pais != null) {
+        await _regionSession.guardar(user.pais!);
+      }
+      return user;
     } catch (_) {
       await _biometric.borrarSesionSegura();
       return null;
@@ -147,10 +196,15 @@ class AuthService {
     if (credenciales == null) {
       throw BiometricStorageEmptyException();
     }
+    final paisId = await _biometric.leerPaisLoginId();
+    if (paisId == null || paisId.isEmpty) {
+      throw BiometricStorageEmptyException();
+    }
     try {
       return await login(
         credenciales.correo,
         credenciales.password,
+        paisId: paisId,
       );
     } on ApiException catch (e) {
       if (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429) {
@@ -169,6 +223,7 @@ class AuthService {
   Future<void> _invalidarSesionLocal() async {
     await _biometric.borrarTodoAccesoBiometrico();
     await _api.clearSession();
+    await _regionSession.limpiar();
   }
 
   Future<Usuario?> restoreSession() async {
@@ -177,6 +232,9 @@ class AuthService {
     try {
       final user = Usuario.fromJson(jsonDecode(_api.usuarioJson!));
       _api.setUsuarioId(user.id);
+      if (user.pais != null) {
+        await _regionSession.guardar(user.pais!);
+      }
       return user;
     } catch (_) {
       await _api.clearSession();
@@ -188,6 +246,7 @@ class AuthService {
     if (borrarAccesoBiometrico) {
       await _biometric.borrarTodoAccesoBiometrico();
     }
+    await _regionSession.limpiar();
     await _api.clearSession();
   }
 }

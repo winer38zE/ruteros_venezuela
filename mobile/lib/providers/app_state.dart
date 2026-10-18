@@ -21,10 +21,14 @@ import '../services/whatsapp_service.dart';
 import '../services/sync_service.dart';
 import '../services/alerta_cobro_service.dart';
 import '../services/notification_service.dart';
+import '../services/paises_service.dart';
+import '../services/region_session_service.dart';
+import '../models/pais_region.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
-    auth = AuthService(api);
+    auth = AuthService(api, regionSession: regionSession);
+    paises = PaisesService(api);
     contabilidad = ContabilidadService(api);
     inventario = InventarioService(api);
     productos = ProductosService(api);
@@ -49,6 +53,8 @@ class AppState extends ChangeNotifier {
 
   final ApiService api = ApiService();
   late final AuthService auth;
+  late final PaisesService paises;
+  final RegionSessionService regionSession = RegionSessionService();
   late final ContabilidadService contabilidad;
   late final InventarioService inventario;
   late final ProductosService productos;
@@ -68,6 +74,7 @@ class AppState extends ChangeNotifier {
   late final AlertaCobroService alertas;
 
   Usuario? usuario;
+  PaisRegion? region;
   bool inicializado = false;
   bool cargando = false;
   String? error;
@@ -85,7 +92,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> _inicializar() async {
     try {
+      region = await regionSession.leer();
       usuario = await auth.restoreSession();
+      region ??= usuario?.pais;
       if (usuario != null) _arrancarSync();
     } catch (_) {
       usuario = null;
@@ -95,9 +104,13 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  String get simboloMoneda => region?.simboloMoneda ?? 'Bs.';
+  String get monedaPrincipal => region?.monedaPrincipal ?? 'VES';
+
   Future<bool> login(
     String correo,
     String password, {
+    required String paisId,
     bool guardarBiometria = false,
   }) async {
     cargando = true;
@@ -107,9 +120,14 @@ class AppState extends ChangeNotifier {
       usuario = await auth.login(
         correo,
         password,
+        paisId: paisId,
         guardarBiometria: guardarBiometria,
       );
       if (usuario != null) {
+        region = usuario!.pais ?? region;
+        if (region != null) {
+          await regionSession.guardar(region!);
+        }
         _arrancarSync();
         unawaited(_actualizarCacheTasasLogin());
       }
@@ -136,6 +154,7 @@ class AppState extends ChangeNotifier {
         return false;
       }
       usuario = user;
+      region = user.pais ?? await regionSession.leer();
       _arrancarSync();
       unawaited(_actualizarCacheTasasLogin());
       return true;
@@ -166,6 +185,7 @@ class AppState extends ChangeNotifier {
     await sync.limpiarLocal();
     await auth.logout(borrarAccesoBiometrico: false);
     usuario = null;
+    region = null;
     notifyListeners();
   }
 

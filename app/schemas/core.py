@@ -59,6 +59,18 @@ class UsuarioCreate(BaseModel):
     password: str
     rol: str = Field(pattern="^(DUEÑO|ADMINISTRADOR|VENDEDOR|COBRADOR)$")
 
+class PaisPublicoResponse(BaseModel):
+    id: RecordId
+    nombre: str
+    codigo_iso: str
+    moneda_principal: str
+    simbolo_moneda: str
+    locale: Optional[str] = None
+    configuracion_ui: Optional[dict] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class UsuarioResponse(BaseModel):
     id: RecordId
     empresa_id: RecordId
@@ -68,8 +80,13 @@ class UsuarioResponse(BaseModel):
     activo: bool
     telefono: Optional[str] = None
     sueldo_base_usd: float = 0.0
+    pais_id: Optional[RecordId] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LoginResponse(UsuarioResponse):
+    pais: PaisPublicoResponse
 
 class UsuarioUpdate(BaseModel):
     nombre: Optional[str] = None

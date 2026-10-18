@@ -1,6 +1,8 @@
+import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../models/pais_region.dart';
 import '../providers/app_state.dart';
 import '../config/api_config.dart';
 import '../services/api_service.dart';
@@ -32,10 +34,16 @@ class _LoginScreenState extends State<LoginScreen> {
   double? _tasaParalelo;
   final _fmtTasa = NumberFormat('#,##0.00', 'es_VE');
 
+  List<PaisRegion> _paises = [];
+  String? _paisIdSeleccionado;
+  bool _cargandoPaises = true;
+  String? _errorPaises;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarPaises();
       _cargarOpcionesBiometria();
       _cargarTasasLogin();
     });
@@ -61,6 +69,52 @@ class _LoginScreenState extends State<LoginScreen> {
         _correoCtrl.text = credenciales.correo;
       }
     });
+  }
+
+  Future<void> _cargarPaises() async {
+    final state = context.read<AppState>();
+    setState(() {
+      _cargandoPaises = true;
+      _errorPaises = null;
+    });
+    try {
+      final lista = await state.paises.listarActivos();
+      final guardado = await state.regionSession.leer();
+      String? seleccion = guardado?.id;
+      if (seleccion == null || !lista.any((p) => p.id == seleccion)) {
+        PaisRegion? porDefecto;
+        for (final p in lista) {
+          if (p.codigoIso == 'VE') {
+            porDefecto = p;
+            break;
+          }
+        }
+        porDefecto ??= lista.isNotEmpty ? lista.first : null;
+        seleccion = porDefecto?.id;
+      }
+      if (!mounted) return;
+      setState(() {
+        _paises = lista;
+        _paisIdSeleccionado = seleccion;
+        _cargandoPaises = false;
+        if (lista.isEmpty) {
+          _errorPaises =
+              'No hay países disponibles. Ejecuta seed_paises en el servidor.';
+        }
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cargandoPaises = false;
+        _errorPaises = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cargandoPaises = false;
+        _errorPaises = e.toString();
+      });
+    }
   }
 
   Future<void> _cargarTasasLogin() async {
@@ -89,6 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (!mounted) return;
     final state = context.read<AppState>();
     final ok = await state.loginConBiometria();
     if (!mounted) return;
@@ -123,7 +178,11 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
     if (activar == true) {
-      await auth.activarAccesoBiometrico(correo: correo, password: password);
+      await auth.activarAccesoBiometrico(
+        correo: correo,
+        password: password,
+        paisId: _paisIdSeleccionado,
+      );
     }
     await _cargarOpcionesBiometria();
   }
@@ -160,13 +219,24 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     final correo = _correoCtrl.text.trim();
     final password = _passwordCtrl.text;
+    final paisId = _paisIdSeleccionado;
+    if (paisId == null || paisId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona tu país antes de ingresar')),
+      );
+      return;
+    }
     if (correo.isEmpty || password.length < 4) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa usuario y contraseña (mínimo 4 caracteres)')),
       );
       return;
     }
-    final ok = await context.read<AppState>().login(correo, password);
+    final ok = await context.read<AppState>().login(
+          correo,
+          password,
+          paisId: paisId,
+        );
     if (!mounted || !ok) return;
     await _ofrecerActivarHuella(correo, password);
     await _cargarTasasLogin();
@@ -175,6 +245,67 @@ class _LoginScreenState extends State<LoginScreen> {
   String _textoTasa(double? valor) {
     if (valor == null) return '—';
     return '${_fmtTasa.format(valor)} Bs';
+  }
+
+  Widget _selectorPais() {
+    if (_cargandoPaises) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: LinearProgressIndicator(minHeight: 2),
+      );
+    }
+    if (_errorPaises != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          children: [
+            Text(
+              _errorPaises!,
+              style: const TextStyle(color: Color(0xFFEF4444)),
+              textAlign: TextAlign.center,
+            ),
+            TextButton(onPressed: _cargarPaises, child: const Text('Reintentar países')),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField2<String>(
+        value: _paisIdSeleccionado,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'País / región',
+          prefixIcon: Icon(Icons.public_rounded),
+        ),
+        hint: const Text('Elige un país'),
+        items: _paises
+            .map(
+              (p) => DropdownMenuItem<String>(
+                value: p.id,
+                child: Text(
+                  p.etiquetaLista,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            )
+            .toList(),
+        onChanged: (v) => setState(() => _paisIdSeleccionado = v),
+        buttonStyleData: const ButtonStyleData(
+          padding: EdgeInsets.only(right: 8),
+        ),
+        dropdownStyleData: DropdownStyleData(
+          maxHeight: 280,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: const Color(0xFF0F172A),
+          ),
+        ),
+        menuItemStyleData: const MenuItemStyleData(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+        ),
+      ),
+    );
   }
 
   Widget _panelTasas() {
@@ -320,6 +451,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.all(20),
                       child: Column(
                         children: [
+                          _selectorPais(),
                           TextField(
                             controller: _correoCtrl,
                             keyboardType: TextInputType.emailAddress,
