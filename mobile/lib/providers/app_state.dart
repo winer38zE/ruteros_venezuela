@@ -22,6 +22,7 @@ import '../services/sync_service.dart';
 import '../services/alerta_cobro_service.dart';
 import '../services/notification_service.dart';
 import '../services/paises_service.dart';
+import '../services/perfil_service.dart';
 import '../services/region_session_service.dart';
 import '../models/pais_region.dart';
 
@@ -29,6 +30,7 @@ class AppState extends ChangeNotifier {
   AppState() {
     auth = AuthService(api, regionSession: regionSession);
     paises = PaisesService(api);
+    perfil = PerfilService(api);
     contabilidad = ContabilidadService(api);
     inventario = InventarioService(api);
     productos = ProductosService(api);
@@ -54,6 +56,7 @@ class AppState extends ChangeNotifier {
   final ApiService api = ApiService();
   late final AuthService auth;
   late final PaisesService paises;
+  late final PerfilService perfil;
   final RegionSessionService regionSession = RegionSessionService();
   late final ContabilidadService contabilidad;
   late final InventarioService inventario;
@@ -106,6 +109,15 @@ class AppState extends ChangeNotifier {
 
   String get simboloMoneda => region?.simboloMoneda ?? 'Bs.';
   String get monedaPrincipal => region?.monedaPrincipal ?? 'VES';
+
+  /// Símbolo persistido en login (secure storage) si la región aún no cargó.
+  Future<String> simboloMonedaPersistido() async {
+    if (region != null && region!.simboloMoneda.isNotEmpty) {
+      return region!.simboloMoneda;
+    }
+    final guardado = await auth.biometric.leerPaisSimboloMoneda();
+    return guardado ?? simboloMoneda;
+  }
 
   Future<bool> login(
     String correo,

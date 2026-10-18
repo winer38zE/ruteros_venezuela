@@ -13,6 +13,9 @@ class Usuario {
   final String? paisId;
   final PaisRegion? pais;
 
+  /// Alias para compatibilidad con utilidades de región.
+  PaisRegion? get paisRegion => pais;
+
   Usuario({
     required this.id,
     required this.nombre,

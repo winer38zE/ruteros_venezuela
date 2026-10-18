@@ -4,11 +4,13 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from app.models.core import (
     ConfiguracionNomina,
+    Empresa,
     MovimientoFinanciero,
     TipoMovimientoFinanciero,
     CategoriaMovimientoFinanciero,
     MonedaGasto,
     MetodoPagoSalida,
+    Pais,
     Usuario,
     RolUsuario,
     Cobro,
@@ -18,6 +20,16 @@ from app.services.nomina import calcular_linea_empleado, _rango_datetime
 
 def _d(val) -> Decimal:
     return Decimal(str(val))
+
+
+def _moneda_operativa_empresa(db: Session, empresa_id) -> tuple[str, str]:
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
+    if empresa is None or not empresa.pais_id:
+        return "USD", "$"
+    pais = db.query(Pais).filter(Pais.id == empresa.pais_id).first()
+    if pais is None:
+        return "USD", "$"
+    return str(pais.moneda_principal), str(pais.simbolo_moneda)
 
 
 def _obtener_config_nomina(db: Session, empresa_id) -> ConfiguracionNomina:
@@ -116,10 +128,13 @@ def calcular_nomina(
             })
 
     total_pendiente = sum(d["pendiente_usd"] for d in detalle)
+    moneda_principal, simbolo_moneda = _moneda_operativa_empresa(db, empresa_id)
 
     return {
         "periodo_desde": fecha_desde.isoformat() if fecha_desde else None,
         "periodo_hasta": fecha_hasta.isoformat() if fecha_hasta else None,
+        "moneda_principal": moneda_principal,
+        "simbolo_moneda": simbolo_moneda,
         "comision_vendedor_por_articulo_usd": float(cfg.comision_vendedor_por_articulo_usd),
         "comision_vendedor_por_venta_usd": float(cfg.comision_vendedor_por_venta_usd),
         "comision_cobrador_porcentaje": float(cfg.comision_cobrador_porcentaje),

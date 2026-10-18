@@ -67,6 +67,7 @@ class PaisPublicoResponse(BaseModel):
     simbolo_moneda: str
     locale: Optional[str] = None
     configuracion_ui: Optional[dict] = None
+    configuracion_bancaria: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -921,6 +922,8 @@ class DetalleNominaEmpleado(BaseModel):
 class NominaCalculadaResponse(BaseModel):
     periodo_desde: Optional[str] = None
     periodo_hasta: Optional[str] = None
+    moneda_principal: str = "USD"
+    simbolo_moneda: str = "$"
     comision_vendedor_por_articulo_usd: float
     comision_vendedor_por_venta_usd: float
     comision_cobrador_porcentaje: float

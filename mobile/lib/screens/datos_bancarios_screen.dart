@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../services/empresa_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/region_bancaria.dart';
+import '../widgets/cuenta_bancaria_form_dialog.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 
@@ -16,8 +18,6 @@ class DatosBancariosScreen extends StatefulWidget {
 class _DatosBancariosScreenState extends State<DatosBancariosScreen> {
   List<CuentaBancaria> _cuentas = [];
   bool _cargando = true;
-
-  static const _tipos = ['Ahorro', 'Corriente'];
 
   @override
   void initState() {
@@ -43,9 +43,31 @@ class _DatosBancariosScreenState extends State<DatosBancariosScreen> {
   }
 
   Future<void> _agregar() async {
+    final state = context.read<AppState>();
+    final config = await configuracionBancariaSesion(
+      paises: state.paises,
+      region: state.region,
+      paisUsuario: state.usuario?.pais,
+      paisId: state.usuario?.paisId,
+    );
+    if (!mounted) return;
     final creada = await showDialog<bool>(
       context: context,
-      builder: (ctx) => const _FormularioCuenta(),
+      builder: (_) => CuentaBancariaFormDialog(
+        config: config,
+        titulo: 'Cuenta de cobro (${state.region?.nombre ?? "región"})',
+        onGuardar: (data) async {
+          await state.empresas.crearCuenta(
+            canal: data.canal,
+            banco: data.banco,
+            titular: data.titular,
+            documento: data.documentoIdentidad,
+            tipoCuenta: data.tipoCuenta,
+            numeroCuenta: data.numeroCuenta,
+            telefono: data.telefonoPagoMovil,
+          );
+        },
+      ),
     );
     if (creada == true) _cargar();
   }
@@ -93,7 +115,7 @@ class _DatosBancariosScreenState extends State<DatosBancariosScreen> {
                 if (_cuentas.isEmpty)
                   const EmptyState(
                     icon: Icons.account_balance_rounded,
-                    message: 'No hay cuentas. Agrega una transferencia o un Pago Móvil de Venezuela.',
+                    message: 'No hay cuentas. Agrega una según los bancos de tu país.',
                   )
                 else
                   ..._cuentas.map(
@@ -111,11 +133,11 @@ class _DatosBancariosScreenState extends State<DatosBancariosScreen> {
                             const SizedBox(height: 6),
                             if (c.esPagoMovil) ...[
                               Text('Teléfono: ${c.datoCopiable}'),
-                              Text('Cédula: ${c.documento}'),
+                              Text('Documento: ${c.documento}'),
                             ] else ...[
                               Text('Tipo: ${c.tipoCuenta}'),
                               Text('Número: ${c.numeroCuenta}'),
-                              Text('Cédula/RIF: ${c.documento}'),
+                              Text('Documento: ${c.documento}'),
                             ],
                             Text('Titular: ${c.titular}'),
                             Align(
@@ -139,184 +161,6 @@ class _DatosBancariosScreenState extends State<DatosBancariosScreen> {
                 ),
               ],
             ),
-    );
-  }
-}
-
-class _FormularioCuenta extends StatefulWidget {
-  const _FormularioCuenta();
-
-  @override
-  State<_FormularioCuenta> createState() => _FormularioCuentaState();
-}
-
-class _FormularioCuentaState extends State<_FormularioCuenta> {
-  static const _bancos = [
-    'Banco de Venezuela',
-    'Banesco',
-    'BBVA Provincial',
-    'Mercantil',
-    'BNC',
-    'Bancamiga',
-    'Bancaribe',
-    'Banco del Tesoro',
-    'Banco Exterior',
-    'Banplus',
-    'Banco Plaza',
-    '100% Banco',
-    'Otro',
-  ];
-
-  final _bancoOtroCtrl = TextEditingController();
-  final _numeroCtrl = TextEditingController();
-  final _telefonoCtrl = TextEditingController();
-  final _titularCtrl = TextEditingController();
-  final _documentoCtrl = TextEditingController();
-  String _canal = 'transferencia';
-  String _banco = 'Banesco';
-  String _tipo = 'Ahorro';
-  bool _guardando = false;
-
-  @override
-  void dispose() {
-    _bancoOtroCtrl.dispose();
-    _numeroCtrl.dispose();
-    _telefonoCtrl.dispose();
-    _titularCtrl.dispose();
-    _documentoCtrl.dispose();
-    super.dispose();
-  }
-
-  String get _bancoFinal =>
-      _banco == 'Otro' ? _bancoOtroCtrl.text.trim() : _banco;
-
-  Future<void> _guardar() async {
-    final pagoMovil = _canal == 'pago_movil';
-    if (_bancoFinal.isEmpty ||
-        _titularCtrl.text.trim().isEmpty ||
-        _documentoCtrl.text.trim().isEmpty ||
-        (pagoMovil ? _telefonoCtrl.text.trim().isEmpty : _numeroCtrl.text.trim().isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            pagoMovil
-                ? 'Completa banco, teléfono, titular y cédula'
-                : 'Completa banco, número, titular y cédula o RIF',
-          ),
-        ),
-      );
-      return;
-    }
-    setState(() => _guardando = true);
-    try {
-      await context.read<AppState>().empresas.crearCuenta(
-            canal: _canal,
-            banco: _bancoFinal,
-            titular: _titularCtrl.text.trim(),
-            documento: _documentoCtrl.text.trim(),
-            tipoCuenta: pagoMovil ? null : _tipo,
-            numeroCuenta: pagoMovil ? null : _numeroCtrl.text.trim(),
-            telefono: pagoMovil ? _telefonoCtrl.text.trim() : null,
-          );
-      if (!mounted) return;
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFEF4444)),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _guardando = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pagoMovil = _canal == 'pago_movil';
-    return AlertDialog(
-      backgroundColor: AppColors.bgCard,
-      title: const Text('Cuenta venezolana'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropdownButtonFormField<String>(
-              value: _canal,
-              decoration: const InputDecoration(labelText: 'Medio'),
-              items: const [
-                DropdownMenuItem(value: 'transferencia', child: Text('Transferencia bancaria')),
-                DropdownMenuItem(value: 'pago_movil', child: Text('Pago móvil')),
-              ],
-              onChanged: (v) => setState(() => _canal = v ?? 'transferencia'),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _banco,
-              decoration: const InputDecoration(labelText: 'Banco'),
-              items: _bancos
-                  .map((b) => DropdownMenuItem(value: b, child: Text(b)))
-                  .toList(),
-              onChanged: (v) => setState(() => _banco = v ?? 'Banesco'),
-            ),
-            if (_banco == 'Otro') ...[
-              const SizedBox(height: 8),
-              TextField(
-                controller: _bancoOtroCtrl,
-                decoration: const InputDecoration(labelText: 'Nombre del banco'),
-              ),
-            ],
-            const SizedBox(height: 8),
-            if (!pagoMovil)
-              DropdownButtonFormField<String>(
-                value: _tipo,
-                decoration: const InputDecoration(labelText: 'Tipo de cuenta'),
-                items: _DatosBancariosScreenState._tipos
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                    .toList(),
-                onChanged: (v) => setState(() => _tipo = v ?? 'Ahorro'),
-              ),
-            if (!pagoMovil) const SizedBox(height: 8),
-            if (pagoMovil)
-              TextField(
-                controller: _telefonoCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Teléfono Pago Móvil',
-                  hintText: '0412 0000000',
-                ),
-              )
-            else
-              TextField(
-                controller: _numeroCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Número de cuenta',
-                  hintText: '0102...',
-                ),
-              ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _titularCtrl,
-              decoration: const InputDecoration(labelText: 'Titular'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _documentoCtrl,
-              decoration: InputDecoration(
-                labelText: pagoMovil ? 'Cédula' : 'Cédula / RIF',
-                hintText: pagoMovil ? 'V-12345678' : 'V-12345678 o J-123456789',
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: _guardando ? null : () => Navigator.pop(context, false), child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: _guardando ? null : _guardar,
-          child: Text(_guardando ? 'Guardando...' : 'Guardar'),
-        ),
-      ],
     );
   }
 }

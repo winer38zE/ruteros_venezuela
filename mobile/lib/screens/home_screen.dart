@@ -24,6 +24,7 @@ import 'proveedores_screen.dart';
 import 'rutas_list_screen.dart';
 import 'rutas_resumen_screen.dart';
 import 'login_screen.dart';
+import 'cuenta_bancaria_empleado_screen.dart';
 import 'datos_bancarios_screen.dart';
 
 class _QuickAction {
@@ -186,7 +187,7 @@ class HomeScreen extends StatelessWidget {
           id: 'datos_bancarios',
           icon: Icons.account_balance_rounded,
           title: 'Transferencia',
-          subtitle: 'Pago móvil y transferencia en bolívares',
+          subtitle: 'Cuentas de cobro según tu país',
           color: AppColors.neonBlue,
           screen: DatosBancariosScreen(),
           badge: 'BANCO',
@@ -240,6 +241,18 @@ class HomeScreen extends StatelessWidget {
 
     if (state.puedeCobrar || state.puedeVender) {
       modules.add(const _ModuleDef(
+        id: 'mi_cuenta_bancaria',
+        icon: Icons.account_balance_wallet_outlined,
+        title: 'Mi cuenta bancaria',
+        subtitle: 'Datos para recibir tu nómina',
+        color: AppColors.emerald,
+        screen: CuentaBancariaEmpleadoScreen(),
+        badge: 'PAY',
+      ));
+    }
+
+    if (state.puedeCobrar || state.puedeVender) {
+      modules.add(const _ModuleDef(
         id: 'rutas',
         icon: Icons.route_rounded,
         title: 'Ruta del Día',
@@ -276,7 +289,7 @@ class HomeScreen extends StatelessWidget {
         id: 'datos_bancarios',
         icon: Icons.account_balance_rounded,
         title: 'Transferencia',
-        subtitle: 'Pago móvil y transferencia en bolívares',
+        subtitle: 'Cuentas de cobro según tu país',
         color: AppColors.neonBlue,
         screen: DatosBancariosScreen(),
         badge: 'BANCO',
