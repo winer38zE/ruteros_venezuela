@@ -1,5 +1,6 @@
 """Endpoints de tasas de cambio multimoneda."""
 import logging
+from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -7,7 +8,6 @@ from typing import List
 
 from app.core.db import get_db
 from app.core.deps import require_dueno, require_admin_o_dueno, obtener_usuario_actual
-from app.core.tenant import obtener_empresa_tenant
 from app.models.core import TasaCambio, Usuario
 from app.schemas.core import (
     TasaCambioCreate,
@@ -37,6 +37,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _serializar_tasa(t: TasaCambio) -> TasaCambioResponse:
+    usd_bcv = float(t.usd_bcv_bs or t.usd_bs or 0)
+    usd_par = float(t.usd_paralelo_bs or usd_bcv)
+    usd_bs = float(t.usd_bs or usd_bcv)
+    cop = float(t.cop_usd or 0)
+    return TasaCambioResponse(
+        id=str(t.id),
+        empresa_id=str(t.empresa_id),
+        fecha=t.fecha or datetime.utcnow(),
+        momento=t.momento or "manana",
+        usd_bs=usd_bs,
+        usd_bcv_bs=usd_bcv,
+        usd_paralelo_bs=usd_par,
+        eur_bs=float(t.eur_bs or 0),
+        cop_usd=cop,
+        cop_ves=float(t.cop_ves) if t.cop_ves is not None else None,
+        activa=bool(t.activa if t.activa is not None else True),
+        origen=t.origen or "manual",
+    )
+
+
 @router.post("/sincronizar-auto", response_model=TasaSincronizacionResponse)
 async def sincronizar_tasas_auto(
     db: Session = Depends(get_db),
@@ -44,25 +65,27 @@ async def sincronizar_tasas_auto(
 ):
     """Fuerza la obtención automática de tasas (BCV, paralelo, COP) vía scraper/API."""
     momento = momento_actual()
-    empresa = obtener_empresa_tenant(db)
+    empresa_id = usuario.empresa_id
 
     try:
         creadas, externas, uso_fallback = await sincronizar_tasas_automaticas(
             db,
             momento=momento,
-            empresa_id=empresa.id,
+            empresa_id=empresa_id,
         )
     except Exception as exc:
         logger.exception("Sincronización manual de tasas falló por completo")
-        externas = tasas_desde_ultima_db(db, empresa.id)
+        externas = tasas_desde_ultima_db(db, empresa_id)
         externas.fuentes["error"] = str(exc)
         creadas = []
         uso_fallback = True
 
     tasa_empresa = next(
-        (t for t in creadas if t.empresa_id == usuario.empresa_id),
-        creadas[0] if creadas else obtener_ultima_tasa(db, usuario.empresa_id),
+        (t for t in creadas if t.empresa_id == empresa_id),
+        None,
     )
+    if tasa_empresa is None:
+        tasa_empresa = obtener_ultima_tasa(db, empresa_id)
 
     if uso_fallback and not creadas:
         mensaje = (
@@ -87,7 +110,7 @@ async def sincronizar_tasas_auto(
         cop_usd=externas.cop_usd,
         fuentes=externas.fuentes,
         mensaje=mensaje,
-        tasa=tasa_empresa,
+        tasa=_serializar_tasa(tasa_empresa) if tasa_empresa else None,
     )
 
 
@@ -97,11 +120,14 @@ def registrar_tasa(
     db: Session = Depends(get_db),
     dueno: Usuario = Depends(require_dueno),
 ):
-    empresa = obtener_empresa_tenant(db)
-    cop_ves = float(tasa.usd_bcv_bs) / float(tasa.cop_usd) if tasa.cop_usd else None
+    empresa_id = dueno.empresa_id
+    if tasa.cop_usd <= 0:
+        raise HTTPException(status_code=400, detail="COP/USD debe ser mayor que cero")
+    cop_ves = float(tasa.usd_bcv_bs) / float(tasa.cop_usd)
 
     nueva_tasa = TasaCambio(
-        empresa_id=empresa.id,
+        empresa_id=empresa_id,
+        fecha=datetime.utcnow(),
         momento=tasa.momento,
         usd_bs=tasa.usd_bcv_bs,
         usd_bcv_bs=tasa.usd_bcv_bs,
@@ -113,50 +139,48 @@ def registrar_tasa(
         origen="manual",
     )
     db.query(TasaCambio).filter(
-        TasaCambio.empresa_id == empresa.id,
+        TasaCambio.empresa_id == empresa_id,
         TasaCambio.activa.is_(True),
     ).update({"activa": False})
     db.add(nueva_tasa)
     db.commit()
     db.refresh(nueva_tasa)
-    return nueva_tasa
+    return _serializar_tasa(nueva_tasa)
 
 
 @router.get("/", response_model=List[TasaCambioResponse])
 def listar_tasas(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(obtener_usuario_actual),
 ):
-    empresa = obtener_empresa_tenant(db)
-    return (
+    items = (
         db.query(TasaCambio)
-        .filter(TasaCambio.empresa_id == empresa.id)
+        .filter(TasaCambio.empresa_id == usuario.empresa_id)
         .order_by(TasaCambio.fecha.desc())
         .limit(60)
         .all()
     )
+    return [_serializar_tasa(t) for t in items]
 
 
 @router.get("/ultima", response_model=TasaCambioResponse)
 def obtener_ultima(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(obtener_usuario_actual),
 ):
-    empresa = obtener_empresa_tenant(db)
-    ultima = obtener_ultima_tasa(db, empresa.id)
+    ultima = obtener_ultima_tasa(db, usuario.empresa_id)
     if not ultima:
         raise HTTPException(status_code=404, detail="No hay tasas de cambio registradas")
-    return ultima
+    return _serializar_tasa(ultima)
 
 
 @router.post("/convertir", response_model=ConversionMonedaResponse)
 def convertir_moneda(
     body: ConversionMonedaRequest,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(obtener_usuario_actual),
 ):
-    empresa = obtener_empresa_tenant(db)
-    tasa = obtener_ultima_tasa(db, empresa.id)
+    tasa = obtener_ultima_tasa(db, usuario.empresa_id)
     if not tasa:
         raise HTTPException(status_code=404, detail="Registra una tasa de cambio primero")
 
