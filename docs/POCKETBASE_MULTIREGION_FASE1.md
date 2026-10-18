@@ -66,6 +66,16 @@ Colecciones:
 
 ---
 
-## Siguiente paso
+## Login Flutter (Fase 2)
 
-Confirma en chat cuando `paises` y `pais_id` estén listos → **Fase 2 FastAPI** (login con país + filtro global).
+La app carga países desde **`GET /api/v1/paises`** (FastAPI, sin login). No hace falta exponer PocketBase al cliente si usas ese endpoint.
+
+**Opcional — lectura directa desde PocketBase:** en la colección `paises`, reglas **List** y **View** en blanco (`""`) o públicas, para que un SDK móvil pueda listar antes del login. Create/update/delete solo admin.
+
+Tras desplegar la API:
+
+1. `python scripts/sync_pocketbase_schema.py`
+2. `python scripts/seed_paises.py`
+3. Reinicia la API (bootstrap asigna `pais_id` Venezuela a usuarios demo sin país).
+
+Login: **`POST /api/v1/auth/login`** con `username`, `password` y **`pais_id`** (obligatorio). Respuesta incluye objeto **`pais`** (moneda, símbolo, ISO).

@@ -36,6 +36,8 @@ def _asegurar_usuario_demo(db, empresa_id, username: str, nombre: str, rol) -> N
         .filter(func.lower(Usuario.username) == username_norm)
         .first()
     )
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
+    pais_empresa = empresa.pais_id if empresa else None
     if existente:
         existente.password_hash = get_password_hash(password)
         existente.activo = True
@@ -43,8 +45,9 @@ def _asegurar_usuario_demo(db, empresa_id, username: str, nombre: str, rol) -> N
         existente.rol = rol
         if existente.empresa_id != empresa_id:
             existente.empresa_id = empresa_id
+        if pais_empresa and not existente.pais_id:
+            existente.pais_id = pais_empresa
         return
-    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
     db.add(
         Usuario(
             nombre=nombre,
@@ -126,6 +129,12 @@ def asegurar_usuario_admin() -> None:
         _asegurar_almacen_principal(db, empresa.id)
         for username, nombre, rol in DEMO_USUARIOS:
             _asegurar_usuario_demo(db, empresa.id, username, nombre, rol)
+
+        if pais_ve:
+            for u in db.query(Usuario).filter(Usuario.pais_id.is_(None)).all():
+                u.pais_id = pais_ve.id
+            if empresa and not empresa.pais_id:
+                empresa.pais_id = pais_ve.id
 
         db.commit()
         logger.info(

@@ -12,7 +12,15 @@ class ApiConfig {
   /// Quitar cuando el nginx/Coolify sirva la cadena SSL completa.
   static const Set<String> insecureSslHosts = {
     'api-ruteros.edwuarcardenas.online',
+    'ruteros.edwuarcardenas.online',
   };
+
+  /// PocketBase (solo diagnóstico; el catálogo de países va por FastAPI `/paises`).
+  static const String _productionPocketBaseUrl =
+      'https://ruteros.edwuarcardenas.online';
+
+  /// `flutter run --dart-define=POCKETBASE_URL=https://tu-pb.ejemplo.com`
+  static const String _envPocketBaseUrl = String.fromEnvironment('POCKETBASE_URL');
 
   /// Override opcional en compilación:
   /// `flutter run --dart-define=API_BASE_URL=http://192.168.x.x:8000/api/v1`
@@ -32,6 +40,26 @@ class ApiConfig {
       return apiBaseUrl.substring(0, apiBaseUrl.length - apiPrefix.length);
     }
     return apiBaseUrl;
+  }
+
+  /// Origen PocketBase sin barra final.
+  static String get pocketBaseUrl {
+    final raw =
+        _envPocketBaseUrl.isNotEmpty ? _envPocketBaseUrl : _productionPocketBaseUrl;
+    var normalized = raw.trim();
+    while (normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
+  }
+
+  /// GET público: `/api/collections/paises/records`
+  static Uri pocketBaseCollectionRecordsUri(
+    String collection, {
+    Map<String, String>? query,
+  }) {
+    final path = '/api/collections/$collection/records';
+    return Uri.parse('$pocketBaseUrl$path').replace(queryParameters: query);
   }
 
   static String _normalizeApiBaseUrl(String url) {

@@ -17,15 +17,16 @@ from app.core.usuario_password_hash import (
 from app.core.config import POCKETBASE_URL
 from app.core.db import autenticar_admin_pocketbase, get_db
 from app.core.pb_ready import PocketBaseNoDisponible
-from app.core.pb_retry import ejecutar_con_reintentos, es_error_transitorio
+from app.core.pb_retry import ejecutar_con_reintentos
 from app.core.seguridad import (
     cuenta_bloqueada_login,
     exigir_cupo_login,
     limpiar_fallos_login,
     registrar_fallo_login,
 )
-from app.models.core import Usuario
-from app.schemas.core import UsuarioResponse
+from app.models.core import Empresa, Pais, RolUsuario, Usuario
+from app.schemas.core import LoginResponse, PaisPublicoResponse
+from app.services.paises_seed import pais_por_defecto
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str
     password: str = Field(min_length=4)
+    pais_id: str = Field(min_length=1, description="ID del país seleccionado en la app")
 
 
 def _rol_como_texto(rol) -> str:
@@ -43,8 +45,17 @@ def _rol_como_texto(rol) -> str:
     return str(rol)
 
 
-def _usuario_a_respuesta(usuario: Usuario) -> UsuarioResponse:
-    return UsuarioResponse(
+def _float_sueldo(valor) -> float:
+    if valor is None:
+        return 0.0
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _usuario_a_respuesta(usuario: Usuario, pais: PaisPublicoResponse) -> LoginResponse:
+    return LoginResponse(
         id=usuario.id,
         empresa_id=usuario.empresa_id,
         nombre=usuario.nombre,
@@ -52,7 +63,90 @@ def _usuario_a_respuesta(usuario: Usuario) -> UsuarioResponse:
         rol=_rol_como_texto(usuario.rol),
         activo=bool(usuario.activo),
         telefono=usuario.telefono,
+        sueldo_base_usd=_float_sueldo(getattr(usuario, "sueldo_base_usd", None)),
+        pais_id=str(usuario.pais_id) if usuario.pais_id else None,
+        pais=pais,
     )
+
+
+def _pais_a_publico(pais: Pais) -> PaisPublicoResponse:
+    return PaisPublicoResponse.model_validate(pais)
+
+
+def _obtener_pais_activo(db: Session, pais_id: str) -> Pais:
+    pid = (pais_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="Debes seleccionar un país")
+    pais = db.query(Pais).filter(Pais.id == pid, Pais.activo.is_(True)).first()
+    if pais is None:
+        raise HTTPException(status_code=400, detail="País no válido o inactivo")
+    return pais
+
+
+def _es_dueno_cuenta(usuario: Usuario) -> bool:
+    if (usuario.username or "").strip().lower() == "dueno":
+        return True
+    rol = _rol_como_texto(usuario.rol).upper()
+    return rol in ("DUEÑO", "DUENO", "OWNER") or usuario.rol == RolUsuario.DUENO
+
+
+def _pais_para_login(db: Session, body: LoginRequest) -> Pais:
+    """País del login; para `dueno` sin país válido usa Venezuela (VE) por defecto."""
+    try:
+        return _obtener_pais_activo(db, body.pais_id)
+    except HTTPException:
+        if _normalizar_username(body.username).lower() != "dueno":
+            raise
+        defecto = pais_por_defecto(db)
+        if defecto is None or not bool(defecto.activo):
+            raise
+        logger.warning(
+            "Login dueno: pais_id=%r inválido; usando país por defecto %s",
+            body.pais_id,
+            defecto.codigo_iso,
+        )
+        return defecto
+
+
+def _resolver_y_validar_pais_usuario(
+    db: Session,
+    usuario: Usuario,
+    pais_seleccionado: Pais,
+) -> PaisPublicoResponse:
+    empresa = db.query(Empresa).filter(Empresa.id == usuario.empresa_id).first()
+    es_dueno = _es_dueno_cuenta(usuario)
+    pais_efectivo = usuario.pais_id or (empresa.pais_id if empresa else None)
+    seleccion = str(pais_seleccionado.id)
+
+    if not es_dueno and pais_efectivo and str(pais_efectivo) != seleccion:
+        raise HTTPException(
+            status_code=403,
+            detail="Este usuario no pertenece al país seleccionado. Elige el país correcto.",
+        )
+
+    if es_dueno and pais_efectivo and str(pais_efectivo) != seleccion:
+        logger.info(
+            "Login dueno: actualizando región %s → %s",
+            pais_efectivo,
+            seleccion,
+        )
+
+    if not usuario.pais_id:
+        usuario.pais_id = pais_seleccionado.id
+    if empresa is not None and not empresa.pais_id:
+        empresa.pais_id = pais_seleccionado.id
+
+    try:
+        db.commit()
+    except (ClientResponseError, SQLAlchemyError) as exc:
+        db.rollback()
+        logger.exception("Login: no se pudo guardar pais_id del usuario")
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo actualizar la región del usuario. Intenta de nuevo.",
+        ) from exc
+
+    return _pais_a_publico(pais_seleccionado)
 
 
 def _normalizar_username(username: str) -> str:
@@ -123,7 +217,7 @@ def _error_base_datos(exc: Exception) -> HTTPException:
     )
 
 
-@router.post("/login", response_model=UsuarioResponse)
+@router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     username_entrada = _normalizar_username(body.username)
     if cuenta_bloqueada_login(request, username_entrada):
@@ -137,6 +231,14 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             detail="Demasiados intentos de ingreso. Espera unos minutos e inténtalo de nuevo.",
         )
     exigir_cupo_login(request, username_entrada)
+
+    try:
+        pais_seleccionado = _pais_para_login(db, body)
+    except HTTPException:
+        raise
+    except (ClientResponseError, SQLAlchemyError, RuntimeError) as exc:
+        raise _error_base_datos(exc) from exc
+
     try:
         usuario = _buscar_usuario_por_username(db, username_entrada)
     except HTTPException:
@@ -197,5 +299,11 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
     limpiar_fallos_login(request, username_entrada)
-    logger.info("Login OK (id=%s, username=%r)", usuario.id, usuario.username)
-    return _usuario_a_respuesta(usuario)
+    pais_resp = _resolver_y_validar_pais_usuario(db, usuario, pais_seleccionado)
+    logger.info(
+        "Login OK (id=%s, username=%r, pais=%s)",
+        usuario.id,
+        usuario.username,
+        pais_resp.codigo_iso,
+    )
+    return _usuario_a_respuesta(usuario, pais_resp)

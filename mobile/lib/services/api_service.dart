@@ -143,6 +143,30 @@ class ApiService {
     }
   }
 
+  /// Lectura pública de una colección PocketBase (sin sesión FastAPI).
+  Future<Map<String, dynamic>> getPocketBaseCollectionRecords(
+    String collection, {
+    Map<String, String>? query,
+  }) async {
+    final uri = ApiConfig.pocketBaseCollectionRecordsUri(collection, query: query);
+    try {
+      final res = await _client
+          .get(uri, headers: const {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 30));
+      final data = _decode(res);
+      if (data is Map<String, dynamic>) return data;
+      throw ApiException(0, 'Respuesta inválida de PocketBase');
+    } on SocketException {
+      throw ApiException(0, 'Sin conexión. Verifica internet y PocketBase.');
+    } on TimeoutException {
+      throw ApiException(0, 'Tiempo de espera agotado al cargar países.');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(0, 'Error al leer PocketBase: $e');
+    }
+  }
+
   Future<dynamic> get(String path, {Map<String, String>? query}) async {
     try {
       final res = await _client
@@ -292,10 +316,18 @@ class ApiService {
     }
     try {
       final data = jsonDecode(res.body);
-      if (data is Map && data['detail'] != null) {
-        return data['detail'].toString();
+      if (data is Map) {
+        if (data['detail'] != null) {
+          return data['detail'].toString();
+        }
+        if (data['message'] != null) {
+          return data['message'].toString();
+        }
       }
     } catch (_) {}
+    if (res.statusCode == 404) {
+      return 'Not Found';
+    }
     return 'Error ${res.statusCode}';
   }
 }

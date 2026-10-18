@@ -17,6 +17,8 @@ class BiometricService {
   static const _kToken = 'session_token';
   static const _kUsuarioId = 'session_usuario_id';
   static const _kUsuarioJson = 'session_usuario_json';
+  static const _kPaisLoginId = 'session_pais_login_id';
+  static const _kPaisSimboloMoneda = 'session_pais_simbolo_moneda';
 
   final LocalAuthentication _localAuth;
   final FlutterSecureStorage _storage;
@@ -95,9 +97,33 @@ class BiometricService {
   Future<void> guardarCredenciales({
     required String correo,
     required String password,
+    String? paisId,
+    String? simboloMoneda,
   }) async {
     await _storage.write(key: _kCorreo, value: correo.trim());
     await _storage.write(key: _kPassword, value: password);
+    if (paisId != null && paisId.isNotEmpty) {
+      await _storage.write(key: _kPaisLoginId, value: paisId);
+    }
+    if (simboloMoneda != null && simboloMoneda.isNotEmpty) {
+      await _storage.write(key: _kPaisSimboloMoneda, value: simboloMoneda);
+    }
+  }
+
+  Future<String?> leerPaisLoginId() async {
+    try {
+      return await _storage.read(key: _kPaisLoginId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> leerPaisSimboloMoneda() async {
+    try {
+      return await _storage.read(key: _kPaisSimboloMoneda);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> guardarSesion({
@@ -132,6 +158,8 @@ class BiometricService {
   Future<void> borrarCredenciales() async {
     await _storage.delete(key: _kCorreo);
     await _storage.delete(key: _kPassword);
+    await _storage.delete(key: _kPaisLoginId);
+    await _storage.delete(key: _kPaisSimboloMoneda);
   }
 
   Future<void> borrarSesionSegura() async {

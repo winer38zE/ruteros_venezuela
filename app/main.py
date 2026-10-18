@@ -24,6 +24,7 @@ from app.api import (
     whatsapp,
     cartera_critica,
     cartera,
+    paises,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +67,7 @@ app.include_router(health_router.router)
 
 # Registro de Routers principales
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(paises.router, prefix="/api/v1/paises", tags=["Países"])
 app.include_router(empresas.router, prefix="/api/v1/empresas", tags=["Empresas"])
 app.include_router(usuarios.router, prefix="/api/v1/usuarios", tags=["Usuarios"])
 app.include_router(perfil.router, prefix="/api/v1/perfil", tags=["Perfil empleado"])
