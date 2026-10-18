@@ -60,6 +60,7 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("costo_usd", "NUMERIC(10, 2) DEFAULT 0"),
             ("stock_minimo", "INTEGER DEFAULT 0"),
             ("proveedor_id", "CHAR(36)"),
+            ("pais_id", "CHAR(36)"),
         ],
         "tasas_cambio": [
             ("usd_bcv_bs", "NUMERIC(12, 4)"),
@@ -74,6 +75,7 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("tipo_cuenta", "VARCHAR(40)"),
             ("numero_cuenta", "VARCHAR(64)"),
             ("cedula_nit", "VARCHAR(32)"),
+            ("pais_id", "CHAR(36)"),
         ],
         "ventas": [
             ("tipo_tasa_usd", "VARCHAR(20) DEFAULT 'bcv'"),
@@ -96,14 +98,37 @@ def aplicar_migraciones_sqlite(engine) -> None:
         "lotes_inventario": [
             ("proveedor_id", "CHAR(36)"),
             ("genera_deuda_proveedor", "BOOLEAN DEFAULT 0"),
+            ("pais_id", "CHAR(36)"),
         ],
         "usuarios": [
             ("sueldo_base_usd", "NUMERIC(10, 2) DEFAULT 0"),
+            ("pais_id", "CHAR(36)"),
         ],
         "configuracion_nomina": [
             ("comision_vendedor_por_venta_usd", "NUMERIC(10, 2) DEFAULT 10"),
             ("dias_periodo_nomina", "INTEGER DEFAULT 8"),
             ("fecha_ancla_periodo", "DATE"),
+        ],
+        "cuentas_bancarias": [
+            ("pais_id", "CHAR(36)"),
+        ],
+        "cuentas_bancarias_empleados": [
+            ("pais_id", "CHAR(36)"),
+        ],
+        "almacenes": [
+            ("pais_id", "CHAR(36)"),
+        ],
+        "movimientos_inventario": [
+            ("pais_id", "CHAR(36)"),
+        ],
+        "tasas_cambio": [
+            ("pais_id", "CHAR(36)"),
+        ],
+        "movimientos_financieros": [
+            ("pais_id", "CHAR(36)"),
+        ],
+        "pagos_nomina": [
+            ("pais_id", "CHAR(36)"),
         ],
     }
 
@@ -140,6 +165,7 @@ def aplicar_migraciones_sqlite(engine) -> None:
 
         _asegurar_tabla_cuentas_bancarias_empleados(conn)
         _asegurar_tabla_pagos_nomina(conn)
+        _asegurar_tabla_paises(conn)
 
 
 def _tabla_sqlite(conn, nombre: str) -> bool:
@@ -285,6 +311,29 @@ def _rellenar_dia_y_orden_ruta(conn) -> None:
             ),
             {"dia": nuevo_dia, "orden": nuevo_orden, "id": cliente_id},
         )
+
+
+def _asegurar_tabla_paises(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS paises (
+                id CHAR(36) PRIMARY KEY,
+                nombre VARCHAR(80) NOT NULL,
+                codigo_iso VARCHAR(3) NOT NULL UNIQUE,
+                moneda_principal VARCHAR(3) NOT NULL,
+                simbolo_moneda VARCHAR(8) NOT NULL,
+                locale VARCHAR(10),
+                zona_horaria VARCHAR(40),
+                activo BOOLEAN NOT NULL DEFAULT 1,
+                configuracion_bancaria TEXT NOT NULL,
+                configuracion_fiscal TEXT,
+                configuracion_ui TEXT,
+                fecha_creacion DATETIME
+            )
+            """
+        )
+    )
 
 
 def _asegurar_tabla_cuentas_bancarias_empleados(conn) -> None:

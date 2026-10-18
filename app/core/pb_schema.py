@@ -33,6 +33,7 @@ _COLECCIONES_NUCLEO: tuple[str, ...] = (
 )
 
 _ORDEN_COLECCIONES: tuple[str, ...] = (
+    "paises",
     "empresas",
     "cuentas_bancarias",
     "configuracion_fiscal",

@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Text, inspect as sa_inspect
+from sqlalchemy import Boolean, Date, DateTime, Integer, JSON, Numeric, Text, inspect as sa_inspect
 
 from app.core.pb_orm.ids import es_id_pocketbase, id_pocketbase_desde_cualquiera
 from app.models import core as models
@@ -149,6 +149,8 @@ def pb_field_type(col) -> str:
         return "number"
     if isinstance(col.type, (DateTime, Date)):
         return "date"
+    if isinstance(col.type, JSON):
+        return "json"
     if isinstance(col.type, Text):
         return "editor"
     return "text"

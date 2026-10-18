@@ -11,6 +11,7 @@ from app.core.pb_orm import mapper
 from app.core.pb_schema import preparar_esquema_pocketbase, verificar_colecciones_completas
 from app.core.pb_orm.session import SessionLocal
 from app.models.core import Almacen, Empresa, RolUsuario, Usuario
+from app.services.paises_seed import asegurar_catalogo_paises, pais_por_defecto
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ def _asegurar_usuario_demo(db, empresa_id, username: str, nombre: str, rol) -> N
         if existente.empresa_id != empresa_id:
             existente.empresa_id = empresa_id
         return
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
     db.add(
         Usuario(
             nombre=nombre,
@@ -50,6 +52,7 @@ def _asegurar_usuario_demo(db, empresa_id, username: str, nombre: str, rol) -> N
             password_hash=get_password_hash(password),
             rol=rol,
             empresa_id=empresa_id,
+            pais_id=empresa.pais_id if empresa else None,
             activo=True,
         )
     )
@@ -106,11 +109,19 @@ def asegurar_usuario_admin() -> None:
 
     db = SessionLocal()
     try:
+        asegurar_catalogo_paises(db)
+        pais_ve = pais_por_defecto(db)
+
         empresa = db.query(Empresa).first()
         if not empresa:
-            empresa = Empresa(nombre=DEFAULT_EMPRESA)
+            empresa = Empresa(
+                nombre=DEFAULT_EMPRESA,
+                pais_id=pais_ve.id if pais_ve else None,
+            )
             db.add(empresa)
             db.flush()
+        elif pais_ve and not empresa.pais_id:
+            empresa.pais_id = pais_ve.id
 
         _asegurar_almacen_principal(db, empresa.id)
         for username, nombre, rol in DEMO_USUARIOS:
