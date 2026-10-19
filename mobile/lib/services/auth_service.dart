@@ -82,6 +82,7 @@ class AuthService {
     String password, {
     required String paisId,
     bool guardarBiometria = false,
+    bool persistirCredenciales = true,
   }) async {
     final usuarioNorm = correo.trim();
     final data = await _api.post('/auth/login', {
@@ -101,10 +102,12 @@ class AuthService {
       await _regionSession.guardar(user.pais!);
     }
 
-    await _persistirAccesoSeguro(
-      correo: usuarioNorm,
-      password: password,
-    );
+    if (persistirCredenciales) {
+      await _persistirAccesoSeguro(
+        correo: usuarioNorm,
+        password: password,
+      );
+    }
 
     if (guardarBiometria) {
       await activarAccesoBiometrico(
@@ -174,9 +177,10 @@ class AuthService {
         credenciales.correo,
         credenciales.password,
         paisId: paisId,
+        persistirCredenciales: false,
       );
     } on ApiException catch (e) {
-      await _api.clearSession();
+      // No borrar flutter_secure_storage: credenciales siguen válidas para otro país.
       if (e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504) {
         throw ApiException(
           e.statusCode,

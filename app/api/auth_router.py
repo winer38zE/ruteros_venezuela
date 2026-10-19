@@ -230,27 +230,27 @@ def _normalizar_username(username: str) -> str:
     return (username or "").strip()
 
 
-def _consultar_usuario_activo(db: Session, clave: str) -> Usuario | None:
-    """Busca por username (sin filtrar por pais_id)."""
+def _listar_usuarios_por_username(db: Session, clave: str) -> list[Usuario]:
+    """Lista coincidencias por username (PocketBase: sin filtro pais_id)."""
     return (
         db.query(Usuario)
         .filter(func.lower(Usuario.username) == clave)
-        .first()
+        .all()
     )
 
 
-def _consultar_con_reintentos(db: Session, clave: str) -> Usuario | None:
+def _listar_usuarios_con_reintentos(db: Session, clave: str) -> list[Usuario]:
     reintentar_auth = True
 
-    def operacion() -> Usuario | None:
+    def operacion() -> list[Usuario]:
         nonlocal reintentar_auth
         try:
-            return _consultar_usuario_activo(db, clave)
+            return _listar_usuarios_por_username(db, clave)
         except ClientResponseError as exc:
             if reintentar_auth and exc.status in (401, 403):
                 reintentar_auth = False
                 autenticar_admin_pocketbase(getattr(db, "pb", None))
-                return _consultar_usuario_activo(db, clave)
+                return _listar_usuarios_por_username(db, clave)
             raise
 
     return ejecutar_con_reintentos(
@@ -260,11 +260,45 @@ def _consultar_con_reintentos(db: Session, clave: str) -> Usuario | None:
     )
 
 
-def _buscar_usuario_por_username(db: Session, username: str) -> Usuario | None:
+def _elegir_usuario_tras_password(
+    candidatos: list[Usuario],
+    password: str,
+) -> Usuario | None:
+    """Si hay duplicados por país en PB, elige el que valida bcrypt (prioriza dueño/admin)."""
+    validos: list[Usuario] = []
+    for candidato in candidatos:
+        if not candidato.activo:
+            continue
+        hash_guardado = hash_desde_modelo_usuario(candidato)
+        try:
+            if verify_password(password, hash_guardado):
+                validos.append(candidato)
+        except Exception:
+            continue
+    if not validos:
+        return None
+    if len(validos) == 1:
+        return validos[0]
+    for candidato in validos:
+        if _acceso_multiregion(candidato):
+            return candidato
+    return validos[0]
+
+
+def _autenticar_usuario_login(
+    db: Session,
+    username: str,
+    password: str,
+) -> Usuario | None:
     clave = _normalizar_username(username).lower()
     if not clave:
         return None
-    return _consultar_con_reintentos(db, clave)
+    candidatos = _listar_usuarios_con_reintentos(db, clave)
+    print(
+        f"[LOGIN] PocketBase usuarios username={clave!r} "
+        f"candidatos={len(candidatos)} (sin pais_id en filtro)"
+    )
+    return _elegir_usuario_tras_password(candidatos, password)
 
 
 def _log_login_401(
@@ -315,7 +349,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     )
 
     try:
-        usuario = _buscar_usuario_por_username(db, username_entrada)
+        usuario = _autenticar_usuario_login(db, username_entrada, body.password)
     except HTTPException:
         raise
     except PocketBaseNoDisponible as exc:
@@ -337,39 +371,11 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         raise _error_base_datos(exc) from exc
 
     if usuario is None:
-        logger.warning("Login fallido: usuario no encontrado (username=%r)", username_entrada)
-        _log_login_401(username_entrada, body.password)
-        registrar_fallo_login(request, username_entrada)
-        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
-
-    if not usuario.activo:
         logger.warning(
-            "Login fallido: usuario inactivo (id=%s, username=%r)",
-            usuario.id,
-            usuario.username,
-        )
-        _log_login_401(username_entrada, body.password, hash_guardado=hash_desde_modelo_usuario(usuario))
-        registrar_fallo_login(request, username_entrada)
-        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
-
-    hash_guardado = hash_desde_modelo_usuario(usuario)
-    valido = False
-    try:
-        valido = verify_password(body.password, hash_guardado)
-    except Exception:
-        logger.warning(
-            "Login fallido: hash de contraseña inválido (id=%s, username=%r)",
-            usuario.id,
-            usuario.username,
-        )
-        valido = False
-
-    if not valido:
-        _log_login_401(
+            "Login fallido: usuario no encontrado o contraseña inválida (username=%r)",
             username_entrada,
-            body.password,
-            hash_guardado=hash_guardado,
         )
+        _log_login_401(username_entrada, body.password)
         registrar_fallo_login(request, username_entrada)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 

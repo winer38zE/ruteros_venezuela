@@ -95,8 +95,8 @@ def test_login_ok_con_usuario_demo(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "app.api.auth_router._buscar_usuario_por_username",
-        lambda db, u: usuario,
+        "app.api.auth_router._autenticar_usuario_login",
+        lambda db, u, p: usuario,
     )
     monkeypatch.setattr(
         "app.api.auth_router._obtener_pais_activo",
@@ -125,27 +125,13 @@ def test_login_ok_con_usuario_demo(monkeypatch):
 
 
 def test_login_falla_con_clave_incorrecta(monkeypatch):
-    demo_hash = get_password_hash("123456")
-    usuario = Usuario(
-        id="abc123def456789",
-        empresa_id="emp123456789012",
-        nombre="Admin",
-        username="dueno",
-        password_hash=demo_hash,
-        rol=RolUsuario.DUENO,
-        activo=True,
-    )
     monkeypatch.setattr(
-        "app.api.auth_router._buscar_usuario_por_username",
-        lambda db, u: usuario,
+        "app.api.auth_router._autenticar_usuario_login",
+        lambda db, u, p: None,
     )
 
     request = MagicMock()
     request.client.host = "127.0.0.1"
-    monkeypatch.setattr(
-        "app.api.auth_router._obtener_pais_activo",
-        lambda db, pid: _pais_demo(),
-    )
     with pytest.raises(HTTPException) as exc_info:
         login(
             LoginRequest(username="dueno", password="000000", pais_id="pais12345678901"),
@@ -156,10 +142,10 @@ def test_login_falla_con_clave_incorrecta(monkeypatch):
 
 
 def test_login_503_si_pocketbase_caido(monkeypatch):
-    def _falla(_db, _u):
+    def _falla(_db, _u, _p):
         raise ClientResponseError("bad gateway", url="", status=502, data={})
 
-    monkeypatch.setattr("app.api.auth_router._buscar_usuario_por_username", _falla)
+    monkeypatch.setattr("app.api.auth_router._autenticar_usuario_login", _falla)
     request = MagicMock()
     request.client.host = "127.0.0.1"
     monkeypatch.setattr(
@@ -177,10 +163,10 @@ def test_login_503_si_pocketbase_caido(monkeypatch):
 
 
 def test_login_503_si_pocketbase_no_disponible(monkeypatch):
-    def _raise(_db, _u):
+    def _raise(_db, _u, _p):
         raise PocketBaseNoDisponible("Base de datos no disponible, intenta de nuevo")
 
-    monkeypatch.setattr("app.api.auth_router._buscar_usuario_por_username", _raise)
+    monkeypatch.setattr("app.api.auth_router._autenticar_usuario_login", _raise)
     request = MagicMock()
     request.client.host = "127.0.0.1"
     monkeypatch.setattr(
