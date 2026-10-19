@@ -75,7 +75,7 @@ def test_pais_para_login_dueno_usa_defecto_si_id_invalido(monkeypatch):
     out = _pais_para_login(
         db,
         LoginRequest(username="dueno", password="123456", pais_id="id-invalido"),
-        es_dueno_login=True,
+        multiregion=True,
     )
     assert out.codigo_iso == "VE"
 

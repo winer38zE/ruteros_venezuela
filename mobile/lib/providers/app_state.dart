@@ -182,6 +182,10 @@ class AppState extends ChangeNotifier {
       error = e.toString();
       usuario = null;
       return false;
+    } on StateError catch (e) {
+      error = e.message;
+      usuario = null;
+      return false;
     } catch (e) {
       error = e is ApiException ? e.message : e.toString();
       usuario = null;

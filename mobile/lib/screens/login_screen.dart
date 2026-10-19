@@ -223,12 +223,9 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
     if (activar == true) {
-      final pais = _paisSeleccionado;
       await auth.activarAccesoBiometrico(
         correo: correo,
         password: password,
-        paisId: _paisIdSeleccionado,
-        simboloMoneda: pais?.simboloMoneda,
       );
     }
     await _cargarOpcionesBiometria();

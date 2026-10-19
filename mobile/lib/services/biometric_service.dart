@@ -73,10 +73,10 @@ class BiometricService {
     return sesion != null;
   }
 
-  /// Huella disponible si hay sesión cifrada y/o credenciales para re-login.
+  /// Huella disponible si hay credenciales base guardadas.
   Future<bool> puedeIngresarConBiometria() async {
     if (!await soportaBiometria()) return false;
-    return (await tieneSesionSegura()) || (await tieneCredenciales());
+    return await tieneCredenciales();
   }
 
   Future<({String correo, String password})?> leerCredenciales() async {
@@ -94,20 +94,15 @@ class BiometricService {
     return (correo: correo, password: password);
   }
 
+  /// Solo usuario y contraseña; el país se elige en el dropdown en cada ingreso.
   Future<void> guardarCredenciales({
     required String correo,
     required String password,
-    String? paisId,
-    String? simboloMoneda,
   }) async {
     await _storage.write(key: _kCorreo, value: correo.trim());
     await _storage.write(key: _kPassword, value: password);
-    if (paisId != null && paisId.isNotEmpty) {
-      await _storage.write(key: _kPaisLoginId, value: paisId);
-    }
-    if (simboloMoneda != null && simboloMoneda.isNotEmpty) {
-      await _storage.write(key: _kPaisSimboloMoneda, value: simboloMoneda);
-    }
+    await _storage.delete(key: _kPaisLoginId);
+    await _storage.delete(key: _kPaisSimboloMoneda);
   }
 
   Future<String?> leerPaisLoginId() async {

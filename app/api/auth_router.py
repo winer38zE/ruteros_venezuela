@@ -129,33 +129,40 @@ def _es_dueno_cuenta(usuario: Usuario) -> bool:
     return rol in ("DUEÑO", "DUENO", "OWNER") or usuario.rol == RolUsuario.DUENO
 
 
-def _pais_para_login(db: Session, body: LoginRequest, *, es_dueno_login: bool) -> Pais:
-    """País del login; para `dueno` sin país válido usa Venezuela (VE) por defecto."""
+def _acceso_multiregion(usuario: Usuario) -> bool:
+    """Dueño y administrador eligen país en cada login (sin atarse al pais_id en BD)."""
+    if _es_dueno_cuenta(usuario):
+        return True
+    return usuario.rol == RolUsuario.ADMINISTRADOR
+
+
+def _pais_para_login(db: Session, body: LoginRequest, *, multiregion: bool) -> Pais:
+    """País efectivo de sesión: siempre el del request si es válido."""
     pid = body.pais_id
     if not pid:
         print(
-            f"[LOGIN] pais_id vacío username={body.username!r} es_dueno={es_dueno_login}"
+            f"[LOGIN] pais_id vacío username={body.username!r} multiregion={multiregion}"
         )
-        if not es_dueno_login:
+        if not multiregion:
             raise HTTPException(status_code=400, detail="Debes seleccionar un país")
         defecto = pais_por_defecto(db)
         if defecto is None or not bool(defecto.activo):
             raise HTTPException(status_code=400, detail="Debes seleccionar un país")
         logger.warning(
-            "Login dueno: pais_id vacío; usando país por defecto %s",
+            "Login multiregión: pais_id vacío; usando país por defecto %s",
             defecto.codigo_iso,
         )
         return defecto
     try:
         return _obtener_pais_activo(db, pid)
     except HTTPException:
-        if not es_dueno_login:
+        if not multiregion:
             raise
         defecto = pais_por_defecto(db)
         if defecto is None or not bool(defecto.activo):
             raise
         logger.warning(
-            "Login dueno: pais_id=%r inválido; usando país por defecto %s",
+            "Login multiregión: pais_id=%r inválido; usando país por defecto %s",
             pid,
             defecto.codigo_iso,
         )
@@ -168,30 +175,31 @@ def _resolver_y_validar_pais_usuario(
     pais_seleccionado: Pais,
 ) -> PaisPublicoResponse:
     empresa = db.query(Empresa).filter(Empresa.id == usuario.empresa_id).first()
-    es_dueno = _es_dueno_cuenta(usuario)
+    multiregion = _acceso_multiregion(usuario)
     pais_efectivo = usuario.pais_id or (empresa.pais_id if empresa else None)
     seleccion = str(pais_seleccionado.id)
 
-    if es_dueno:
+    if multiregion:
         if pais_efectivo and str(pais_efectivo) != seleccion:
             logger.info(
-                "Login dueño multitenant: región solicitada %s (registro previo %s)",
+                "Login multiregión: región solicitada %s (registro previo %s, rol=%s)",
                 seleccion,
                 pais_efectivo,
+                _rol_como_texto(usuario.rol),
             )
-        usuario.pais_id = pais_seleccionado.id
         try:
+            usuario.pais_id = pais_seleccionado.id
             if empresa is not None and not empresa.pais_id:
                 empresa.pais_id = pais_seleccionado.id
             db.commit()
         except (ClientResponseError, SQLAlchemyError) as exc:
             db.rollback()
             logger.warning(
-                "Login dueno: no se persistió pais_id en BD; sesión usará país del request (%s)",
+                "Login multiregión: no se persistió pais_id; sesión usará país del request (%s)",
                 seleccion,
             )
             print(
-                f"[LOGIN] dueno: fallo commit pais_id={seleccion!r} err={exc!r}"
+                f"[LOGIN] multiregion: fallo commit pais_id={seleccion!r} err={exc!r}"
             )
     else:
         if pais_efectivo and str(pais_efectivo) != seleccion:
@@ -223,6 +231,7 @@ def _normalizar_username(username: str) -> str:
 
 
 def _consultar_usuario_activo(db: Session, clave: str) -> Usuario | None:
+    """Busca por username (sin filtrar por pais_id)."""
     return (
         db.query(Usuario)
         .filter(func.lower(Usuario.username) == clave)
@@ -301,18 +310,9 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
     exigir_cupo_login(request, username_entrada)
 
-    es_dueno_login = _normalizar_username(body.username).lower() == "dueno"
     print(
-        f"[LOGIN] intento username={username_entrada!r} pais_id={body.pais_id!r} "
-        f"es_dueno={es_dueno_login}"
+        f"[LOGIN] intento username={username_entrada!r} pais_id={body.pais_id!r}"
     )
-
-    try:
-        pais_seleccionado = _pais_para_login(db, body, es_dueno_login=es_dueno_login)
-    except HTTPException:
-        raise
-    except (ClientResponseError, SQLAlchemyError, RuntimeError) as exc:
-        raise _error_base_datos(exc) from exc
 
     try:
         usuario = _buscar_usuario_por_username(db, username_entrada)
@@ -374,6 +374,15 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
     limpiar_fallos_login(request, username_entrada)
+
+    multiregion = _acceso_multiregion(usuario)
+    try:
+        pais_seleccionado = _pais_para_login(db, body, multiregion=multiregion)
+    except HTTPException:
+        raise
+    except (ClientResponseError, SQLAlchemyError, RuntimeError) as exc:
+        raise _error_base_datos(exc) from exc
+
     pais_resp = _resolver_y_validar_pais_usuario(db, usuario, pais_seleccionado)
     access_token = _emitir_token_jwt(usuario, pais_seleccionado)
     logger.info(
