@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../models/pais_region.dart';
 import '../services/api_service.dart';
 import 'biometric_service.dart';
@@ -85,6 +86,14 @@ class AuthService {
     bool persistirCredenciales = true,
   }) async {
     final usuarioNorm = correo.trim();
+    final body = {
+      'username': usuarioNorm,
+      'password': '***',
+      'pais_id': paisId,
+    };
+    if (kDebugMode) {
+      debugPrint('[LOGIN] POST /auth/login body=$body');
+    }
     final dynamic raw;
     try {
       raw = await _api.post('/auth/login', {

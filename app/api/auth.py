@@ -38,12 +38,28 @@ def huella_contraseña_log(plain_password: str) -> tuple[int, str]:
 
 
 def obtener_demo_password() -> str:
-    """Valor de DEMO_PASSWORD en entorno (strip); default 123456 si falta o vacío."""
+    """Clave del usuario dueño (DEMO_PASSWORD en Coolify)."""
     raw = os.getenv("DEMO_PASSWORD")
     if raw is None:
         return "123456"
     stripped = raw.strip()
     return stripped if stripped else "123456"
+
+
+def obtener_demo_roles_password() -> str:
+    """Clave demo vendedor/cobrador/admin (DEMO_ROLES_PASSWORD)."""
+    raw = os.getenv("DEMO_ROLES_PASSWORD")
+    if raw is None:
+        return "123456"
+    stripped = raw.strip()
+    return stripped if stripped else "123456"
+
+
+def password_demo_para_username(username: str) -> str:
+    """Dueño → DEMO_PASSWORD; resto de cuentas demo → DEMO_ROLES_PASSWORD."""
+    if (username or "").strip().lower() == "dueno":
+        return obtener_demo_password()
+    return obtener_demo_roles_password()
 
 
 def log_huella_demo_password_configurada(logger: logging.Logger, *, contexto: str) -> None:

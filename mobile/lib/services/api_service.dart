@@ -312,7 +312,7 @@ class ApiService {
       return 'Usuario o contraseña incorrectos';
     }
     if (res.statusCode == 502 || res.statusCode == 503 || res.statusCode == 504) {
-      return 'Servidor no disponible (${res.statusCode}). Intenta de nuevo.';
+      return 'Servidor no disponible, reintenta';
     }
     try {
       final data = jsonDecode(res.body);

@@ -284,6 +284,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted || !ok) return;
     await _ofrecerActivarHuella(correo, password);
     await _cargarTasasLogin();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    );
   }
 
   String _textoTasa(double? valor) {
