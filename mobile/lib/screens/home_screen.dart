@@ -68,10 +68,11 @@ class HomeScreen extends StatelessWidget {
 
   List<_ModuleDef> _modules(AppState state) {
     final user = state.usuario!;
-    if (user.rolAcceso == 'owner') {
-      return _modulosOwner();
-    }
-    return _modulosEmpleado(state);
+    final list = user.rolAcceso == 'owner'
+        ? _modulosOwner()
+        : _modulosEmpleado(state);
+    if (state.esVenezuela) return list;
+    return list.where((m) => m.id != 'tasas').toList();
   }
 
   List<_ModuleDef> _modulosOwner() => const [

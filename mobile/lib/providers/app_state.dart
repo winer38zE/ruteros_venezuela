@@ -93,6 +93,12 @@ class AppState extends ChangeNotifier {
   String get rolAcceso => usuario?.rolAcceso ?? 'employee';
   bool get esOwner => usuario?.esOwner ?? false;
 
+  /// País de la sesión (login o región persistida).
+  bool get esVenezuela {
+    final pais = region ?? usuario?.pais;
+    return pais?.esVenezuela ?? false;
+  }
+
   Future<void> _inicializar() async {
     try {
       region = await regionSession.leer();
