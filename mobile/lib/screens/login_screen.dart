@@ -176,7 +176,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _ingresarConBiometria() async {
-    final auth = context.read<AppState>().auth;
     final paisId = _paisIdSeleccionado;
     if (paisId == null || paisId.isEmpty) {
       if (!mounted) return;
