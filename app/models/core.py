@@ -157,6 +157,10 @@ class Pais(Base):
     configuracion_bancaria = Column(JSON, nullable=False)
     configuracion_fiscal = Column(JSON, nullable=True)
     configuracion_ui = Column(JSON, nullable=True)
+    sueldo_base_legal = Column(Numeric(14, 2), nullable=False, default=0)
+    porcentaje_comision_venta = Column(Numeric(5, 2), nullable=False, default=0)
+    porcentaje_comision_cobro = Column(Numeric(5, 2), nullable=False, default=0)
+    bono_incentivo = Column(Numeric(14, 2), nullable=False, default=0)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
 
