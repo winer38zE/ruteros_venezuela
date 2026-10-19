@@ -482,7 +482,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     const SizedBox(height: 16),
-                    _panelTasas(),
+                    if (_paisSeleccionado?.esVenezuela ?? false) _panelTasas(),
                     GlassContainer(
                       accentColor: AppColors.neonBlue,
                       padding: const EdgeInsets.all(20),

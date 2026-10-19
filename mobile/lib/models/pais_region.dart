@@ -49,4 +49,10 @@ class PaisRegion {
       };
 
   String get etiquetaLista => '$nombre ($codigoIso · $simboloMoneda)';
+
+  /// Módulo de tasas BCV/paralelo: solo aplica a la economía venezolana.
+  bool get esVenezuela {
+    if (codigoIso.toUpperCase().trim() == 'VE') return true;
+    return nombre.toLowerCase().trim() == 'venezuela';
+  }
 }
