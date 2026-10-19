@@ -146,7 +146,7 @@ class _AdminPaisesReglasScreenState extends State<AdminPaisesReglasScreen> {
                               ),
                               TextButton(
                                 onPressed: _duplicarAnio,
-                                child: const Text('Duplicar a ${_year + 1}'),
+                                child: Text('Duplicar a ${_year + 1}'),
                               ),
                             ],
                           ),
