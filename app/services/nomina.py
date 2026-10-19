@@ -11,6 +11,7 @@ from app.models.core import (
     EstadoPagoNomina,
     EstadoVenta,
     PagoNomina,
+    Pais,
     RolUsuario,
     Usuario,
     Venta,
@@ -47,10 +48,16 @@ def _rango_datetime(desde: date, hasta: date) -> Tuple[datetime, datetime]:
     )
 
 
-def _sueldo_base_empleado(emp: Usuario, cfg: ConfiguracionNomina) -> Decimal:
+def _sueldo_base_empleado(
+    emp: Usuario,
+    cfg: ConfiguracionNomina,
+    pais: Optional[Pais] = None,
+) -> Decimal:
     base = _d(emp.sueldo_base_usd or 0)
     if base > 0:
         return base
+    if pais is not None and _d(pais.sueldo_base_legal or 0) > 0:
+        return _d(pais.sueldo_base_legal)
     if emp.rol == RolUsuario.COBRADOR:
         return _d(cfg.sueldo_base_cobrador_usd or 0)
     return _d("0")
@@ -63,10 +70,14 @@ def calcular_linea_empleado(
     cfg: ConfiguracionNomina,
     fecha_desde: datetime,
     fecha_hasta: datetime,
+    pais: Optional[Pais] = None,
 ) -> dict:
     comision_por_venta = _d(cfg.comision_vendedor_por_venta_usd)
     pct_cobrador = _d(cfg.comision_cobrador_porcentaje)
-    base = _sueldo_base_empleado(emp, cfg)
+    pct_venta_pais = _d(pais.porcentaje_comision_venta) if pais else _d("0")
+    if pais is not None and _d(pais.porcentaje_comision_cobro) > 0:
+        pct_cobrador = _d(pais.porcentaje_comision_cobro)
+    base = _sueldo_base_empleado(emp, cfg, pais=pais)
 
     num_ventas = 0
     comision_ventas = _d("0")
@@ -88,7 +99,11 @@ def calcular_linea_empleado(
             .all()
         )
         num_ventas = len(ventas)
-        comision_ventas = _d(num_ventas) * comision_por_venta
+        total_ventas_usd = sum(_d(v.total_usd) for v in ventas)
+        if pct_venta_pais > 0:
+            comision_ventas = total_ventas_usd * pct_venta_pais / _d("100")
+        else:
+            comision_ventas = _d(num_ventas) * comision_por_venta
         for v in ventas:
             for d in v.detalles:
                 articulos += d.cantidad

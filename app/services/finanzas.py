@@ -32,6 +32,21 @@ def _moneda_operativa_empresa(db: Session, empresa_id) -> tuple[str, str]:
     return str(pais.moneda_principal), str(pais.simbolo_moneda)
 
 
+def _moneda_operativa_pais(db: Session, pais_id) -> tuple[str, str]:
+    if not pais_id:
+        return "USD", "$"
+    pais = db.query(Pais).filter(Pais.id == pais_id).first()
+    if pais is None:
+        return "USD", "$"
+    return str(pais.moneda_principal), str(pais.simbolo_moneda)
+
+
+def _obtener_pais_nomina(db: Session, pais_id) -> Pais | None:
+    if not pais_id:
+        return None
+    return db.query(Pais).filter(Pais.id == pais_id, Pais.activo.is_(True)).first()
+
+
 def _obtener_config_nomina(db: Session, empresa_id) -> ConfiguracionNomina:
     cfg = (
         db.query(ConfiguracionNomina)
@@ -78,18 +93,19 @@ def calcular_nomina(
     empresa_id,
     fecha_desde: Optional[datetime] = None,
     fecha_hasta: Optional[datetime] = None,
+    pais_id: Optional[str] = None,
 ) -> dict:
     cfg = _obtener_config_nomina(db, empresa_id)
+    pais = _obtener_pais_nomina(db, pais_id)
 
-    empleados = (
-        db.query(Usuario)
-        .filter(
-            Usuario.empresa_id == empresa_id,
-            Usuario.activo.is_(True),
-            Usuario.rol.in_([RolUsuario.VENDEDOR, RolUsuario.COBRADOR]),
-        )
-        .all()
+    q_empleados = db.query(Usuario).filter(
+        Usuario.empresa_id == empresa_id,
+        Usuario.activo.is_(True),
+        Usuario.rol.in_([RolUsuario.VENDEDOR, RolUsuario.COBRADOR]),
     )
+    if pais_id:
+        q_empleados = q_empleados.filter(Usuario.pais_id == pais_id)
+    empleados = q_empleados.order_by(Usuario.nombre.asc()).all()
 
     if fecha_desde is None or fecha_hasta is None:
         from datetime import date as date_cls
@@ -101,34 +117,52 @@ def calcular_nomina(
 
     detalle: List[dict] = []
 
+    pct_cobrador_pais = _d(pais.porcentaje_comision_cobro) if pais else _d("0")
+    pct_venta_pais = _d(pais.porcentaje_comision_venta) if pais else _d("0")
+    comision_cobrador_pct = (
+        float(pct_cobrador_pais)
+        if pct_cobrador_pais > 0
+        else float(cfg.comision_cobrador_porcentaje)
+    )
+
     for emp in empleados:
         linea = calcular_linea_empleado(
-            db, empresa_id, emp, cfg, fecha_desde, fecha_hasta
+            db,
+            empresa_id,
+            emp,
+            cfg,
+            fecha_desde,
+            fecha_hasta,
+            pais=pais,
         )
         total_calc = _d(linea["total_calculado_usd"])
         pagado = _pagos_empleado(db, empresa_id, emp.id, fecha_desde, fecha_hasta)
         pendiente = max(_d("0"), total_calc - pagado)
 
-        if total_calc > 0 or pagado > 0:
-            detalle.append({
-                "empleado_id": str(emp.id),
-                "empleado_nombre": emp.nombre,
-                "rol": emp.rol.value,
-                "num_ventas": linea["num_ventas"],
-                "articulos_vendidos": linea["articulos_vendidos"],
-                "comision_ventas_usd": linea["comision_ventas_usd"],
-                "total_cobrado_usd": linea["total_cobrado_usd"],
-                "comision_cobros_usd": linea["comision_cobros_usd"],
-                "sueldo_base_usd": linea["sueldo_base_usd"],
-                "total_calculado_usd": float(total_calc),
-                "total_pagado_usd": float(pagado),
-                "pendiente_usd": float(pendiente),
-                "tiene_cuenta_bancaria": linea["tiene_cuenta_bancaria"],
-                "cuenta_verificada": linea["cuenta_verificada"],
-            })
+        detalle.append({
+            "empleado_id": str(emp.id),
+            "empleado_nombre": emp.nombre,
+            "rol": emp.rol.value,
+            "num_ventas": linea["num_ventas"],
+            "articulos_vendidos": linea["articulos_vendidos"],
+            "comision_ventas_usd": linea["comision_ventas_usd"],
+            "total_cobrado_usd": linea["total_cobrado_usd"],
+            "comision_cobros_usd": linea["comision_cobros_usd"],
+            "sueldo_base_usd": linea["sueldo_base_usd"],
+            "total_calculado_usd": float(total_calc),
+            "total_pagado_usd": float(pagado),
+            "pendiente_usd": float(pendiente),
+            "tiene_cuenta_bancaria": linea["tiene_cuenta_bancaria"],
+            "cuenta_verificada": linea["cuenta_verificada"],
+        })
 
     total_pendiente = sum(d["pendiente_usd"] for d in detalle)
-    moneda_principal, simbolo_moneda = _moneda_operativa_empresa(db, empresa_id)
+    if pais_id:
+        moneda_principal, simbolo_moneda = _moneda_operativa_pais(db, pais_id)
+    else:
+        moneda_principal, simbolo_moneda = _moneda_operativa_empresa(db, empresa_id)
+
+    sueldo_legal = float(_d(pais.sueldo_base_legal)) if pais else 0.0
 
     return {
         "periodo_desde": fecha_desde.isoformat() if fecha_desde else None,
@@ -137,7 +171,10 @@ def calcular_nomina(
         "simbolo_moneda": simbolo_moneda,
         "comision_vendedor_por_articulo_usd": float(cfg.comision_vendedor_por_articulo_usd),
         "comision_vendedor_por_venta_usd": float(cfg.comision_vendedor_por_venta_usd),
-        "comision_cobrador_porcentaje": float(cfg.comision_cobrador_porcentaje),
+        "comision_cobrador_porcentaje": comision_cobrador_pct,
+        "sueldo_base_legal_pais": sueldo_legal,
+        "porcentaje_comision_venta_pais": float(pct_venta_pais),
+        "porcentaje_comision_cobro_pais": float(pct_cobrador_pais),
         "empleados": detalle,
         "total_pendiente_usd": round(total_pendiente, 2),
     }

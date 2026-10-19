@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import require_dueno
-from app.models.core import MovimientoFinanciero, PagoNomina, Usuario
+from app.models.core import MovimientoFinanciero, PagoNomina, Pais, Usuario
 from app.schemas.core import (
     ConfiguracionNominaUpdate,
     ConfiguracionNominaResponse,
@@ -17,9 +17,12 @@ from app.schemas.core import (
     PagoNominaResponse,
     GenerarCorteNominaRequest,
     MarcarPagoNominaRealizadoRequest,
+    PaisNominaParametrosResponse,
+    PaisNominaParametrosUpdate,
 )
 from app.services.finanzas import (
     _obtener_config_nomina,
+    _obtener_pais_nomina,
     calcular_resumen_financiero,
     calcular_nomina,
     registrar_movimiento,
@@ -125,6 +128,59 @@ def actualizar_config_nomina(
     return cfg
 
 
+def _pais_id_sesion_dueno(dueno: Usuario) -> str:
+    if not dueno.pais_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tu sesión no tiene país activo. Cierra sesión e ingresa de nuevo eligiendo país.",
+        )
+    return str(dueno.pais_id)
+
+
+def _serializar_parametros_pais(pais: Pais) -> dict:
+    return {
+        "pais_id": str(pais.id),
+        "nombre": pais.nombre,
+        "codigo_iso": pais.codigo_iso,
+        "moneda_principal": pais.moneda_principal,
+        "simbolo_moneda": pais.simbolo_moneda,
+        "sueldo_base_legal": float(pais.sueldo_base_legal or 0),
+        "porcentaje_comision_venta": float(pais.porcentaje_comision_venta or 0),
+        "porcentaje_comision_cobro": float(pais.porcentaje_comision_cobro or 0),
+        "bono_incentivo": float(pais.bono_incentivo or 0),
+    }
+
+
+@router.get("/nomina/parametros-pais", response_model=PaisNominaParametrosResponse)
+def obtener_parametros_nomina_pais(
+    db: Session = Depends(get_db),
+    dueno: Usuario = Depends(require_dueno),
+):
+    pais = _obtener_pais_nomina(db, _pais_id_sesion_dueno(dueno))
+    if pais is None:
+        raise HTTPException(status_code=404, detail="País de la sesión no encontrado")
+    return _serializar_parametros_pais(pais)
+
+
+@router.put("/nomina/parametros-pais", response_model=PaisNominaParametrosResponse)
+def actualizar_parametros_nomina_pais(
+    body: PaisNominaParametrosUpdate,
+    db: Session = Depends(get_db),
+    dueno: Usuario = Depends(require_dueno),
+):
+    pais = _obtener_pais_nomina(db, _pais_id_sesion_dueno(dueno))
+    if pais is None:
+        raise HTTPException(status_code=404, detail="País de la sesión no encontrado")
+    pais.sueldo_base_legal = body.sueldo_base_legal
+    pais.porcentaje_comision_venta = body.porcentaje_comision_venta
+    pais.porcentaje_comision_cobro = body.porcentaje_comision_cobro
+    if body.bono_incentivo is not None:
+        pais.bono_incentivo = body.bono_incentivo
+    db.commit()
+    db.refresh(pais)
+    return _serializar_parametros_pais(pais)
+
+
 @router.get("/nomina/calcular", response_model=NominaCalculadaResponse)
 def calcular_nomina_endpoint(
     db: Session = Depends(get_db),
@@ -132,7 +188,14 @@ def calcular_nomina_endpoint(
     fecha_desde: Optional[datetime] = Query(None),
     fecha_hasta: Optional[datetime] = Query(None),
 ):
-    return calcular_nomina(db, dueno.empresa_id, fecha_desde, fecha_hasta)
+    pais_id = str(dueno.pais_id) if dueno.pais_id else None
+    return calcular_nomina(
+        db,
+        dueno.empresa_id,
+        fecha_desde,
+        fecha_hasta,
+        pais_id=pais_id,
+    )
 
 
 @router.post("/nomina/aprobar-pago", response_model=MovimientoFinancieroResponse)

@@ -1,14 +1,21 @@
 import enum
 import logging
+from datetime import timedelta
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pocketbase.errors import ClientResponseError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.api.auth import huella_contraseña_log, verify_password
+from app.api.auth import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    create_access_token,
+    huella_contraseña_log,
+    verify_password,
+)
 from app.core.usuario_password_hash import (
     hash_desde_modelo_usuario,
     nombre_campo_hash_lectura_login,
@@ -36,7 +43,18 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str
     password: str = Field(min_length=4)
-    pais_id: str = Field(min_length=1, description="ID del país seleccionado en la app")
+    pais_id: Optional[str] = Field(
+        default=None,
+        description="ID del país seleccionado en la app (obligatorio salvo fallback dueño)",
+    )
+
+    @field_validator("pais_id", mode="before")
+    @classmethod
+    def _normalizar_pais_id(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
 
 
 def _rol_como_texto(rol) -> str:
@@ -54,7 +72,26 @@ def _float_sueldo(valor) -> float:
         return 0.0
 
 
-def _usuario_a_respuesta(usuario: Usuario, pais: PaisPublicoResponse) -> LoginResponse:
+def _emitir_token_jwt(usuario: Usuario, pais: Pais) -> str:
+    """JWT con pais_id efectivo de la sesión (dueño multiregión usa el del request)."""
+    return create_access_token(
+        {
+            "sub": str(usuario.id),
+            "username": usuario.username,
+            "empresa_id": str(usuario.empresa_id),
+            "rol": _rol_como_texto(usuario.rol),
+            "pais_id": str(pais.id),
+        },
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+
+
+def _usuario_a_respuesta(
+    usuario: Usuario,
+    pais: PaisPublicoResponse,
+    *,
+    access_token: str,
+) -> LoginResponse:
     return LoginResponse(
         id=usuario.id,
         empresa_id=usuario.empresa_id,
@@ -66,6 +103,8 @@ def _usuario_a_respuesta(usuario: Usuario, pais: PaisPublicoResponse) -> LoginRe
         sueldo_base_usd=_float_sueldo(getattr(usuario, "sueldo_base_usd", None)),
         pais_id=str(pais.id),
         pais=pais,
+        access_token=access_token,
+        token_type="bearer",
     )
 
 
@@ -90,19 +129,34 @@ def _es_dueno_cuenta(usuario: Usuario) -> bool:
     return rol in ("DUEÑO", "DUENO", "OWNER") or usuario.rol == RolUsuario.DUENO
 
 
-def _pais_para_login(db: Session, body: LoginRequest) -> Pais:
+def _pais_para_login(db: Session, body: LoginRequest, *, es_dueno_login: bool) -> Pais:
     """País del login; para `dueno` sin país válido usa Venezuela (VE) por defecto."""
+    pid = body.pais_id
+    if not pid:
+        print(
+            f"[LOGIN] pais_id vacío username={body.username!r} es_dueno={es_dueno_login}"
+        )
+        if not es_dueno_login:
+            raise HTTPException(status_code=400, detail="Debes seleccionar un país")
+        defecto = pais_por_defecto(db)
+        if defecto is None or not bool(defecto.activo):
+            raise HTTPException(status_code=400, detail="Debes seleccionar un país")
+        logger.warning(
+            "Login dueno: pais_id vacío; usando país por defecto %s",
+            defecto.codigo_iso,
+        )
+        return defecto
     try:
-        return _obtener_pais_activo(db, body.pais_id)
+        return _obtener_pais_activo(db, pid)
     except HTTPException:
-        if _normalizar_username(body.username).lower() != "dueno":
+        if not es_dueno_login:
             raise
         defecto = pais_por_defecto(db)
         if defecto is None or not bool(defecto.activo):
             raise
         logger.warning(
             "Login dueno: pais_id=%r inválido; usando país por defecto %s",
-            body.pais_id,
+            pid,
             defecto.codigo_iso,
         )
         return defecto
@@ -126,6 +180,19 @@ def _resolver_y_validar_pais_usuario(
                 pais_efectivo,
             )
         usuario.pais_id = pais_seleccionado.id
+        try:
+            if empresa is not None and not empresa.pais_id:
+                empresa.pais_id = pais_seleccionado.id
+            db.commit()
+        except (ClientResponseError, SQLAlchemyError) as exc:
+            db.rollback()
+            logger.warning(
+                "Login dueno: no se persistió pais_id en BD; sesión usará país del request (%s)",
+                seleccion,
+            )
+            print(
+                f"[LOGIN] dueno: fallo commit pais_id={seleccion!r} err={exc!r}"
+            )
     else:
         if pais_efectivo and str(pais_efectivo) != seleccion:
             raise HTTPException(
@@ -135,18 +202,18 @@ def _resolver_y_validar_pais_usuario(
         if not usuario.pais_id:
             usuario.pais_id = pais_seleccionado.id
 
-    if empresa is not None and not empresa.pais_id:
-        empresa.pais_id = pais_seleccionado.id
+        if empresa is not None and not empresa.pais_id:
+            empresa.pais_id = pais_seleccionado.id
 
-    try:
-        db.commit()
-    except (ClientResponseError, SQLAlchemyError) as exc:
-        db.rollback()
-        logger.exception("Login: no se pudo guardar pais_id del usuario")
-        raise HTTPException(
-            status_code=503,
-            detail="No se pudo actualizar la región del usuario. Intenta de nuevo.",
-        ) from exc
+        try:
+            db.commit()
+        except (ClientResponseError, SQLAlchemyError) as exc:
+            db.rollback()
+            logger.exception("Login: no se pudo guardar pais_id del usuario")
+            raise HTTPException(
+                status_code=503,
+                detail="No se pudo actualizar la región del usuario. Intenta de nuevo.",
+            ) from exc
 
     return _pais_a_publico(pais_seleccionado)
 
@@ -234,8 +301,14 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
     exigir_cupo_login(request, username_entrada)
 
+    es_dueno_login = _normalizar_username(body.username).lower() == "dueno"
+    print(
+        f"[LOGIN] intento username={username_entrada!r} pais_id={body.pais_id!r} "
+        f"es_dueno={es_dueno_login}"
+    )
+
     try:
-        pais_seleccionado = _pais_para_login(db, body)
+        pais_seleccionado = _pais_para_login(db, body, es_dueno_login=es_dueno_login)
     except HTTPException:
         raise
     except (ClientResponseError, SQLAlchemyError, RuntimeError) as exc:
@@ -302,10 +375,11 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     limpiar_fallos_login(request, username_entrada)
     pais_resp = _resolver_y_validar_pais_usuario(db, usuario, pais_seleccionado)
+    access_token = _emitir_token_jwt(usuario, pais_seleccionado)
     logger.info(
         "Login OK (id=%s, username=%r, pais=%s)",
         usuario.id,
         usuario.username,
         pais_resp.codigo_iso,
     )
-    return _usuario_a_respuesta(usuario, pais_resp)
+    return _usuario_a_respuesta(usuario, pais_resp, access_token=access_token)

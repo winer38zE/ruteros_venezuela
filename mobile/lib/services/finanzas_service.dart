@@ -93,6 +93,8 @@ class DetalleNominaEmpleado {
     required this.pendienteUsd,
   });
 
+  double get comisionesTotalUsd => comisionVentasUsd + comisionCobrosUsd;
+
   factory DetalleNominaEmpleado.fromJson(Map<String, dynamic> j) => DetalleNominaEmpleado(
         empleadoId: j['empleado_id'],
         empleadoNombre: j['empleado_nombre'],
@@ -113,6 +115,9 @@ class NominaCalculada {
   final double totalPendienteUsd;
   final double comisionVendedorPorArticulo;
   final double comisionCobradorPorcentaje;
+  final double sueldoBaseLegalPais;
+  final double porcentajeComisionVentaPais;
+  final double porcentajeComisionCobroPais;
   final String monedaPrincipal;
   final String simboloMoneda;
 
@@ -121,6 +126,9 @@ class NominaCalculada {
     required this.totalPendienteUsd,
     required this.comisionVendedorPorArticulo,
     required this.comisionCobradorPorcentaje,
+    this.sueldoBaseLegalPais = 0,
+    this.porcentajeComisionVentaPais = 0,
+    this.porcentajeComisionCobroPais = 0,
     this.monedaPrincipal = 'USD',
     this.simboloMoneda = r'$',
   });
@@ -130,8 +138,47 @@ class NominaCalculada {
         totalPendienteUsd: (j['total_pendiente_usd'] as num).toDouble(),
         comisionVendedorPorArticulo: (j['comision_vendedor_por_articulo_usd'] as num).toDouble(),
         comisionCobradorPorcentaje: (j['comision_cobrador_porcentaje'] as num).toDouble(),
+        sueldoBaseLegalPais: (j['sueldo_base_legal_pais'] as num?)?.toDouble() ?? 0,
+        porcentajeComisionVentaPais: (j['porcentaje_comision_venta_pais'] as num?)?.toDouble() ?? 0,
+        porcentajeComisionCobroPais: (j['porcentaje_comision_cobro_pais'] as num?)?.toDouble() ?? 0,
         monedaPrincipal: j['moneda_principal']?.toString() ?? 'USD',
         simboloMoneda: j['simbolo_moneda']?.toString() ?? r'$',
+      );
+}
+
+class ParametrosNominaPais {
+  final String paisId;
+  final String nombre;
+  final String codigoIso;
+  final String monedaPrincipal;
+  final String simboloMoneda;
+  final double sueldoBaseLegal;
+  final double porcentajeComisionVenta;
+  final double porcentajeComisionCobro;
+  final double bonoIncentivo;
+
+  ParametrosNominaPais({
+    required this.paisId,
+    required this.nombre,
+    required this.codigoIso,
+    required this.monedaPrincipal,
+    required this.simboloMoneda,
+    required this.sueldoBaseLegal,
+    required this.porcentajeComisionVenta,
+    required this.porcentajeComisionCobro,
+    required this.bonoIncentivo,
+  });
+
+  factory ParametrosNominaPais.fromJson(Map<String, dynamic> j) => ParametrosNominaPais(
+        paisId: j['pais_id'].toString(),
+        nombre: j['nombre'].toString(),
+        codigoIso: j['codigo_iso'].toString(),
+        monedaPrincipal: j['moneda_principal'].toString(),
+        simboloMoneda: j['simbolo_moneda'].toString(),
+        sueldoBaseLegal: (j['sueldo_base_legal'] as num).toDouble(),
+        porcentajeComisionVenta: (j['porcentaje_comision_venta'] as num).toDouble(),
+        porcentajeComisionCobro: (j['porcentaje_comision_cobro'] as num).toDouble(),
+        bonoIncentivo: (j['bono_incentivo'] as num?)?.toDouble() ?? 0,
       );
 }
 
@@ -244,5 +291,25 @@ class FinanzasService {
       'monto_usd': montoUsd,
       if (descripcion != null) 'descripcion': descripcion,
     });
+  }
+
+  Future<ParametrosNominaPais> obtenerParametrosNominaPais() async {
+    final data = await _api.get('/finanzas/nomina/parametros-pais');
+    return ParametrosNominaPais.fromJson(data);
+  }
+
+  Future<ParametrosNominaPais> guardarParametrosNominaPais({
+    required double sueldoBaseLegal,
+    required double porcentajeComisionVenta,
+    required double porcentajeComisionCobro,
+    double? bonoIncentivo,
+  }) async {
+    final data = await _api.put('/finanzas/nomina/parametros-pais', {
+      'sueldo_base_legal': sueldoBaseLegal,
+      'porcentaje_comision_venta': porcentajeComisionVenta,
+      'porcentaje_comision_cobro': porcentajeComisionCobro,
+      if (bonoIncentivo != null) 'bono_incentivo': bonoIncentivo,
+    });
+    return ParametrosNominaPais.fromJson(data);
   }
 }
