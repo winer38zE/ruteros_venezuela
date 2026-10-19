@@ -61,23 +61,19 @@ def _pais_demo() -> Pais:
     )
 
 
-def test_pais_para_login_dueno_usa_defecto_si_id_invalido(monkeypatch):
-    pais = _pais_demo()
+def test_pais_para_login_multiregion_rechaza_pais_id_invalido():
     db = MagicMock()
     q = MagicMock()
     q.filter.return_value = q
-    q.first.side_effect = [None, pais]
+    q.first.return_value = None
     db.query.return_value = q
-    monkeypatch.setattr(
-        "app.api.auth_router.pais_por_defecto",
-        lambda _db: pais,
-    )
-    out = _pais_para_login(
-        db,
-        LoginRequest(username="dueno", password="123456", pais_id="id-invalido"),
-        multiregion=True,
-    )
-    assert out.codigo_iso == "VE"
+    with pytest.raises(HTTPException) as exc_info:
+        _pais_para_login(
+            db,
+            LoginRequest(username="dueno", password="123456", pais_id="id-invalido"),
+            multiregion=True,
+        )
+    assert exc_info.value.status_code == 400
 
 
 def test_login_ok_con_usuario_demo(monkeypatch):

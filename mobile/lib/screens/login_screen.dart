@@ -207,7 +207,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _ofrecerActivarHuella(String correo, String password) async {
     final auth = context.read<AppState>().auth;
     if (!await auth.biometric.soportaBiometria()) return;
-    if (await auth.biometric.tieneSesionSegura()) return;
+    if (await auth.biometric.tieneCredenciales()) return;
     if (!mounted) return;
     final activar = await showDialog<bool>(
       context: context,
