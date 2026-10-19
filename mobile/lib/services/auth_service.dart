@@ -82,6 +82,7 @@ class AuthService {
     String password, {
     required String paisId,
     bool guardarBiometria = false,
+    bool persistirCredenciales = true,
   }) async {
     final usuarioNorm = correo.trim();
     final data = await _api.post('/auth/login', {
@@ -101,37 +102,30 @@ class AuthService {
       await _regionSession.guardar(user.pais!);
     }
 
-    final simbolo = user.pais?.simboloMoneda;
-    await _persistirAccesoSeguro(
-      correo: usuarioNorm,
-      password: password,
-      paisId: paisId,
-      simboloMoneda: simbolo,
-    );
+    if (persistirCredenciales) {
+      await _persistirAccesoSeguro(
+        correo: usuarioNorm,
+        password: password,
+      );
+    }
 
     if (guardarBiometria) {
       await activarAccesoBiometrico(
         correo: usuarioNorm,
         password: password,
-        paisId: paisId,
-        simboloMoneda: simbolo,
       );
     }
     return user;
   }
 
-  /// Credenciales y sesión en flutter_secure_storage (base para huella).
+  /// Credenciales base (huella) + copia opcional de sesión API.
   Future<void> _persistirAccesoSeguro({
     required String correo,
     required String password,
-    required String paisId,
-    String? simboloMoneda,
   }) async {
     await _biometric.guardarCredenciales(
       correo: correo,
       password: password,
-      paisId: paisId,
-      simboloMoneda: simboloMoneda,
     );
     if (_api.token != null &&
         _api.usuarioId != null &&
@@ -148,55 +142,21 @@ class AuthService {
   Future<void> activarAccesoBiometrico({
     required String correo,
     required String password,
-    String? paisId,
-    String? simboloMoneda,
   }) async {
-    final pid = paisId ?? await _biometric.leerPaisLoginId();
-    if (pid == null || pid.isEmpty) {
-      throw StateError('Falta el país de la sesión para activar la huella.');
-    }
-    final simbolo =
-        simboloMoneda ?? await _biometric.leerPaisSimboloMoneda();
     await _persistirAccesoSeguro(
       correo: correo,
       password: password,
-      paisId: pid,
-      simboloMoneda: simbolo,
     );
   }
 
-  Future<Usuario?> _restaurarSesionDesdeAlmacenSeguro() async {
-    final sesion = await _biometric.leerSesion();
-    if (sesion == null) return null;
-    await _api.saveSession(
-      token: sesion.token,
-      usuarioId: sesion.usuarioId,
-      usuarioJson: sesion.usuarioJson,
-    );
-    try {
-      final user = Usuario.fromJson(jsonDecode(sesion.usuarioJson));
-      if (user.pais != null) {
-        await _regionSession.guardar(user.pais!);
-      }
-      return user;
-    } catch (_) {
-      await _biometric.borrarSesionSegura();
-      return null;
-    }
-  }
-
-  /// True si hay credenciales o sesión cifrada para re-ingresar con huella.
+  /// True si hay credenciales base para re-ingresar con huella.
   Future<bool> tieneDatosBiometricosGuardados() async {
-    return (await _biometric.tieneSesionSegura()) ||
-        (await _biometric.tieneCredenciales());
+    return _biometric.tieneCredenciales();
   }
 
-  /// Huella válida → lee almacén seguro → sesión o login en API.
-  ///
-  /// Si [paisIdSeleccionado] viene del dropdown, se usa en el login (dueño multiregión)
-  /// en lugar del país guardado en el almacén seguro.
+  /// Huella válida → credenciales del almacén + [paisIdSeleccionado] del dropdown → login API.
   Future<Usuario?> loginConBiometria({String? paisIdSeleccionado}) async {
-    if (!await tieneDatosBiometricosGuardados()) {
+    if (!await _biometric.tieneCredenciales()) {
       throw BiometricStorageEmptyException();
     }
 
@@ -205,33 +165,22 @@ class AuthService {
 
     final credenciales = await _biometric.leerCredenciales();
     if (credenciales == null) {
-      final restaurado = await _restaurarSesionDesdeAlmacenSeguro();
-      if (restaurado != null) {
-        await _sincronizarRegionDesdeAlmacenSeguro(restaurado);
-        return restaurado;
-      }
       throw BiometricStorageEmptyException();
     }
 
-    final paisDropdown = paisIdSeleccionado?.trim();
-    final paisId = (paisDropdown != null && paisDropdown.isNotEmpty)
-        ? paisDropdown
-        : await _biometric.leerPaisLoginId();
+    final paisId = paisIdSeleccionado?.trim();
     if (paisId == null || paisId.isEmpty) {
-      throw BiometricStorageEmptyException();
+      throw StateError('Selecciona tu país antes de usar la huella.');
     }
     try {
-      final user = await login(
+      return await login(
         credenciales.correo,
         credenciales.password,
         paisId: paisId,
+        persistirCredenciales: false,
       );
-      await _sincronizarRegionDesdeAlmacenSeguro(user);
-      return user;
     } on ApiException catch (e) {
-      if (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429) {
-        await _invalidarSesionLocal();
-      }
+      // No borrar flutter_secure_storage: credenciales siguen válidas para otro país.
       if (e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504) {
         throw ApiException(
           e.statusCode,
@@ -240,32 +189,6 @@ class AuthService {
       }
       rethrow;
     }
-  }
-
-  /// Asegura moneda/región cuando la sesión cifrada no trae `pais` completo.
-  Future<void> _sincronizarRegionDesdeAlmacenSeguro(Usuario user) async {
-    if (user.pais != null) {
-      await _regionSession.guardar(user.pais!);
-      return;
-    }
-    final pid = await _biometric.leerPaisLoginId();
-    final simbolo = await _biometric.leerPaisSimboloMoneda();
-    if (pid == null || pid.isEmpty) return;
-    await _regionSession.guardar(
-      PaisRegion(
-        id: pid,
-        nombre: user.pais?.nombre ?? '',
-        codigoIso: user.pais?.codigoIso ?? '',
-        monedaPrincipal: user.pais?.monedaPrincipal ?? '',
-        simboloMoneda: simbolo ?? user.pais?.simboloMoneda ?? 'Bs.',
-      ),
-    );
-  }
-
-  Future<void> _invalidarSesionLocal() async {
-    await _biometric.borrarTodoAccesoBiometrico();
-    await _api.clearSession();
-    await _regionSession.limpiar();
   }
 
   Future<Usuario?> restoreSession() async {

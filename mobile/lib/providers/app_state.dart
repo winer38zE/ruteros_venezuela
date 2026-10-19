@@ -182,16 +182,13 @@ class AppState extends ChangeNotifier {
       error = e.toString();
       usuario = null;
       return false;
+    } on StateError catch (e) {
+      error = e.message;
+      usuario = null;
+      return false;
     } catch (e) {
       error = e is ApiException ? e.message : e.toString();
       usuario = null;
-      if (e is ApiException &&
-          (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 429)) {
-        error = 'Sesión expirada. Ingresa con contraseña.';
-      } else if (e is ApiException &&
-          (e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504)) {
-        error = e.message;
-      }
       return false;
     } finally {
       cargando = false;
@@ -203,7 +200,7 @@ class AppState extends ChangeNotifier {
     await sync.dejarDeEscuchar();
     await alertas.limpiar();
     await sync.limpiarLocal();
-    await auth.logout(borrarAccesoBiometrico: false);
+    await auth.logout(borrarAccesoBiometrico: true);
     usuario = null;
     region = null;
     notifyListeners();
