@@ -130,6 +130,12 @@ def aplicar_migraciones_sqlite(engine) -> None:
         "pagos_nomina": [
             ("pais_id", "CHAR(36)"),
         ],
+        "paises": [
+            ("sueldo_base_legal", "NUMERIC(14, 2) NOT NULL DEFAULT 0"),
+            ("porcentaje_comision_venta", "NUMERIC(5, 2) NOT NULL DEFAULT 0"),
+            ("porcentaje_comision_cobro", "NUMERIC(5, 2) NOT NULL DEFAULT 0"),
+            ("bono_incentivo", "NUMERIC(14, 2) NOT NULL DEFAULT 0"),
+        ],
     }
 
     with engine.begin() as conn:

@@ -64,7 +64,7 @@ def _usuario_a_respuesta(usuario: Usuario, pais: PaisPublicoResponse) -> LoginRe
         activo=bool(usuario.activo),
         telefono=usuario.telefono,
         sueldo_base_usd=_float_sueldo(getattr(usuario, "sueldo_base_usd", None)),
-        pais_id=str(usuario.pais_id) if usuario.pais_id else None,
+        pais_id=str(pais.id),
         pais=pais,
     )
 
@@ -118,21 +118,23 @@ def _resolver_y_validar_pais_usuario(
     pais_efectivo = usuario.pais_id or (empresa.pais_id if empresa else None)
     seleccion = str(pais_seleccionado.id)
 
-    if not es_dueno and pais_efectivo and str(pais_efectivo) != seleccion:
-        raise HTTPException(
-            status_code=403,
-            detail="Este usuario no pertenece al país seleccionado. Elige el país correcto.",
-        )
-
-    if es_dueno and pais_efectivo and str(pais_efectivo) != seleccion:
-        logger.info(
-            "Login dueno: actualizando región %s → %s",
-            pais_efectivo,
-            seleccion,
-        )
-
-    if not usuario.pais_id:
+    if es_dueno:
+        if pais_efectivo and str(pais_efectivo) != seleccion:
+            logger.info(
+                "Login dueño multitenant: región solicitada %s (registro previo %s)",
+                seleccion,
+                pais_efectivo,
+            )
         usuario.pais_id = pais_seleccionado.id
+    else:
+        if pais_efectivo and str(pais_efectivo) != seleccion:
+            raise HTTPException(
+                status_code=403,
+                detail="Este usuario no pertenece al país seleccionado. Elige el país correcto.",
+            )
+        if not usuario.pais_id:
+            usuario.pais_id = pais_seleccionado.id
+
     if empresa is not None and not empresa.pais_id:
         empresa.pais_id = pais_seleccionado.id
 

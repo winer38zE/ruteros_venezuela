@@ -160,12 +160,14 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> loginConBiometria() async {
+  Future<bool> loginConBiometria({String? paisIdSeleccionado}) async {
     cargando = true;
     error = null;
     notifyListeners();
     try {
-      final user = await auth.loginConBiometria();
+      final user = await auth.loginConBiometria(
+        paisIdSeleccionado: paisIdSeleccionado,
+      );
       if (user == null) {
         error = 'Huella no reconocida. Intenta de nuevo o usa contraseña.';
         usuario = null;

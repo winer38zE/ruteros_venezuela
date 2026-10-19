@@ -191,7 +191,10 @@ class AuthService {
   }
 
   /// Huella válida → lee almacén seguro → sesión o login en API.
-  Future<Usuario?> loginConBiometria() async {
+  ///
+  /// Si [paisIdSeleccionado] viene del dropdown, se usa en el login (dueño multiregión)
+  /// en lugar del país guardado en el almacén seguro.
+  Future<Usuario?> loginConBiometria({String? paisIdSeleccionado}) async {
     if (!await tieneDatosBiometricosGuardados()) {
       throw BiometricStorageEmptyException();
     }
@@ -199,17 +202,24 @@ class AuthService {
     final ok = await _biometric.autenticar();
     if (!ok) return null;
 
-    final restaurado = await _restaurarSesionDesdeAlmacenSeguro();
-    if (restaurado != null) {
-      await _sincronizarRegionDesdeAlmacenSeguro(restaurado);
-      return restaurado;
+    final paisDropdown = paisIdSeleccionado?.trim();
+    final usarPaisDropdown = paisDropdown != null && paisDropdown.isNotEmpty;
+
+    if (!usarPaisDropdown) {
+      final restaurado = await _restaurarSesionDesdeAlmacenSeguro();
+      if (restaurado != null) {
+        await _sincronizarRegionDesdeAlmacenSeguro(restaurado);
+        return restaurado;
+      }
     }
 
     final credenciales = await _biometric.leerCredenciales();
     if (credenciales == null) {
       throw BiometricStorageEmptyException();
     }
-    final paisId = await _biometric.leerPaisLoginId();
+    final paisId = usarPaisDropdown
+        ? paisDropdown!
+        : await _biometric.leerPaisLoginId();
     if (paisId == null || paisId.isEmpty) {
       throw BiometricStorageEmptyException();
     }
