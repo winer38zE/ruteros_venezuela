@@ -17,6 +17,7 @@ from app.core.pb_schema import preparar_esquema_pocketbase, verificar_coleccione
 from app.core.pb_orm.session import SessionLocal
 from app.models.core import Almacen, Empresa, RolUsuario, Usuario
 from app.services.paises_seed import asegurar_catalogo_paises, pais_por_defecto
+from app.services.payroll_seed import asegurar_payroll_rules_2026
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,7 @@ def asegurar_usuario_admin() -> None:
     db = SessionLocal()
     try:
         asegurar_catalogo_paises(db)
+        asegurar_payroll_rules_2026(db)
         pais_ve = pais_por_defecto(db)
 
         empresa = db.query(Empresa).first()

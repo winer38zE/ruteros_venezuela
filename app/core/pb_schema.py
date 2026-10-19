@@ -34,6 +34,7 @@ _COLECCIONES_NUCLEO: tuple[str, ...] = (
 
 _ORDEN_COLECCIONES: tuple[str, ...] = (
     "paises",
+    "payroll_rules",
     "empresas",
     "cuentas_bancarias",
     "configuracion_fiscal",

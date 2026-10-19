@@ -52,10 +52,14 @@ def _sueldo_base_empleado(
     emp: Usuario,
     cfg: ConfiguracionNomina,
     pais: Optional[Pais] = None,
+    *,
+    sueldo_legal_regla: Decimal | None = None,
 ) -> Decimal:
     base = _d(emp.sueldo_base_usd or 0)
     if base > 0:
         return base
+    if sueldo_legal_regla is not None and sueldo_legal_regla > 0:
+        return sueldo_legal_regla
     if pais is not None and _d(pais.sueldo_base_legal or 0) > 0:
         return _d(pais.sueldo_base_legal)
     if emp.rol == RolUsuario.COBRADOR:
@@ -72,12 +76,22 @@ def calcular_linea_empleado(
     fecha_hasta: datetime,
     pais: Optional[Pais] = None,
 ) -> dict:
+    from app.services.payroll_rules import parametros_nomina_desde_reglas
+
+    params = parametros_nomina_desde_reglas(db, pais)
+    sueldo_regla = _d(params.get("sueldo_base_legal", 0))
     comision_por_venta = _d(cfg.comision_vendedor_por_venta_usd)
     pct_cobrador = _d(cfg.comision_cobrador_porcentaje)
-    pct_venta_pais = _d(pais.porcentaje_comision_venta) if pais else _d("0")
-    if pais is not None and _d(pais.porcentaje_comision_cobro) > 0:
-        pct_cobrador = _d(pais.porcentaje_comision_cobro)
-    base = _sueldo_base_empleado(emp, cfg, pais=pais)
+    pct_venta_pais = _d(params.get("porcentaje_comision_venta", 0))
+    pct_cobro_pais = _d(params.get("porcentaje_comision_cobro", 0))
+    if pct_cobro_pais > 0:
+        pct_cobrador = pct_cobro_pais
+    base = _sueldo_base_empleado(
+        emp,
+        cfg,
+        pais=pais,
+        sueldo_legal_regla=sueldo_regla,
+    )
 
     num_ventas = 0
     comision_ventas = _d("0")

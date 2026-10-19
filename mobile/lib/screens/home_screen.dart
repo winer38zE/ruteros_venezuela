@@ -27,6 +27,7 @@ import 'rutas_resumen_screen.dart';
 import 'login_screen.dart';
 import 'cuenta_bancaria_empleado_screen.dart';
 import 'datos_bancarios_screen.dart';
+import 'admin_paises_reglas_screen.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -185,6 +186,15 @@ class HomeScreen extends StatelessWidget {
           color: AppColors.violet,
           screen: RutasResumenScreen(),
           badge: 'LIVE',
+        ),
+        _ModuleDef(
+          id: 'paises_reglas',
+          icon: Icons.public_rounded,
+          title: 'Países y sueldos',
+          subtitle: 'Monedas, reglas 2026 y verificación',
+          color: AppColors.neonCyan,
+          screen: AdminPaisesReglasScreen(),
+          badge: 'CFG',
         ),
         _ModuleDef(
           id: 'finanzas',
