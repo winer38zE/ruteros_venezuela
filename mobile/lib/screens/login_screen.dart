@@ -176,9 +176,18 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    final paisId = _paisIdSeleccionado;
+    if (paisId == null || paisId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona tu país antes de usar la huella')),
+      );
+      return;
+    }
+
     if (!mounted) return;
     final state = context.read<AppState>();
-    final ok = await state.loginConBiometria();
+    final ok = await state.loginConBiometria(paisIdSeleccionado: paisId);
     if (!mounted) return;
 
     if (ok && state.usuario != null) {

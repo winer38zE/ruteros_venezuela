@@ -18,6 +18,7 @@ import 'registrar_usuario_screen.dart';
 import 'usuarios_screen.dart';
 import 'clientes_screen.dart';
 import 'tasas_screen.dart';
+import 'nomina_screen.dart';
 import 'panel_cobranza_screen.dart';
 import 'cartera_critica_screen.dart';
 import 'proveedores_screen.dart';
@@ -68,12 +69,31 @@ class HomeScreen extends StatelessWidget {
 
   List<_ModuleDef> _modules(AppState state) {
     final user = state.usuario!;
-    final list = user.rolAcceso == 'owner'
+    var list = user.rolAcceso == 'owner'
         ? _modulosOwner()
         : _modulosEmpleado(state);
+    if (user.rol == 'DUEÑO') {
+      if (!list.any((m) => m.id == 'nomina')) {
+        list = [...list, ..._moduloPagoNomina()];
+      }
+    } else {
+      list = list.where((m) => m.id != 'nomina').toList();
+    }
     if (state.esVenezuela) return list;
     return list.where((m) => m.id != 'tasas').toList();
   }
+
+  List<_ModuleDef> _moduloPagoNomina() => const [
+        _ModuleDef(
+          id: 'nomina',
+          icon: Icons.payments_rounded,
+          title: 'Pago de Nómina',
+          subtitle: 'Sueldos, comisiones y egresos por país',
+          color: AppColors.violet,
+          screen: NominaScreen(),
+          badge: 'PAY',
+        ),
+      ];
 
   List<_ModuleDef> _modulosOwner() => const [
         _ModuleDef(
