@@ -33,6 +33,7 @@ from app.core.seguridad import (
 )
 from app.models.core import Empresa, Pais, RolUsuario, Usuario
 from app.schemas.core import LoginResponse, PaisPublicoResponse
+from app.core.pb_orm import mapper
 from app.services.paises_seed import pais_por_defecto
 
 logger = logging.getLogger(__name__)
@@ -137,7 +138,7 @@ def _acceso_multiregion(usuario: Usuario) -> bool:
 
 
 def _pais_para_login(db: Session, body: LoginRequest, *, multiregion: bool) -> Pais:
-    """País efectivo de sesión: siempre el del request si es válido."""
+    """País efectivo de sesión: el pais_id del JSON (independiente del guardado en users)."""
     pid = body.pais_id
     if not pid:
         print(
@@ -153,20 +154,7 @@ def _pais_para_login(db: Session, body: LoginRequest, *, multiregion: bool) -> P
             defecto.codigo_iso,
         )
         return defecto
-    try:
-        return _obtener_pais_activo(db, pid)
-    except HTTPException:
-        if not multiregion:
-            raise
-        defecto = pais_por_defecto(db)
-        if defecto is None or not bool(defecto.activo):
-            raise
-        logger.warning(
-            "Login multiregión: pais_id=%r inválido; usando país por defecto %s",
-            pid,
-            defecto.codigo_iso,
-        )
-        return defecto
+    return _obtener_pais_activo(db, pid)
 
 
 def _resolver_y_validar_pais_usuario(
@@ -187,20 +175,8 @@ def _resolver_y_validar_pais_usuario(
                 pais_efectivo,
                 _rol_como_texto(usuario.rol),
             )
-        try:
-            usuario.pais_id = pais_seleccionado.id
-            if empresa is not None and not empresa.pais_id:
-                empresa.pais_id = pais_seleccionado.id
-            db.commit()
-        except (ClientResponseError, SQLAlchemyError) as exc:
-            db.rollback()
-            logger.warning(
-                "Login multiregión: no se persistió pais_id; sesión usará país del request (%s)",
-                seleccion,
-            )
-            print(
-                f"[LOGIN] multiregion: fallo commit pais_id={seleccion!r} err={exc!r}"
-            )
+        # Dueño/admin: país de sesión = request; no se exige coincidir con users.pais_id.
+        return _pais_a_publico(pais_seleccionado)
     else:
         if pais_efectivo and str(pais_efectivo) != seleccion:
             raise HTTPException(
@@ -230,8 +206,40 @@ def _normalizar_username(username: str) -> str:
     return (username or "").strip()
 
 
+def _filtro_pocketbase_username(clave: str) -> str:
+    esc = clave.replace("\\", "\\\\").replace("'", "\\'")
+    return f"username:lower = '{esc}'"
+
+
 def _listar_usuarios_por_username(db: Session, clave: str) -> list[Usuario]:
-    """Lista coincidencias por username (PocketBase: sin filtro pais_id)."""
+    """Lista usuarios en PocketBase solo por username (nunca filtra por pais_id)."""
+    filtro = _filtro_pocketbase_username(clave)
+    logger.info("Login PocketBase filter=%r", filtro)
+    print(f"[LOGIN] PocketBase filter={filtro!r} (sin pais_id)")
+
+    pb = getattr(db, "pb", None)
+    if pb is not None:
+        coll = mapper.collection_name(Usuario)
+        usuarios: list[Usuario] = []
+        page = 1
+        per_page = 200
+        while True:
+            batch = pb.collection(coll).get_list(
+                page,
+                per_page,
+                query_params={"filter": filtro},
+            )
+            for rec in batch.items:
+                data = mapper.record_payload(rec)
+                obj = mapper.record_to_model(Usuario, data)
+                if hasattr(db, "_register_loaded"):
+                    db._register_loaded(obj)
+                usuarios.append(obj)
+            if len(batch.items) < per_page:
+                break
+            page += 1
+        return usuarios
+
     return (
         db.query(Usuario)
         .filter(func.lower(Usuario.username) == clave)
@@ -391,6 +399,12 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     pais_resp = _resolver_y_validar_pais_usuario(db, usuario, pais_seleccionado)
     access_token = _emitir_token_jwt(usuario, pais_seleccionado)
+    pais_id_seleccionado = str(pais_seleccionado.id)
+    logger.info(
+        "Login exitoso para %s en el país %s",
+        usuario.username,
+        pais_id_seleccionado,
+    )
     logger.info(
         "Login OK (id=%s, username=%r, pais=%s)",
         usuario.id,

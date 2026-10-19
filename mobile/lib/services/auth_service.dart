@@ -85,11 +85,18 @@ class AuthService {
     bool persistirCredenciales = true,
   }) async {
     final usuarioNorm = correo.trim();
-    final data = await _api.post('/auth/login', {
-      'username': usuarioNorm,
-      'password': password,
-      'pais_id': paisId,
-    });
+    final dynamic raw;
+    try {
+      raw = await _api.post('/auth/login', {
+        'username': usuarioNorm,
+        'password': password,
+        'pais_id': paisId,
+      });
+    } on ApiException {
+      // Nunca borrar flutter_secure_storage en fallos de login.
+      rethrow;
+    }
+    final data = raw as Map<String, dynamic>;
     final user = Usuario.fromJson(data);
     final jwt = (data['access_token'] as String?)?.trim();
     await _api.saveSession(
