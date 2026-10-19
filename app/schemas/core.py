@@ -88,6 +88,8 @@ class UsuarioResponse(BaseModel):
 
 class LoginResponse(UsuarioResponse):
     pais: PaisPublicoResponse
+    access_token: str
+    token_type: str = "bearer"
 
 class UsuarioUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -927,8 +929,32 @@ class NominaCalculadaResponse(BaseModel):
     comision_vendedor_por_articulo_usd: float
     comision_vendedor_por_venta_usd: float
     comision_cobrador_porcentaje: float
+    sueldo_base_legal_pais: float = 0.0
+    porcentaje_comision_venta_pais: float = 0.0
+    porcentaje_comision_cobro_pais: float = 0.0
     empleados: List[DetalleNominaEmpleado]
     total_pendiente_usd: float
+
+
+class PaisNominaParametrosResponse(BaseModel):
+    pais_id: RecordId
+    nombre: str
+    codigo_iso: str
+    moneda_principal: str
+    simbolo_moneda: str
+    sueldo_base_legal: float
+    porcentaje_comision_venta: float
+    porcentaje_comision_cobro: float
+    bono_incentivo: float = 0.0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PaisNominaParametrosUpdate(BaseModel):
+    sueldo_base_legal: float = Field(ge=0)
+    porcentaje_comision_venta: float = Field(ge=0, le=100)
+    porcentaje_comision_cobro: float = Field(ge=0, le=100)
+    bono_incentivo: Optional[float] = Field(default=None, ge=0)
 
 class AprobarPagoNominaRequest(BaseModel):
     empleado_id: RecordId

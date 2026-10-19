@@ -90,8 +90,9 @@ class AuthService {
       'pais_id': paisId,
     });
     final user = Usuario.fromJson(data);
+    final jwt = (data['access_token'] as String?)?.trim();
     await _api.saveSession(
-      token: user.id,
+      token: (jwt != null && jwt.isNotEmpty) ? jwt : user.id,
       usuarioId: user.id,
       usuarioJson: jsonEncode(user.toJson()),
     );
@@ -202,23 +203,19 @@ class AuthService {
     final ok = await _biometric.autenticar();
     if (!ok) return null;
 
-    final paisDropdown = paisIdSeleccionado?.trim();
-    final usarPaisDropdown = paisDropdown != null && paisDropdown.isNotEmpty;
-
-    if (!usarPaisDropdown) {
+    final credenciales = await _biometric.leerCredenciales();
+    if (credenciales == null) {
       final restaurado = await _restaurarSesionDesdeAlmacenSeguro();
       if (restaurado != null) {
         await _sincronizarRegionDesdeAlmacenSeguro(restaurado);
         return restaurado;
       }
-    }
-
-    final credenciales = await _biometric.leerCredenciales();
-    if (credenciales == null) {
       throw BiometricStorageEmptyException();
     }
-    final paisId = usarPaisDropdown
-        ? paisDropdown!
+
+    final paisDropdown = paisIdSeleccionado?.trim();
+    final paisId = (paisDropdown != null && paisDropdown.isNotEmpty)
+        ? paisDropdown
         : await _biometric.leerPaisLoginId();
     if (paisId == null || paisId.isEmpty) {
       throw BiometricStorageEmptyException();

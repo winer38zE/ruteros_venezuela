@@ -89,6 +89,9 @@ class _LoginScreenState extends State<LoginScreen> {
           lista.any((p) => p.id == paisHuella)) {
         seleccion = paisHuella;
       }
+      if (seleccion == null && lista.length == 1) {
+        seleccion = lista.first.id;
+      }
       if (!mounted) return;
       setState(() {
         _paises = lista;
@@ -125,7 +128,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _paisIdSeleccionado!.isNotEmpty;
 
   bool get _puedeIngresarHuella =>
-      _dispositivoConHuella && _huellaHabilitada;
+      _puedeIniciarSesion && _dispositivoConHuella && _huellaHabilitada;
 
   PaisRegion? get _paisSeleccionado {
     final id = _paisIdSeleccionado;

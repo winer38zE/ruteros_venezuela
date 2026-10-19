@@ -49,6 +49,109 @@ class _NominaScreenState extends State<NominaScreen> {
     }
   }
 
+  Future<void> _configurarParametrosPais() async {
+    final finanzas = context.read<AppState>().finanzas;
+    ParametrosNominaPais? actual;
+    try {
+      actual = await finanzas.obtenerParametrosNominaPais();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudieron cargar parámetros: $e'), backgroundColor: const Color(0xFFEF4444)),
+      );
+      return;
+    }
+
+    final sueldoCtrl = TextEditingController(text: actual.sueldoBaseLegal.toString());
+    final pctVentaCtrl = TextEditingController(text: actual.porcentajeComisionVenta.toString());
+    final pctCobroCtrl = TextEditingController(text: actual.porcentajeComisionCobro.toString());
+
+    if (!mounted) return;
+    final paisRef = actual;
+    final guardar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgElevated,
+        title: Text('Parámetros — ${paisRef.nombre}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Moneda: ${paisRef.monedaPrincipal} (${paisRef.simboloMoneda})',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: sueldoCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Sueldo base legal (${paisRef.simboloMoneda})',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: pctVentaCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Comisión ventas (%)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: pctCobroCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Comisión cobros (%)',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
+        ],
+      ),
+    );
+
+    final sueldo = double.tryParse(sueldoCtrl.text.replaceAll(',', '.'));
+    final pctV = double.tryParse(pctVentaCtrl.text.replaceAll(',', '.'));
+    final pctC = double.tryParse(pctCobroCtrl.text.replaceAll(',', '.'));
+    sueldoCtrl.dispose();
+    pctVentaCtrl.dispose();
+    pctCobroCtrl.dispose();
+
+    if (guardar != true || !mounted) return;
+    if (sueldo == null || pctV == null || pctC == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Revisa los valores numéricos'), backgroundColor: Color(0xFFEF4444)),
+      );
+      return;
+    }
+
+    try {
+      await finanzas.guardarParametrosNominaPais(
+        sueldoBaseLegal: sueldo,
+        porcentajeComisionVenta: pctV,
+        porcentajeComisionCobro: pctC,
+        bonoIncentivo: paisRef.bonoIncentivo,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Parámetros del país guardados')),
+        );
+      }
+      await _cargar();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
+    }
+  }
+
   Future<void> _aprobar(DetalleNominaEmpleado emp) async {
     if (emp.pendienteUsd <= 0) return;
 
@@ -109,6 +212,15 @@ class _NominaScreenState extends State<NominaScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _configurarParametrosPais,
+                          icon: const Icon(Icons.tune_rounded),
+                          label: const Text('Configurar Parámetros del País'),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       if (_nomina != null) ...[
                         GlassContainer(
                           accentColor: AppColors.violet,
@@ -125,9 +237,15 @@ class _NominaScreenState extends State<NominaScreen> {
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                               const SizedBox(height: 8),
+                              if (_nomina!.sueldoBaseLegalPais > 0)
+                                Text(
+                                  'Sueldo base legal país: ${_fmt.format(_nomina!.sueldoBaseLegalPais)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
                               Text(
-                                'Vendedor: ${_fmt.format(_nomina!.comisionVendedorPorArticulo)}/artículo · '
-                                'Cobrador: ${_nomina!.comisionCobradorPorcentaje.toStringAsFixed(0)}% cobros',
+                                'Com. venta: ${_nomina!.porcentajeComisionVentaPais.toStringAsFixed(1)}% · '
+                                'Com. cobro: ${_nomina!.porcentajeComisionCobroPais.toStringAsFixed(1)}% · '
+                                'Cobrador ref.: ${_nomina!.comisionCobradorPorcentaje.toStringAsFixed(0)}%',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -136,7 +254,10 @@ class _NominaScreenState extends State<NominaScreen> {
                         const SizedBox(height: 16),
                         const SectionTitle(title: 'Desglose por empleado'),
                         if (_nomina!.empleados.isEmpty)
-                          const EmptyState(icon: Icons.person_off_rounded, message: 'Sin empleados con comisiones')
+                          const EmptyState(
+                            icon: Icons.person_off_rounded,
+                            message: 'No hay vendedores ni cobradores activos en este país',
+                          )
                         else
                           ..._nomina!.empleados.map((emp) {
                             final color = emp.rol == 'VENDEDOR' ? AppColors.emerald : AppColors.neonCyan;
@@ -147,6 +268,10 @@ class _NominaScreenState extends State<NominaScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('Rol: ${emp.rol}'),
+                                  Text(
+                                    'Comisiones: ${_fmt.format(emp.comisionesTotalUsd)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
                                   if (emp.sueldoBaseUsd > 0)
                                     Text('Sueldo base: ${_fmt.format(emp.sueldoBaseUsd)}'),
                                   if (emp.articulosVendidos > 0)

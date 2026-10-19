@@ -75,6 +75,7 @@ def test_pais_para_login_dueno_usa_defecto_si_id_invalido(monkeypatch):
     out = _pais_para_login(
         db,
         LoginRequest(username="dueno", password="123456", pais_id="id-invalido"),
+        es_dueno_login=True,
     )
     assert out.codigo_iso == "VE"
 
@@ -105,6 +106,10 @@ def test_login_ok_con_usuario_demo(monkeypatch):
         "app.api.auth_router._resolver_y_validar_pais_usuario",
         lambda db, u, p: PaisPublicoResponse.model_validate(p),
     )
+    monkeypatch.setattr(
+        "app.api.auth_router._emitir_token_jwt",
+        lambda u, p: "token-test",
+    )
 
     request = MagicMock()
     request.client.host = "127.0.0.1"
@@ -116,6 +121,7 @@ def test_login_ok_con_usuario_demo(monkeypatch):
     assert resp.username == "dueno"
     assert resp.id == usuario.id
     assert resp.pais.codigo_iso == "VE"
+    assert resp.access_token == "token-test"
 
 
 def test_login_falla_con_clave_incorrecta(monkeypatch):
