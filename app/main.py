@@ -25,6 +25,7 @@ from app.api import (
     cartera_critica,
     cartera,
     paises,
+    payroll_admin,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +69,11 @@ app.include_router(health_router.router)
 # Registro de Routers principales
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(paises.router, prefix="/api/v1/paises", tags=["Países"])
+app.include_router(
+    payroll_admin.router,
+    prefix="/api/v1/admin",
+    tags=["Admin países y nómina"],
+)
 app.include_router(empresas.router, prefix="/api/v1/empresas", tags=["Empresas"])
 app.include_router(usuarios.router, prefix="/api/v1/usuarios", tags=["Usuarios"])
 app.include_router(perfil.router, prefix="/api/v1/perfil", tags=["Perfil empleado"])

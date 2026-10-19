@@ -135,6 +135,12 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("porcentaje_comision_venta", "NUMERIC(5, 2) NOT NULL DEFAULT 0"),
             ("porcentaje_comision_cobro", "NUMERIC(5, 2) NOT NULL DEFAULT 0"),
             ("bono_incentivo", "NUMERIC(14, 2) NOT NULL DEFAULT 0"),
+            ("bandera", "VARCHAR(8)"),
+            ("prefijo_telefonico", "VARCHAR(8)"),
+            ("formato_numero", "VARCHAR(32)"),
+            ("formato_fecha", "VARCHAR(32)"),
+            ("payment_currencies", "TEXT"),
+            ("tasas_cambio_referencia", "TEXT"),
         ],
     }
 
@@ -172,6 +178,7 @@ def aplicar_migraciones_sqlite(engine) -> None:
         _asegurar_tabla_cuentas_bancarias_empleados(conn)
         _asegurar_tabla_pagos_nomina(conn)
         _asegurar_tabla_paises(conn)
+        _asegurar_tabla_payroll_rules(conn)
 
 
 def _tabla_sqlite(conn, nombre: str) -> bool:
@@ -335,7 +342,50 @@ def _asegurar_tabla_paises(conn) -> None:
                 configuracion_bancaria TEXT NOT NULL,
                 configuracion_fiscal TEXT,
                 configuracion_ui TEXT,
+                sueldo_base_legal NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                porcentaje_comision_venta NUMERIC(5, 2) NOT NULL DEFAULT 0,
+                porcentaje_comision_cobro NUMERIC(5, 2) NOT NULL DEFAULT 0,
+                bono_incentivo NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                bandera VARCHAR(8),
+                prefijo_telefonico VARCHAR(8),
+                formato_numero VARCHAR(32),
+                formato_fecha VARCHAR(32),
+                payment_currencies TEXT,
+                tasas_cambio_referencia TEXT,
                 fecha_creacion DATETIME
+            )
+            """
+        )
+    )
+
+
+def _asegurar_tabla_payroll_rules(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS payroll_rules (
+                id CHAR(36) PRIMARY KEY,
+                pais_id CHAR(36) NOT NULL,
+                year INTEGER NOT NULL,
+                effective_from DATE NOT NULL,
+                salario_minimo_mensual NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                moneda_salario VARCHAR(3) NOT NULL,
+                auxilio_transporte NUMERIC(14, 2),
+                aportes_empleado TEXT,
+                aportes_empleador TEXT,
+                prestaciones TEXT,
+                jornada_max_horas_semanales INTEGER,
+                recargos TEXT,
+                porcentaje_comision_venta NUMERIC(5, 2) NOT NULL DEFAULT 0,
+                porcentaje_comision_cobro NUMERIC(5, 2) NOT NULL DEFAULT 0,
+                bono_incentivo NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                payment_currencies TEXT,
+                tasas_cambio_referencia TEXT,
+                source_url TEXT,
+                verified BOOLEAN NOT NULL DEFAULT 0,
+                borrador BOOLEAN NOT NULL DEFAULT 0,
+                fecha_creacion DATETIME,
+                UNIQUE (pais_id, year, effective_from, moneda_salario)
             )
             """
         )

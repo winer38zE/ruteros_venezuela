@@ -4,7 +4,12 @@ import os
 from pocketbase.errors import ClientResponseError
 from sqlalchemy import func
 
-from app.api.auth import get_password_hash, log_huella_demo_password_configurada, obtener_demo_password
+from app.api.auth import (
+    get_password_hash,
+    log_huella_demo_password_configurada,
+    obtener_demo_password,
+    password_demo_para_username,
+)
 from app.core.db import get_pocketbase_client
 from app.core.demo_hash_verificacion import verificar_hashes_usuarios_demo
 from app.core.pb_orm import mapper
@@ -12,6 +17,7 @@ from app.core.pb_schema import preparar_esquema_pocketbase, verificar_coleccione
 from app.core.pb_orm.session import SessionLocal
 from app.models.core import Almacen, Empresa, RolUsuario, Usuario
 from app.services.paises_seed import asegurar_catalogo_paises, pais_por_defecto
+from app.services.payroll_seed import asegurar_payroll_rules_2026
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +36,7 @@ DEMO_USUARIOS = [
 def _asegurar_usuario_demo(db, empresa_id, username: str, nombre: str, rol) -> None:
     """Crea o restablece un usuario demo (activo + hash bcrypt actualizado)."""
     username_norm = username.strip().lower()
-    password = obtener_demo_password()
+    password = password_demo_para_username(username_norm)
     existente = (
         db.query(Usuario)
         .filter(func.lower(Usuario.username) == username_norm)
@@ -113,6 +119,7 @@ def asegurar_usuario_admin() -> None:
     db = SessionLocal()
     try:
         asegurar_catalogo_paises(db)
+        asegurar_payroll_rules_2026(db)
         pais_ve = pais_por_defecto(db)
 
         empresa = db.query(Empresa).first()

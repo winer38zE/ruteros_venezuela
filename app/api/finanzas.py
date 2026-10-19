@@ -137,17 +137,23 @@ def _pais_id_sesion_dueno(dueno: Usuario) -> str:
     return str(dueno.pais_id)
 
 
-def _serializar_parametros_pais(pais: Pais) -> dict:
+def _serializar_parametros_pais(db: Session, pais: Pais) -> dict:
+    from app.services.payroll_rules import parametros_nomina_desde_reglas, payment_currencies_for_pais
+
+    params = parametros_nomina_desde_reglas(db, pais)
     return {
         "pais_id": str(pais.id),
         "nombre": pais.nombre,
         "codigo_iso": pais.codigo_iso,
         "moneda_principal": pais.moneda_principal,
         "simbolo_moneda": pais.simbolo_moneda,
-        "sueldo_base_legal": float(pais.sueldo_base_legal or 0),
-        "porcentaje_comision_venta": float(pais.porcentaje_comision_venta or 0),
-        "porcentaje_comision_cobro": float(pais.porcentaje_comision_cobro or 0),
+        "sueldo_base_legal": params["sueldo_base_legal"],
+        "porcentaje_comision_venta": params["porcentaje_comision_venta"],
+        "porcentaje_comision_cobro": params["porcentaje_comision_cobro"],
         "bono_incentivo": float(pais.bono_incentivo or 0),
+        "salarios_por_moneda": params.get("salarios_por_moneda") or {},
+        "regla_verificada": bool(params.get("regla_verificada")),
+        "payment_currencies": payment_currencies_for_pais(pais),
     }
 
 
@@ -159,7 +165,7 @@ def obtener_parametros_nomina_pais(
     pais = _obtener_pais_nomina(db, _pais_id_sesion_dueno(dueno))
     if pais is None:
         raise HTTPException(status_code=404, detail="País de la sesión no encontrado")
-    return _serializar_parametros_pais(pais)
+    return _serializar_parametros_pais(db, pais)
 
 
 @router.put("/nomina/parametros-pais", response_model=PaisNominaParametrosResponse)
@@ -178,7 +184,7 @@ def actualizar_parametros_nomina_pais(
         pais.bono_incentivo = body.bono_incentivo
     db.commit()
     db.refresh(pais)
-    return _serializar_parametros_pais(pais)
+    return _serializar_parametros_pais(db, pais)
 
 
 @router.get("/nomina/calcular", response_model=NominaCalculadaResponse)

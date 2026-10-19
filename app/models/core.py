@@ -161,7 +161,58 @@ class Pais(Base):
     porcentaje_comision_venta = Column(Numeric(5, 2), nullable=False, default=0)
     porcentaje_comision_cobro = Column(Numeric(5, 2), nullable=False, default=0)
     bono_incentivo = Column(Numeric(14, 2), nullable=False, default=0)
+    bandera = Column(String(8), nullable=True)
+    prefijo_telefonico = Column(String(8), nullable=True)
+    formato_numero = Column(String(32), nullable=True)
+    formato_fecha = Column(String(32), nullable=True)
+    payment_currencies = Column(JSON, nullable=True)
+    tasas_cambio_referencia = Column(JSON, nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    payroll_rules = relationship("PayrollRule", back_populates="pais")
+
+
+class PayrollRule(Base):
+    """
+    Reglas de nómina / sueldo versionadas por país y año.
+    Colección PocketBase: ``payroll_rules`` (alias lógico de ``countries`` + leyes).
+    """
+
+    __tablename__ = "payroll_rules"
+    __table_args__ = (
+        UniqueConstraint(
+            "pais_id",
+            "year",
+            "effective_from",
+            "moneda_salario",
+            name="uq_payroll_rules_pais_year_effective_moneda",
+        ),
+        Index("ix_payroll_rules_pais_year", "pais_id", "year"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=False, index=True)
+    year = Column(Integer, nullable=False)
+    effective_from = Column(Date, nullable=False)
+    salario_minimo_mensual = Column(Numeric(14, 2), nullable=False, default=0)
+    moneda_salario = Column(String(3), nullable=False)
+    auxilio_transporte = Column(Numeric(14, 2), nullable=True)
+    aportes_empleado = Column(JSON, nullable=True)
+    aportes_empleador = Column(JSON, nullable=True)
+    prestaciones = Column(JSON, nullable=True)
+    jornada_max_horas_semanales = Column(Integer, nullable=True)
+    recargos = Column(JSON, nullable=True)
+    porcentaje_comision_venta = Column(Numeric(5, 2), nullable=False, default=0)
+    porcentaje_comision_cobro = Column(Numeric(5, 2), nullable=False, default=0)
+    bono_incentivo = Column(Numeric(14, 2), nullable=False, default=0)
+    payment_currencies = Column(JSON, nullable=True)
+    tasas_cambio_referencia = Column(JSON, nullable=True)
+    source_url = Column(Text, nullable=True)
+    verified = Column(Boolean, nullable=False, default=False)
+    borrador = Column(Boolean, nullable=False, default=False)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    pais = relationship("Pais", back_populates="payroll_rules")
 
 
 # ---------- EMPRESA (tenant) ----------

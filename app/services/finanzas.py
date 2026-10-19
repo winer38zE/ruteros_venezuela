@@ -117,8 +117,11 @@ def calcular_nomina(
 
     detalle: List[dict] = []
 
-    pct_cobrador_pais = _d(pais.porcentaje_comision_cobro) if pais else _d("0")
-    pct_venta_pais = _d(pais.porcentaje_comision_venta) if pais else _d("0")
+    from app.services.payroll_rules import parametros_nomina_desde_reglas
+
+    params_regla = parametros_nomina_desde_reglas(db, pais)
+    pct_cobrador_pais = _d(params_regla["porcentaje_comision_cobro"])
+    pct_venta_pais = _d(params_regla["porcentaje_comision_venta"])
     comision_cobrador_pct = (
         float(pct_cobrador_pais)
         if pct_cobrador_pais > 0
@@ -162,7 +165,7 @@ def calcular_nomina(
     else:
         moneda_principal, simbolo_moneda = _moneda_operativa_empresa(db, empresa_id)
 
-    sueldo_legal = float(_d(pais.sueldo_base_legal)) if pais else 0.0
+    sueldo_legal = float(params_regla["sueldo_base_legal"]) if pais else 0.0
 
     return {
         "periodo_desde": fecha_desde.isoformat() if fecha_desde else None,
@@ -173,6 +176,8 @@ def calcular_nomina(
         "comision_vendedor_por_venta_usd": float(cfg.comision_vendedor_por_venta_usd),
         "comision_cobrador_porcentaje": comision_cobrador_pct,
         "sueldo_base_legal_pais": sueldo_legal,
+        "salarios_por_moneda": params_regla.get("salarios_por_moneda") or {},
+        "regla_nomina_verificada": bool(params_regla.get("regla_verificada")),
         "porcentaje_comision_venta_pais": float(pct_venta_pais),
         "porcentaje_comision_cobro_pais": float(pct_cobrador_pais),
         "empleados": detalle,

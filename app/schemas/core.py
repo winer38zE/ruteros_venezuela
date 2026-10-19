@@ -930,6 +930,8 @@ class NominaCalculadaResponse(BaseModel):
     comision_vendedor_por_venta_usd: float
     comision_cobrador_porcentaje: float
     sueldo_base_legal_pais: float = 0.0
+    salarios_por_moneda: dict[str, float] = Field(default_factory=dict)
+    regla_nomina_verificada: bool = False
     porcentaje_comision_venta_pais: float = 0.0
     porcentaje_comision_cobro_pais: float = 0.0
     empleados: List[DetalleNominaEmpleado]
@@ -946,8 +948,79 @@ class PaisNominaParametrosResponse(BaseModel):
     porcentaje_comision_venta: float
     porcentaje_comision_cobro: float
     bono_incentivo: float = 0.0
+    salarios_por_moneda: dict[str, float] = Field(default_factory=dict)
+    regla_verificada: bool = False
+    payment_currencies: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CountryAdminResponse(BaseModel):
+    id: RecordId
+    nombre: str
+    codigo_iso: str
+    bandera: Optional[str] = None
+    moneda_principal: str
+    simbolo_moneda: str
+    formato_numero: Optional[str] = None
+    formato_fecha: Optional[str] = None
+    zona_horaria: Optional[str] = None
+    prefijo_telefonico: Optional[str] = None
+    activo: bool = True
+    payment_currencies: List[str] = Field(default_factory=list)
+    tasas_cambio_referencia: Optional[dict] = None
+
+
+class CountryAdminUpdate(BaseModel):
+    nombre: Optional[str] = None
+    bandera: Optional[str] = None
+    moneda_principal: Optional[str] = None
+    simbolo_moneda: Optional[str] = None
+    formato_numero: Optional[str] = None
+    formato_fecha: Optional[str] = None
+    zona_horaria: Optional[str] = None
+    prefijo_telefonico: Optional[str] = None
+    activo: Optional[bool] = None
+    payment_currencies: Optional[List[str]] = None
+    tasas_cambio_referencia: Optional[dict] = None
+
+
+class PayrollRuleResponse(BaseModel):
+    id: RecordId
+    pais_id: RecordId
+    year: int
+    effective_from: str
+    salario_minimo_mensual: float
+    moneda_salario: str
+    auxilio_transporte: Optional[float] = None
+    aportes_empleado: Optional[dict] = None
+    aportes_empleador: Optional[dict] = None
+    prestaciones: Optional[dict] = None
+    jornada_max_horas_semanales: Optional[int] = None
+    recargos: Optional[dict] = None
+    porcentaje_comision_venta: float = 0.0
+    porcentaje_comision_cobro: float = 0.0
+    bono_incentivo: float = 0.0
+    payment_currencies: Optional[List[str]] = None
+    source_url: Optional[str] = None
+    verified: bool = False
+    borrador: bool = False
+
+
+class PayrollRuleUpdate(BaseModel):
+    salario_minimo_mensual: Optional[float] = Field(default=None, ge=0)
+    auxilio_transporte: Optional[float] = Field(default=None, ge=0)
+    aportes_empleado: Optional[dict] = None
+    aportes_empleador: Optional[dict] = None
+    prestaciones: Optional[dict] = None
+    jornada_max_horas_semanales: Optional[int] = Field(default=None, ge=1, le=168)
+    recargos: Optional[dict] = None
+    porcentaje_comision_venta: Optional[float] = Field(default=None, ge=0, le=100)
+    porcentaje_comision_cobro: Optional[float] = Field(default=None, ge=0, le=100)
+    bono_incentivo: Optional[float] = Field(default=None, ge=0)
+    source_url: Optional[str] = None
+    verified: Optional[bool] = None
+    borrador: Optional[bool] = None
 
 
 class PaisNominaParametrosUpdate(BaseModel):

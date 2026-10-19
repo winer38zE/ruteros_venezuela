@@ -38,6 +38,9 @@ from app.services.paises_seed import pais_por_defecto
 
 logger = logging.getLogger(__name__)
 
+# Cuentas demo: una fila por username; el país de sesión lo elige la app en cada login.
+_DEMO_USERNAMES = frozenset({"dueno", "admin", "vendedor", "cobrador"})
+
 router = APIRouter()
 
 
@@ -131,7 +134,10 @@ def _es_dueno_cuenta(usuario: Usuario) -> bool:
 
 
 def _acceso_multiregion(usuario: Usuario) -> bool:
-    """Dueño y administrador eligen país en cada login (sin atarse al pais_id en BD)."""
+    """Dueño, admin y cuentas demo: país de sesión = request (no users.pais_id)."""
+    uname = (usuario.username or "").strip().lower()
+    if uname in _DEMO_USERNAMES:
+        return True
     if _es_dueno_cuenta(usuario):
         return True
     return usuario.rol == RolUsuario.ADMINISTRADOR
@@ -333,8 +339,23 @@ def _error_base_datos(exc: Exception) -> HTTPException:
     logger.exception("Login: fallo al consultar usuarios en PocketBase (%s)", POCKETBASE_URL)
     return HTTPException(
         status_code=503,
-        detail="Base de datos no disponible, intenta de nuevo",
+        detail="Servidor no disponible, reintenta",
     )
+
+
+def _http_error_desde_pocketbase(exc: ClientResponseError) -> HTTPException:
+    status = int(getattr(exc, "status", 0) or 0)
+    if status in (502, 503, 504):
+        return _error_base_datos(exc)
+    if status in (401, 403):
+        logger.warning("Login: PocketBase admin/superuser rechazó consulta (status=%s)", status)
+        return HTTPException(
+            status_code=503,
+            detail="Servidor no disponible, reintenta",
+        )
+    if status == 404:
+        return _error_base_datos(exc)
+    return _error_base_datos(exc)
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -363,18 +384,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     except PocketBaseNoDisponible as exc:
         raise _error_base_datos(exc) from exc
     except ClientResponseError as exc:
-        if exc.status == 404:
-            raise _error_base_datos(exc) from exc
-        if exc.status in (401, 403):
-            logger.warning(
-                "Login fallido: PocketBase rechazó la consulta (%s) username=%r",
-                exc.status,
-                username_entrada,
-            )
-            _log_login_401(username_entrada, body.password)
-            registrar_fallo_login(request, username_entrada)
-            raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
-        raise _error_base_datos(exc) from exc
+        raise _http_error_desde_pocketbase(exc) from exc
     except (httpx.HTTPError, OSError, SQLAlchemyError, RuntimeError) as exc:
         raise _error_base_datos(exc) from exc
 

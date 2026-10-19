@@ -58,9 +58,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _cargarOpcionesBiometria() async {
     final auth = context.read<AppState>().auth;
-    final credenciales = await auth.biometric.leerCredenciales();
+    final paisId = _paisIdSeleccionado;
+    final correoHint = _correoCtrl.text.trim();
     final conLector = await auth.biometric.soportaBiometria();
-    final habilitada = await auth.biometric.puedeIngresarConBiometria();
+    var habilitada = false;
+    ({String correo, String password})? credenciales;
+    if (paisId != null && paisId.isNotEmpty) {
+      habilitada = await auth.biometric.puedeIngresarConBiometria(
+        paisId: paisId,
+        correo: correoHint.isNotEmpty ? correoHint : null,
+      );
+      credenciales = await auth.biometric.leerCredenciales(
+        paisId: paisId,
+        correo: correoHint.isNotEmpty ? correoHint : null,
+      );
+    }
     if (!mounted) return;
     setState(() {
       _dispositivoConHuella = conLector;
@@ -151,6 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     if (elegido == null || !mounted) return;
     await context.read<AppState>().regionSession.guardar(elegido);
+    await _cargarOpcionesBiometria();
   }
 
   Future<void> _cargarTasasLogin() async {
@@ -164,21 +177,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _ingresarConBiometria() async {
     final auth = context.read<AppState>().auth;
-    final hayDatos = await auth.tieneDatosBiometricosGuardados();
-    if (!hayDatos) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Color(0xFFDC2626),
-          content: Text(
-            'Por favor, inicia sesión con tu usuario y contraseña por primera vez para activar la huella',
-          ),
-          duration: Duration(seconds: 5),
-        ),
-      );
-      return;
-    }
-
     final paisId = _paisIdSeleccionado;
     if (paisId == null || paisId.isEmpty) {
       if (!mounted) return;
@@ -190,7 +188,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
     final state = context.read<AppState>();
-    final ok = await state.loginConBiometria(paisIdSeleccionado: paisId);
+    final ok = await state.loginConBiometria(
+      paisIdSeleccionado: paisId,
+      correoHint: _correoCtrl.text.trim().isNotEmpty
+          ? _correoCtrl.text.trim()
+          : null,
+    );
     if (!mounted) return;
 
     if (ok && state.usuario != null) {
@@ -204,17 +207,27 @@ class _LoginScreenState extends State<LoginScreen> {
     await _cargarTasasLogin();
   }
 
-  Future<void> _ofrecerActivarHuella(String correo, String password) async {
+  Future<void> _ofrecerActivarHuella(
+    String correo,
+    String password,
+    String paisId,
+  ) async {
     final auth = context.read<AppState>().auth;
     if (!await auth.biometric.soportaBiometria()) return;
-    if (await auth.biometric.tieneCredenciales()) return;
+    if (await auth.biometric.tieneCredenciales(
+      paisId: paisId,
+      correo: correo,
+    )) {
+      return;
+    }
     if (!mounted) return;
     final activar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Huella dactilar'),
-        content: const Text(
-          '¿Deseas habilitar el inicio de sesión con huella?',
+        content: Text(
+          '¿Deseas habilitar el inicio de sesión con huella para '
+          '${_paisSeleccionado?.nombre ?? 'este país'}?',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Ahora no')),
@@ -224,8 +237,10 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (activar == true) {
       await auth.activarAccesoBiometrico(
+        paisId: paisId,
         correo: correo,
         password: password,
+        paisSimboloMoneda: _paisSeleccionado?.simboloMoneda,
       );
     }
     await _cargarOpcionesBiometria();
@@ -282,8 +297,12 @@ class _LoginScreenState extends State<LoginScreen> {
           paisId: paisId,
         );
     if (!mounted || !ok) return;
-    await _ofrecerActivarHuella(correo, password);
+    await _ofrecerActivarHuella(correo, password, paisId);
     await _cargarTasasLogin();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    );
   }
 
   String _textoTasa(double? valor) {

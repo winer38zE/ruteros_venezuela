@@ -121,8 +121,15 @@ class AppState extends ChangeNotifier {
     if (region != null && region!.simboloMoneda.isNotEmpty) {
       return region!.simboloMoneda;
     }
-    final guardado = await auth.biometric.leerPaisSimboloMoneda();
-    return guardado ?? simboloMoneda;
+    final paisId = region?.id ?? usuario?.paisId;
+    if (paisId != null && paisId.isNotEmpty) {
+      final guardado = await auth.biometric.leerPaisSimboloMoneda(
+        paisId: paisId,
+        correo: usuario?.username,
+      );
+      if (guardado != null && guardado.isNotEmpty) return guardado;
+    }
+    return simboloMoneda;
   }
 
   Future<bool> login(
@@ -160,13 +167,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> loginConBiometria({String? paisIdSeleccionado}) async {
+  Future<bool> loginConBiometria({
+    required String paisIdSeleccionado,
+    String? correoHint,
+  }) async {
     cargando = true;
     error = null;
     notifyListeners();
     try {
       final user = await auth.loginConBiometria(
         paisIdSeleccionado: paisIdSeleccionado,
+        correoHint: correoHint,
       );
       if (user == null) {
         error = 'Huella no reconocida. Intenta de nuevo o usa contraseña.';
@@ -180,6 +191,10 @@ class AppState extends ChangeNotifier {
       return true;
     } on BiometricStorageEmptyException catch (e) {
       error = e.toString();
+      usuario = null;
+      return false;
+    } on BiometricUserFacingException catch (e) {
+      error = e.message;
       usuario = null;
       return false;
     } on StateError catch (e) {
@@ -200,7 +215,7 @@ class AppState extends ChangeNotifier {
     await sync.dejarDeEscuchar();
     await alertas.limpiar();
     await sync.limpiarLocal();
-    await auth.logout(borrarAccesoBiometrico: true);
+    await auth.logout(borrarAccesoBiometrico: false);
     usuario = null;
     region = null;
     notifyListeners();
