@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../l10n/regional_copy.dart';
 import '../providers/app_state.dart';
 import '../services/cobros_service.dart';
 import '../theme/app_theme.dart';
@@ -47,8 +48,17 @@ class _CobrosListScreenState extends State<CobrosListScreen> {
     return CobrosService.monedas.firstWhere((e) => e.$1 == m, orElse: () => (m, m)).$2;
   }
 
+  Future<void> _nuevoCobro() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const NuevoCobroScreen()),
+    );
+    if (ok == true) _cargar();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final copy = RegionalCopy.fromEsVenezuela(context.watch<AppState>().esVenezuela);
     return FuturisticScaffold(
       title: 'Mis Cobros',
       accentColor: AppColors.neonCyan,
@@ -67,22 +77,19 @@ class _CobrosListScreenState extends State<CobrosListScreen> {
         label: 'Nuevo Cobro',
         icon: Icons.payments_rounded,
         color: AppColors.neonCyan,
-        onPressed: () async {
-          final ok = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const NuevoCobroScreen()),
-          );
-          if (ok == true) _cargar();
-        },
+        onPressed: _nuevoCobro,
       ),
       body: _cargando
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!, style: const TextStyle(color: Color(0xFFEF4444))))
               : _cobros.isEmpty
-                  ? const EmptyState(
+                  ? EmptyState(
                       icon: Icons.payments_rounded,
-                      message: 'No hay cobros registrados',
+                      message: copy.emptyCobrosTitulo,
+                      detail: copy.emptyCobrosDetalle,
+                      actionLabel: 'Registrar abono',
+                      onAction: _nuevoCobro,
                     )
                   : RefreshIndicator(
                       onRefresh: _cargar,

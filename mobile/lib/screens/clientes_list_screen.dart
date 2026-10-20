@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/regional_copy.dart';
 import '../providers/app_state.dart';
 import '../services/clientes_service.dart';
 import '../theme/app_theme.dart';
@@ -56,8 +57,17 @@ class _ClientesListScreenState extends State<ClientesListScreen> {
     _cargar();
   }
 
+  Future<void> _nuevoCliente() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const ClienteFormScreen()),
+    );
+    if (ok == true) _cargar();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final copy = RegionalCopy.fromEsVenezuela(context.watch<AppState>().esVenezuela);
     return FuturisticScaffold(
       title: 'Gestión de Clientes',
       accentColor: AppColors.neonCyan,
@@ -66,13 +76,7 @@ class _ClientesListScreenState extends State<ClientesListScreen> {
         label: 'Nuevo cliente',
         icon: Icons.person_add_rounded,
         color: AppColors.neonCyan,
-        onPressed: () async {
-          final ok = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const ClienteFormScreen()),
-          );
-          if (ok == true) _cargar();
-        },
+        onPressed: _nuevoCliente,
       ),
       body: Column(
         children: [
@@ -104,9 +108,15 @@ class _ClientesListScreenState extends State<ClientesListScreen> {
                         onRefresh: _cargar,
                         child: _clientes.isEmpty
                             ? ListView(
-                                children: const [
-                                  SizedBox(height: 80),
-                                  EmptyState(icon: Icons.people_outline_rounded, message: 'Sin clientes registrados'),
+                                children: [
+                                  const SizedBox(height: 80),
+                                  EmptyState(
+                                    icon: Icons.people_outline_rounded,
+                                    message: copy.emptyClientesTitulo,
+                                    detail: copy.emptyClientesDetalle,
+                                    actionLabel: 'Crear cliente',
+                                    onAction: _nuevoCliente,
+                                  ),
                                 ],
                               )
                             : ListView.builder(

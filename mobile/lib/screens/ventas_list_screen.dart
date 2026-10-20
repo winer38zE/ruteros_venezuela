@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../l10n/regional_copy.dart';
 import '../providers/app_state.dart';
 import '../services/ventas_service.dart';
 import '../theme/app_theme.dart';
@@ -68,8 +69,17 @@ class _VentasListScreenState extends State<VentasListScreen> {
     }
   }
 
+  Future<void> _nuevaVenta() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const NuevaVentaScreen()),
+    );
+    if (ok == true) _cargar();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final copy = RegionalCopy.fromEsVenezuela(context.watch<AppState>().esVenezuela);
     return FuturisticScaffold(
       title: 'Mis Ventas',
       accentColor: AppColors.emerald,
@@ -80,22 +90,19 @@ class _VentasListScreenState extends State<VentasListScreen> {
         label: 'Nueva Venta',
         icon: Icons.add_shopping_cart_rounded,
         color: AppColors.emerald,
-        onPressed: () async {
-          final ok = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const NuevaVentaScreen()),
-          );
-          if (ok == true) _cargar();
-        },
+        onPressed: _nuevaVenta,
       ),
       body: _cargando
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!, style: const TextStyle(color: Color(0xFFEF4444))))
               : _ventas.isEmpty
-                  ? const EmptyState(
+                  ? EmptyState(
                       icon: Icons.point_of_sale_rounded,
-                      message: 'No hay ventas registradas',
+                      message: copy.emptyVentasTitulo,
+                      detail: copy.emptyVentasDetalle,
+                      actionLabel: 'Registrar venta',
+                      onAction: _nuevaVenta,
                     )
                   : RefreshIndicator(
                       onRefresh: _cargar,
