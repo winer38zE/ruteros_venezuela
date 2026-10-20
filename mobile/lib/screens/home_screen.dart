@@ -24,7 +24,7 @@ import 'cartera_critica_screen.dart';
 import 'proveedores_screen.dart';
 import 'rutas_list_screen.dart';
 import 'rutas_resumen_screen.dart';
-import 'login_screen.dart';
+import '../widgets/unauthenticated_entry.dart';
 import 'cuenta_bancaria_empleado_screen.dart';
 import 'datos_bancarios_screen.dart';
 import 'admin_paises_reglas_screen.dart';
@@ -66,7 +66,9 @@ class _ModuleDef {
 }
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.onAyuda});
+
+  final VoidCallback? onAyuda;
 
   List<_ModuleDef> _modules(AppState state) {
     final user = state.usuario!;
@@ -407,12 +409,18 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                       _StatusChip(label: user.rol),
+                      if (onAyuda != null)
+                        IconButton(
+                          onPressed: onAyuda,
+                          icon: const Icon(Icons.help_outline_rounded, color: AppColors.textMuted),
+                          tooltip: 'Ayuda',
+                        ),
                       IconButton(
                         onPressed: () async {
                           await state.logout();
                           if (!context.mounted) return;
                           Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                            MaterialPageRoute(builder: (_) => const UnauthenticatedEntry()),
                             (route) => false,
                           );
                         },

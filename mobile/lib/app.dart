@@ -4,8 +4,8 @@ import 'providers/app_state.dart';
 import 'theme/app_theme.dart';
 import 'widgets/futuristic_background.dart';
 import 'widgets/sync_aviso.dart';
-import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
+import 'widgets/home_entry.dart';
+import 'widgets/unauthenticated_entry.dart';
 
 class RuterosApp extends StatelessWidget {
   const RuterosApp({super.key});
@@ -56,8 +56,8 @@ class RuterosApp extends StatelessWidget {
                 ),
               );
             }
-            if (state.usuario != null) return const HomeScreen();
-            return const LoginScreen();
+            if (state.usuario != null) return const HomeEntry();
+            return const UnauthenticatedEntry();
           },
         ),
       ),

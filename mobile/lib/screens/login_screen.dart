@@ -8,9 +8,10 @@ import '../config/api_config.dart';
 import '../services/api_service.dart';
 import '../services/tasas_login_cache.dart';
 import '../theme/app_theme.dart';
+import '../l10n/regional_copy.dart';
 import '../widgets/futuristic_background.dart';
 import '../widgets/glass_container.dart';
-import 'home_screen.dart';
+import '../widgets/home_entry.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -197,7 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (ok && state.usuario != null) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const HomeEntry()),
       );
       return;
     }
@@ -300,7 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await _cargarTasasLogin();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      MaterialPageRoute(builder: (_) => const HomeEntry()),
     );
   }
 
@@ -481,7 +482,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text('Sistema Ruteros Multimoneda'),
+                    Text(
+                      RegionalCopy.fromEsVenezuela(_paisSeleccionado?.esVenezuela ?? true)
+                          .loginSubtitulo,
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 8),
                     GestureDetector(
                       onLongPress: _probandoConexion ? null : _probarConexion,

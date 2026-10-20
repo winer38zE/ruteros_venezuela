@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../local/cliente_local.dart';
 import '../local/isar_db.dart';
+import '../l10n/regional_copy.dart';
 import '../providers/app_state.dart';
 import '../services/api_service.dart';
 import '../services/clientes_service.dart';
@@ -92,8 +93,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
     return esMoroso == true || (score != null && score < 50);
   }
 
+  Future<void> _nuevoCliente() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const ClienteFormScreen()),
+    );
+    if (ok == true && mounted) await _refrescar(avisar: false);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final copy = RegionalCopy.fromEsVenezuela(context.watch<AppState>().esVenezuela);
     return FuturisticScaffold(
       title: 'Gestión de Clientes',
       accentColor: AppColors.neonCyan,
@@ -104,13 +114,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
         label: 'Nuevo cliente',
         icon: Icons.person_add_rounded,
         color: AppColors.neonCyan,
-        onPressed: () async {
-          final ok = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const ClienteFormScreen()),
-          );
-          if (ok == true && mounted) await _refrescar(avisar: false);
-        },
+        onPressed: _nuevoCliente,
       ),
       body: Column(
         children: [
@@ -126,13 +130,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
               ),
             ),
           ),
-          Expanded(child: _isarLista ? _listaLocal() : _listaRed()),
+          Expanded(
+            child: _isarLista
+                ? _listaLocal(copy)
+                : _listaRed(copy),
+          ),
         ],
       ),
     );
   }
 
-  Widget _listaLocal() {
+  Widget _listaLocal(RegionalCopy copy) {
     return StreamBuilder<List<ClienteLocal>>(
       stream: _streamLocal,
       builder: (context, snapshot) {
@@ -163,11 +171,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
                 child: visibles.isEmpty
                     ? ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        children: const [
-                          SizedBox(height: 80),
+                        children: [
+                          const SizedBox(height: 80),
                           EmptyState(
                             icon: Icons.people_outline_rounded,
-                            message: 'Sin clientes en el teléfono. Desliza para sincronizar.',
+                            message: copy.emptyClientesTitulo,
+                            detail: '${copy.emptyClientesDetalle} Desliza hacia abajo para sincronizar.',
+                            actionLabel: 'Crear cliente',
+                            onAction: _nuevoCliente,
                           ),
                         ],
                       )
@@ -236,7 +247,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
     );
   }
 
-  Widget _listaRed() {
+  Widget _listaRed(RegionalCopy copy) {
     return FutureBuilder<List<ClienteDetalle>>(
       future: _futuroRed,
       builder: (context, snapshot) {
@@ -260,9 +271,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
           child: clientes.isEmpty
               ? ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 80),
-                    EmptyState(icon: Icons.people_outline_rounded, message: 'Sin clientes registrados'),
+                  children: [
+                    const SizedBox(height: 80),
+                    EmptyState(
+                      icon: Icons.people_outline_rounded,
+                      message: copy.emptyClientesTitulo,
+                      detail: copy.emptyClientesDetalle,
+                      actionLabel: 'Crear cliente',
+                      onAction: _nuevoCliente,
+                    ),
                   ],
                 )
               : ListView.builder(
