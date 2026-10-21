@@ -200,7 +200,11 @@ def test_obtener_usuario_acepta_id_pocketbase(monkeypatch):
     q.first.return_value = usuario
     db.query.return_value = q
 
-    out = obtener_usuario_actual(x_usuario_id="abc123def456789", db=db)
+    out = obtener_usuario_actual(
+        x_usuario_id="abc123def456789",
+        authorization="Bearer abc123def456789",
+        db=db,
+    )
     assert out.username == "dueno"
 
 

@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.core.db import get_db
-from app.models.core import ConfiguracionFiscal, Empresa
+from app.core.deps import require_admin_o_dueno
+from app.core.tenant import obtener_empresa_tenant
+from app.models.core import ConfiguracionFiscal, Usuario
 from app.schemas.core import (
     ConfiguracionFiscalCreate,
     ConfiguracionFiscalUpdate,
@@ -16,13 +18,6 @@ from app.services.fiscal_engine import (
 )
 
 router = APIRouter()
-
-
-def _obtener_empresa(db: Session) -> Empresa:
-    empresa = db.query(Empresa).first()
-    if not empresa:
-        raise HTTPException(status_code=400, detail="Debes crear una empresa primero")
-    return empresa
 
 
 @router.get("/presets", response_model=List[PresetFiscalResponse])
@@ -42,8 +37,9 @@ def obtener_preset_fiscal(pais: str):
 def crear_configuracion_fiscal(
     config: ConfiguracionFiscalCreate,
     db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_admin_o_dueno),
 ):
-    empresa = _obtener_empresa(db)
+    empresa = obtener_empresa_tenant(db, usuario)
 
     existente = (
         db.query(ConfiguracionFiscal)
@@ -58,7 +54,6 @@ def crear_configuracion_fiscal(
 
     nueva = ConfiguracionFiscal(empresa_id=empresa.id, **config.model_dump())
     aplicar_preset_a_config(nueva, config.pais)
-    # Restaurar overrides explícitos del request
     for campo in ("iva_porcentaje", "igtf_porcentaje", "aplica_igtf_divisas", "moneda_base", "razon_social", "rif"):
         valor = getattr(config, campo, None)
         if valor is not None:
@@ -71,8 +66,11 @@ def crear_configuracion_fiscal(
 
 
 @router.get("/", response_model=ConfiguracionFiscalResponse)
-def obtener_configuracion_fiscal(db: Session = Depends(get_db)):
-    empresa = _obtener_empresa(db)
+def obtener_configuracion_fiscal(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_admin_o_dueno),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
 
     config = (
         db.query(ConfiguracionFiscal)
@@ -92,8 +90,9 @@ def obtener_configuracion_fiscal(db: Session = Depends(get_db)):
 def actualizar_configuracion_fiscal(
     config: ConfiguracionFiscalUpdate,
     db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_admin_o_dueno),
 ):
-    empresa = _obtener_empresa(db)
+    empresa = obtener_empresa_tenant(db, usuario)
 
     existente = (
         db.query(ConfiguracionFiscal)

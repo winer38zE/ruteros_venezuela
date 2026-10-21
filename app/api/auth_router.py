@@ -308,9 +308,10 @@ def _autenticar_usuario_login(
     if not clave:
         return None
     candidatos = _listar_usuarios_con_reintentos(db, clave)
-    print(
-        f"[LOGIN] PocketBase usuarios username={clave!r} "
-        f"candidatos={len(candidatos)} (sin pais_id en filtro)"
+    logger.debug(
+        "Login PocketBase username=%r candidatos=%d (sin pais_id en filtro)",
+        clave,
+        len(candidatos),
     )
     return _elegir_usuario_tras_password(candidatos, password)
 
@@ -373,8 +374,10 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
     exigir_cupo_login(request, username_entrada)
 
-    print(
-        f"[LOGIN] intento username={username_entrada!r} pais_id={body.pais_id!r}"
+    logger.debug(
+        "Login intento username=%r pais_id=%r",
+        username_entrada,
+        body.pais_id,
     )
 
     try:

@@ -137,9 +137,9 @@ def _actualizar_ubicacion_cliente(cliente: Cliente, venta: VentaCreate) -> None:
 def crear_venta(
     venta: VentaCreate,
     db: Session = Depends(get_db),
-    usuario_header: Optional[Usuario] = Depends(obtener_usuario_opcional),
+    usuario_header: Usuario = Depends(require_vendedor_o_superior),
 ):
-    empresa_actual = obtener_empresa_tenant(db)
+    empresa_actual = obtener_empresa_tenant(db, usuario_header)
     cliente_actual = _resolver_cliente(db, empresa_actual.id, venta.cliente_id)
     vendedor_actual = _resolver_vendedor(db, empresa_actual.id, usuario_header)
 

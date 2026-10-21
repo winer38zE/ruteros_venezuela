@@ -233,9 +233,9 @@ def listar_mis_cobros(
 def registrar_cobro(
     cobro: CobroCreate,
     db: Session = Depends(get_db),
-    usuario_header: Optional[Usuario] = Depends(obtener_usuario_opcional),
+    usuario_header: Usuario = Depends(require_cobrador_o_superior),
 ):
-    empresa_actual = obtener_empresa_tenant(db)
+    empresa_actual = obtener_empresa_tenant(db, usuario_header)
 
     venta = (
         db.query(Venta)

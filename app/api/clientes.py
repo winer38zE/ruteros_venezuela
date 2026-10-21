@@ -99,7 +99,7 @@ def crear_cliente(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    empresa_actual = obtener_empresa_tenant(db)
+    empresa_actual = obtener_empresa_tenant(db, usuario)
     ident = normalizar_identificacion(cliente.identificacion)
 
     existente = db.query(Cliente).filter(Cliente.identificacion == ident).first()
@@ -163,7 +163,7 @@ def listar_clientes(
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
     del usuario
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     query = db.query(Cliente).filter(Cliente.empresa_id == empresa.id)
     if q:
         term = f"%{q.strip()}%"
@@ -383,7 +383,7 @@ def sincronizar_clientes(
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
     """Recibe el lote local, evita cédulas repetidas y devuelve morosidad del servidor."""
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     resultados: List[ClienteSyncResultado] = []
     for item in body.clientes:
         try:
@@ -430,7 +430,7 @@ def obtener_cliente(
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
     del usuario
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     cliente = (
         db.query(Cliente)
         .filter(Cliente.id == cliente_id, Cliente.empresa_id == empresa.id)
@@ -453,7 +453,7 @@ def actualizar_cliente(
 ):
     # El score y la morosidad no están en ClienteUpdate: el campo no puede cambiarlos.
     del usuario
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     cliente = (
         db.query(Cliente)
         .filter(Cliente.id == cliente_id, Cliente.empresa_id == empresa.id)

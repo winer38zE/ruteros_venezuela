@@ -1,9 +1,11 @@
-"""Utilidades de deps.py"""
+"""Dependencias FastAPI: usuario autenticado y roles."""
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from app.api.auth import ALGORITHM, SECRET_KEY
 from app.core.db import get_db
 from app.core.pb_orm.ids import resolver_id_registro
 from app.models.core import Usuario, RolUsuario
@@ -16,10 +18,48 @@ def _id_desde_header(x_usuario_id: str) -> str:
         raise HTTPException(status_code=400, detail="X-Usuario-Id inválido")
 
 
+def _token_es_jwt(token: str) -> bool:
+    return token.count(".") == 2
+
+
+def _validar_sesion_coherente(authorization: Optional[str], x_usuario_id: str) -> None:
+    """Exige Bearer coherente con X-Usuario-Id (JWT o id legacy tras login)."""
+    if not authorization or not authorization.strip().lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Authorization Bearer requerido")
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Token vacío")
+
+    usuario_id = _id_desde_header(x_usuario_id)
+
+    if _token_es_jwt(token):
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Sesión expirada o inválida") from None
+        sub = payload.get("sub")
+        if sub is None:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        try:
+            if resolver_id_registro(str(sub)) != usuario_id:
+                raise HTTPException(status_code=403, detail="Token no corresponde al usuario")
+        except ValueError:
+            raise HTTPException(status_code=401, detail="Token inválido") from None
+        return
+
+    try:
+        if resolver_id_registro(token) != usuario_id:
+            raise HTTPException(status_code=401, detail="Sesión inválida")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Sesión inválida") from None
+
+
 def obtener_usuario_actual(
     x_usuario_id: str = Header(..., alias="X-Usuario-Id"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> Usuario:
+    _validar_sesion_coherente(authorization, x_usuario_id)
     usuario_id = _id_desde_header(x_usuario_id)
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario or not usuario.activo:
@@ -61,10 +101,12 @@ def require_operaciones(usuario: Usuario = Depends(obtener_usuario_actual)) -> U
 
 def obtener_usuario_opcional(
     x_usuario_id: Optional[str] = Header(None, alias="X-Usuario-Id"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> Optional[Usuario]:
     if not x_usuario_id:
         return None
+    _validar_sesion_coherente(authorization, x_usuario_id)
     usuario_id = _id_desde_header(x_usuario_id)
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario or not usuario.activo:

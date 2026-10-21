@@ -64,7 +64,7 @@ def listar_ruta_del_dia(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     vid = _resolver_vendedor_id(vendedor_id, usuario)
     _verificar_acceso_ruta(usuario, vid)
 
@@ -91,7 +91,7 @@ def reordenar_ruta(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     vid = _resolver_vendedor_id(body.vendedor_id, usuario)
     _verificar_acceso_ruta(usuario, vid)
 
@@ -131,7 +131,7 @@ def marcar_visita(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     vid = _resolver_vendedor_id(vendedor_id, usuario)
     _verificar_acceso_ruta(usuario, vid)
 
@@ -160,7 +160,7 @@ def marcar_visitas_lote(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     vid = _resolver_vendedor_id(vendedor_id, usuario)
     _verificar_acceso_ruta(usuario, vid)
 
@@ -180,7 +180,7 @@ def resumen_rutas(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_admin_o_dueno),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
 
     try:
         dia_obj = normalizar_dia(dia) if dia else dia_actual()
@@ -202,7 +202,7 @@ def enviar_resumen_whatsapp(
     usuario: Usuario = Depends(require_admin_o_dueno),
 ):
     """Envía el resumen del día, o un texto ya armado, por Evolution API."""
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     telefono = (body.telefono or usuario.telefono or "").strip()
     if not telefono:
         raise HTTPException(

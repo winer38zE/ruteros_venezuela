@@ -12,6 +12,7 @@ from app.core.pocketbase_init import (
 )
 from app.api import health as health_router
 from app.core.scheduler import iniciar_scheduler, detener_scheduler
+from app.core.http_errors import registrar_manejadores_excepciones
 
 # Importamos todas tus rutas organizadas
 from app.api import (
@@ -49,6 +50,7 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+registrar_manejadores_excepciones(app)
 
 _origenes = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 if not _origenes:
@@ -60,7 +62,7 @@ app.add_middleware(
     allow_origins=_origenes,
     allow_credentials=not _cors_abierto,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Usuario-Id"],
+    allow_headers=["Authorization", "Content-Type", "X-Usuario-Id", "Accept"],
 )
 app.add_middleware(CabecerasSeguridadMiddleware)
 

@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.db import get_db
+from app.core.deps import obtener_usuario_actual, require_operaciones
 from app.core.tenant import obtener_empresa_tenant
 from app.models.core import (
     Almacen, LoteInventario, PrecioProducto, Producto, TipoCliente,
-    MovimientoInventario, TipoMovimientoInventario,
+    MovimientoInventario, TipoMovimientoInventario, Usuario,
 )
 from app.schemas.core import (
     AlmacenCreate, AlmacenResponse,
@@ -21,8 +22,12 @@ router = APIRouter()
 
 
 @router.post("/almacenes", response_model=AlmacenResponse)
-def crear_almacen(almacen: AlmacenCreate, db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def crear_almacen(
+    almacen: AlmacenCreate,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_operaciones),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
 
     if almacen.es_principal:
         db.query(Almacen).filter(
@@ -37,8 +42,11 @@ def crear_almacen(almacen: AlmacenCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/almacenes", response_model=List[AlmacenResponse])
-def listar_almacenes(db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def listar_almacenes(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obtener_usuario_actual),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
     return (
         db.query(Almacen)
         .filter(Almacen.empresa_id == empresa.id, Almacen.activo.is_(True))
@@ -47,11 +55,15 @@ def listar_almacenes(db: Session = Depends(get_db)):
 
 
 @router.post("/lotes", response_model=LoteInventarioResponse)
-def registrar_lote(lote: LoteInventarioCreate, db: Session = Depends(get_db)):
+def registrar_lote(
+    lote: LoteInventarioCreate,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_operaciones),
+):
     from decimal import Decimal
     from app.models.core import Proveedor
 
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
 
     producto = db.query(Producto).filter(
         Producto.id == lote.producto_id, Producto.empresa_id == empresa.id
@@ -102,8 +114,9 @@ def listar_lotes(
     db: Session = Depends(get_db),
     producto_id: Optional[UUID] = Query(None),
     almacen_id: Optional[UUID] = Query(None),
+    usuario: Usuario = Depends(obtener_usuario_actual),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     q = db.query(LoteInventario).filter(LoteInventario.empresa_id == empresa.id)
     if producto_id:
         q = q.filter(LoteInventario.producto_id == producto_id)
@@ -113,8 +126,13 @@ def listar_lotes(
 
 
 @router.post("/productos/{producto_id}/precios", response_model=PrecioProductoResponse)
-def asignar_precio(producto_id: UUID, precio: PrecioProductoCreate, db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def asignar_precio(
+    producto_id: UUID,
+    precio: PrecioProductoCreate,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_operaciones),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
 
     producto = db.query(Producto).filter(
         Producto.id == producto_id, Producto.empresa_id == empresa.id
@@ -146,8 +164,12 @@ def asignar_precio(producto_id: UUID, precio: PrecioProductoCreate, db: Session 
 
 
 @router.get("/productos/{producto_id}/precios", response_model=List[PrecioProductoResponse])
-def listar_precios_producto(producto_id: UUID, db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def listar_precios_producto(
+    producto_id: UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obtener_usuario_actual),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
     producto = db.query(Producto).filter(
         Producto.id == producto_id, Producto.empresa_id == empresa.id
     ).first()
@@ -157,27 +179,41 @@ def listar_precios_producto(producto_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/stock/{producto_id}", response_model=StockProductoResponse)
-def consultar_stock(producto_id: UUID, db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def consultar_stock(
+    producto_id: UUID,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obtener_usuario_actual),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
     return consultar_stock_producto(db, empresa.id, producto_id)
 
 
 @router.get("/stock", response_model=List[StockProductoResponse])
-def consultar_stock_todos(db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def consultar_stock_todos(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obtener_usuario_actual),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
     productos = db.query(Producto).filter(Producto.empresa_id == empresa.id).all()
     return [consultar_stock_producto(db, empresa.id, p.id) for p in productos]
 
 
 @router.get("/valorado", response_model=List[InventarioValoradoItem])
-def consultar_inventario_valorado(db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def consultar_inventario_valorado(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(obtener_usuario_actual),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
     return inventario_valorado(db, empresa.id)
 
 
 @router.post("/movimiento", response_model=MovimientoInventarioResponse)
-def registrar_movimiento_manual(body: AjusteInventarioCreate, db: Session = Depends(get_db)):
-    empresa = obtener_empresa_tenant(db)
+def registrar_movimiento_manual(
+    body: AjusteInventarioCreate,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_operaciones),
+):
+    empresa = obtener_empresa_tenant(db, usuario)
     try:
         tipo = TipoMovimientoInventario(body.tipo)
     except ValueError:
@@ -202,8 +238,9 @@ def listar_movimientos(
     db: Session = Depends(get_db),
     producto_id: Optional[UUID] = Query(None),
     limit: int = Query(100, le=500),
+    usuario: Usuario = Depends(obtener_usuario_actual),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     q = (
         db.query(MovimientoInventario)
         .filter(MovimientoInventario.empresa_id == empresa.id)

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.tenant import obtener_empresa_tenant
 from app.core.deps import require_operaciones, obtener_usuario_actual
-from app.models.core import Producto, PrecioProducto, TipoCliente, Proveedor, TipoTasaUsd
+from app.models.core import Producto, PrecioProducto, TipoCliente, Proveedor, TipoTasaUsd, Usuario
 from app.schemas.core import ProductoCreate, ProductoUpdate, ProductoResponse
 from app.services.tasas_cambio import obtener_ultima_tasa, convertir_usd_a_ves, convertir_usd_a_cop
 from typing import List
@@ -75,9 +75,9 @@ def _to_response(db: Session, producto: Producto) -> ProductoResponse:
 def crear_producto(
     producto: ProductoCreate,
     db: Session = Depends(get_db),
-    _: object = Depends(require_operaciones),
+    usuario: Usuario = Depends(require_operaciones),
 ):
-    empresa_actual = obtener_empresa_tenant(db)
+    empresa_actual = obtener_empresa_tenant(db, usuario)
 
     if producto.sku:
         dup = (
@@ -132,9 +132,9 @@ def crear_producto(
 @router.get("/", response_model=List[ProductoResponse])
 def listar_productos(
     db: Session = Depends(get_db),
-    _: object = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(obtener_usuario_actual),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     productos = (
         db.query(Producto)
         .filter(Producto.empresa_id == empresa.id, Producto.activo.is_(True))
@@ -148,9 +148,9 @@ def listar_productos(
 def obtener_producto(
     producto_id: UUID,
     db: Session = Depends(get_db),
-    _: object = Depends(obtener_usuario_actual),
+    usuario: Usuario = Depends(obtener_usuario_actual),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     producto = (
         db.query(Producto)
         .filter(Producto.id == producto_id, Producto.empresa_id == empresa.id)
@@ -166,9 +166,9 @@ def actualizar_producto(
     producto_id: UUID,
     body: ProductoUpdate,
     db: Session = Depends(get_db),
-    _: object = Depends(require_operaciones),
+    usuario: Usuario = Depends(require_operaciones),
 ):
-    empresa = obtener_empresa_tenant(db)
+    empresa = obtener_empresa_tenant(db, usuario)
     producto = (
         db.query(Producto)
         .filter(Producto.id == producto_id, Producto.empresa_id == empresa.id)
