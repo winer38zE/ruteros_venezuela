@@ -127,11 +127,16 @@ def asegurar_usuario_admin() -> None:
             empresa = Empresa(
                 nombre=DEFAULT_EMPRESA,
                 pais_id=pais_ve.id if pais_ve else None,
+                activa=True,
             )
             db.add(empresa)
             db.flush()
-        elif pais_ve and not empresa.pais_id:
-            empresa.pais_id = pais_ve.id
+        else:
+            # PocketBase pudo crear activa=false al añadir el campo sin valor en registros viejos
+            if empresa.activa is not True:
+                empresa.activa = True
+            if pais_ve and not empresa.pais_id:
+                empresa.pais_id = pais_ve.id
 
         _asegurar_almacen_principal(db, empresa.id)
         for username, nombre, rol in DEMO_USUARIOS:

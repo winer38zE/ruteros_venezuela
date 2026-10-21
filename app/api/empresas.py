@@ -26,7 +26,7 @@ def crear_empresa(empresa: EmpresaCreate, db: Session = Depends(get_db)):
             status_code=403,
             detail="La empresa ya está configurada. Contacta al administrador.",
         )
-    nueva_empresa = Empresa(nombre=empresa.nombre)
+    nueva_empresa = Empresa(nombre=empresa.nombre, activa=True)
     
     # 2. La añadimos a la sesión y guardamos (commit)
     db.add(nueva_empresa)
