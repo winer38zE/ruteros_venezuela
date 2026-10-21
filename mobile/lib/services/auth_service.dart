@@ -264,7 +264,6 @@ class AuthService {
     if (!_api.hasSession || _api.usuarioJson == null) return null;
     try {
       final user = Usuario.fromJson(jsonDecode(_api.usuarioJson!));
-      _api.setUsuarioId(user.id);
       if (user.pais != null) {
         await _regionSession.guardar(user.pais!);
       }

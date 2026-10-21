@@ -14,7 +14,6 @@ from app.core.deps import (
     require_vendedor_o_superior,
     obtener_usuario_opcional,
 )
-from app.core.tenant import obtener_empresa_tenant
 from app.models.core import (
     Proveedor,
     Usuario,

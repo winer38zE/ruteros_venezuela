@@ -94,7 +94,6 @@ class ApiService {
   /// Compatibilidad con servicios existentes.
   void setUsuarioId(String? id) {
     _usuarioId = id;
-    if (id != null) _token = id;
   }
 
   Map<String, String> get _headers {
@@ -309,7 +308,13 @@ class ApiService {
 
   String _errorMessage(http.Response res) {
     if (res.statusCode == 401) {
-      return 'Usuario o contraseña incorrectos';
+      try {
+        final data = jsonDecode(res.body);
+        if (data is Map && data['detail'] != null) {
+          return data['detail'].toString();
+        }
+      } catch (_) {}
+      return 'Sesión inválida. Vuelve a iniciar sesión.';
     }
     if (res.statusCode == 502 || res.statusCode == 503 || res.statusCode == 504) {
       return 'Servidor no disponible, reintenta';

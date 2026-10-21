@@ -21,8 +21,11 @@ router = APIRouter()
 
 @router.post("/", response_model=EmpresaResponse)
 def crear_empresa(empresa: EmpresaCreate, db: Session = Depends(get_db)):
-    # 1. Creamos la instancia basada en el modelo de base de datos
-    # No le pasamos el 'id' porque SQLAlchemy generará el UUID automáticamente
+    if db.query(Empresa).first():
+        raise HTTPException(
+            status_code=403,
+            detail="La empresa ya está configurada. Contacta al administrador.",
+        )
     nueva_empresa = Empresa(nombre=empresa.nombre)
     
     # 2. La añadimos a la sesión y guardamos (commit)
@@ -50,10 +53,7 @@ def _datos_bancarios(empresa: Empresa) -> DatosBancariosResponse:
 
 
 def _empresa_del_usuario(db: Session, usuario: Usuario) -> Empresa:
-    empresa = obtener_empresa_tenant(db)
-    if usuario.empresa_id != empresa.id:
-        raise HTTPException(status_code=403, detail="La empresa no corresponde al usuario")
-    return empresa
+    return obtener_empresa_tenant(db, usuario)
 
 
 @router.get("/datos-bancarios", response_model=DatosBancariosResponse)
