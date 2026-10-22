@@ -209,17 +209,76 @@ def _as_integrity(exc: ClientResponseError) -> IntegrityError:
     return IntegrityError(msg, params=None, orig=exc)
 
 
+def _model_from_column_node(node: Any) -> type | None:
+    prop = getattr(node, "property", None)
+    if prop is not None:
+        parent = getattr(prop, "parent", None)
+        mapper_obj = getattr(parent, "mapper", None) if parent is not None else None
+        if mapper_obj is not None and hasattr(mapper_obj, "class_"):
+            return mapper_obj.class_
+        if parent is not None and hasattr(parent, "class_"):
+            return parent.class_
+
+    mapper_obj = getattr(node, "mapper", None)
+    if mapper_obj is not None and hasattr(mapper_obj, "class_"):
+        return mapper_obj.class_
+
+    table = getattr(node, "table", None)
+    if table is not None:
+        direct = getattr(table, "mapper", None)
+        if direct is not None and hasattr(direct, "class_"):
+            return direct.class_
+        try:
+            from sqlalchemy import inspect as sa_inspect
+
+            inspected = sa_inspect(table)
+            if inspected is not None:
+                mapper_obj = getattr(inspected, "mapper", None)
+                if mapper_obj is not None and hasattr(mapper_obj, "class_"):
+                    return mapper_obj.class_
+        except Exception:
+            pass
+
+        tablename = getattr(table, "name", None)
+        if tablename:
+            from app.models.core import Base
+
+            for mapper in Base.registry.mappers:
+                local = mapper.local_table
+                if local is table or getattr(local, "name", None) == tablename:
+                    return mapper.class_
+    return None
+
+
 def _infer_model_from_expression(expr: Any) -> type:
+    """Resuelve el modelo ORM detrás de agregados SQLAlchemy 2 (AnnotatedColumn, func.*)."""
+    if hasattr(expr, "__tablename__"):
+        return expr
+
     stack = [expr]
+    seen: set[int] = set()
     while stack:
         node = stack.pop()
+        oid = id(node)
+        if oid in seen:
+            continue
+        seen.add(oid)
+
+        model = _model_from_column_node(node)
+        if model is not None:
+            return model
+
         if hasattr(node, "clauses"):
-            stack.extend(reversed(list(node.clauses)))
+            try:
+                stack.extend(reversed(list(node.clauses)))
+            except TypeError:
+                pass
         if hasattr(node, "element"):
             stack.append(node.element)
-        prop = getattr(node, "property", None)
-        if prop is not None and hasattr(prop, "parent"):
-            return prop.parent.class_
+        get_children = getattr(node, "get_children", None)
+        if callable(get_children):
+            stack.extend(get_children())
+
     raise ValueError("No se pudo inferir el modelo de la expresión")
 
 

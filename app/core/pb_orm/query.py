@@ -173,17 +173,22 @@ class PbQuery:
             return None
         expr = self._scalar_expr
         if hasattr(expr, "clauses"):
-            inner = expr.clauses[0]
-            if hasattr(inner, "clauses") and len(inner.clauses) == 2:
-                a, b = inner.clauses
-                key_a = getattr(a, "key", None)
-                key_b = getattr(b, "key", None)
-                vals = []
-                for row in rows:
-                    va = getattr(row, key_a, None) if key_a else None
-                    vb = getattr(row, key_b, None) if key_b else None
-                    vals.append(va if va is not None else vb)
-                return max((v for v in vals if v is not None), default=None)
+            outer = list(expr.clauses)
+            if not outer:
+                return None
+            inner = outer[0]
+            if hasattr(inner, "clauses"):
+                cols = list(inner.clauses)
+                if len(cols) == 2:
+                    a, b = cols
+                    key_a = getattr(a, "key", None)
+                    key_b = getattr(b, "key", None)
+                    vals = []
+                    for row in rows:
+                        va = getattr(row, key_a, None) if key_a else None
+                        vb = getattr(row, key_b, None) if key_b else None
+                        vals.append(va if va is not None else vb)
+                    return max((v for v in vals if v is not None), default=None)
         return None
 
     def __getitem__(self, item: Any) -> PbQuery:
