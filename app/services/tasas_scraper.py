@@ -11,7 +11,8 @@ import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
-from app.models.core import Empresa, TasaCambio
+from app.core.tenant import empresas_destino_tasas
+from app.models.core import TasaCambio
 
 logger = logging.getLogger(__name__)
 
@@ -210,13 +211,7 @@ def persistir_tasas_sincronizadas(
     momento = momento or momento_actual()
     cop_ves = tasas.usd_bcv_bs / tasas.cop_usd if tasas.cop_usd else None
 
-    query = db.query(Empresa).filter(Empresa.activa.is_(True))
-    if empresa_id:
-        query = query.filter(Empresa.id == empresa_id)
-    empresas = query.all()
-
-    if not empresas:
-        raise ValueError("No hay empresas activas para registrar tasas")
+    empresas = empresas_destino_tasas(db, empresa_id=empresa_id)
 
     creadas: list[TasaCambio] = []
     for empresa in empresas:
@@ -268,12 +263,18 @@ async def sincronizar_tasas_automaticas(
 
     try:
         creadas = persistir_tasas_sincronizadas(db, tasas, momento=momento, empresa_id=empresa_id)
+        tasas.fuentes["tasas_persistidas"] = bool(creadas)
     except Exception as exc:
         logger.exception("No se pudo persistir tasas: %s", exc)
         db.rollback()
         creadas = []
         tasas.fuentes["persistencia"] = f"error: {exc}"
+        tasas.fuentes["tasas_persistidas"] = False
         uso_fallback = True
+        logger.warning(
+            "Sincronización de tasas sin persistencia en BD (%s).",
+            exc,
+        )
 
     logger.info(
         "Tasas sincronizadas (%s): BCV=%.4f Paralelo=%.4f COP/USD=%.2f empresas=%d fallback=%s",

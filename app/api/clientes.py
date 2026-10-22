@@ -162,7 +162,6 @@ def listar_clientes(
     q: Optional[str] = Query(None, description="Buscar por nombre, teléfono o cédula"),
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    del usuario
     empresa = obtener_empresa_tenant(db, usuario)
     query = db.query(Cliente).filter(Cliente.empresa_id == empresa.id)
     if q:
@@ -429,7 +428,6 @@ def obtener_cliente(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    del usuario
     empresa = obtener_empresa_tenant(db, usuario)
     cliente = (
         db.query(Cliente)
@@ -452,7 +450,6 @@ def actualizar_cliente(
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
     # El score y la morosidad no están en ClienteUpdate: el campo no puede cambiarlos.
-    del usuario
     empresa = obtener_empresa_tenant(db, usuario)
     cliente = (
         db.query(Cliente)
