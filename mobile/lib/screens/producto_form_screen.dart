@@ -6,6 +6,7 @@ import '../services/productos_service.dart';
 import '../services/proveedores_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
+import '../utils/producto_precios_region.dart';
 import '../widgets/glass_container.dart';
 
 class ProductoFormScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
   final _precioUsdCtrl = TextEditingController();
   final _precioVesCtrl = TextEditingController();
   final _precioCopCtrl = TextEditingController();
+  final _precioLocalCtrl = TextEditingController();
   final _costoCtrl = TextEditingController();
   final _stockCtrl = TextEditingController();
   final _stockMinCtrl = TextEditingController();
@@ -58,6 +60,21 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     } else {
       _categoria = _categorias.first;
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.producto == null) return;
+      final state = context.read<AppState>();
+      final cfg = ProductoPreciosRegionConfig.from(
+        state.region ?? state.usuario?.pais,
+        esVenezuela: state.esVenezuela,
+      );
+      final p = widget.producto!;
+      if (cfg.mostrarMonedaLocal && _precioLocalCtrl.text.isEmpty) {
+        setState(() {
+          _precioLocalCtrl.text = p.precioUsd.toString();
+          if (!cfg.mostrarUsd) _precioUsdCtrl.clear();
+        });
+      }
+    });
     _cargarProveedores();
   }
 
@@ -75,6 +92,7 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     _precioUsdCtrl.dispose();
     _precioVesCtrl.dispose();
     _precioCopCtrl.dispose();
+    _precioLocalCtrl.dispose();
     _costoCtrl.dispose();
     _stockCtrl.dispose();
     _stockMinCtrl.dispose();
@@ -129,9 +147,28 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     }
 
     final nombre = _nombreCtrl.text.trim();
-    final precioUsd = _parseOpt(_precioUsdCtrl.text)!;
     final costo = _parseOpt(_costoCtrl.text) ?? 0;
     final stockMin = int.tryParse(_stockMinCtrl.text.trim()) ?? 0;
+    final state = context.read<AppState>();
+    final preciosCfg = ProductoPreciosRegionConfig.from(
+      state.region ?? state.usuario?.pais,
+      esVenezuela: state.esVenezuela,
+    );
+    late final ProductoPreciosApiPayload preciosApi;
+    try {
+      preciosApi = ProductoPreciosRegionConfig.toApi(
+        config: preciosCfg,
+        usd: _parseOpt(_precioUsdCtrl.text),
+        ves: _parseOpt(_precioVesCtrl.text),
+        cop: _parseOpt(_precioCopCtrl.text),
+        local: _parseOpt(_precioLocalCtrl.text),
+      );
+    } on ArgumentError {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Revisa los precios obligatorios de tu país')),
+      );
+      return;
+    }
 
     setState(() => _guardando = true);
     try {
@@ -142,9 +179,9 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
           nombre: nombre,
           sku: _skuCtrl.text.trim(),
           categoria: _categoria,
-          precioUsd: precioUsd,
-          precioVes: _parseOpt(_precioVesCtrl.text),
-          precioCop: _parseOpt(_precioCopCtrl.text),
+          precioUsd: preciosApi.precioUsd,
+          precioVes: preciosApi.precioVes,
+          precioCop: preciosApi.precioCop,
           costoUsd: costo,
           stockMinimo: stockMin,
         );
@@ -154,9 +191,9 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
           nombre: nombre,
           sku: _skuCtrl.text.trim().isEmpty ? null : _skuCtrl.text.trim(),
           categoria: _categoria,
-          precioUsd: precioUsd,
-          precioVes: _parseOpt(_precioVesCtrl.text),
-          precioCop: _parseOpt(_precioCopCtrl.text),
+          precioUsd: preciosApi.precioUsd,
+          precioVes: preciosApi.precioVes,
+          precioCop: preciosApi.precioCop,
           costoUsd: costo,
           stockInicial: stockInicial,
           stockMinimo: stockMin,
@@ -187,9 +224,9 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     return null;
   }
 
-  String? _validarPrecioUsd(String? v) {
+  String? _validarPrecioObligatorio(String? v) {
     final n = _parseOpt(v ?? '');
-    if (n == null || n <= 0) return 'Indica un precio USD mayor a 0';
+    if (n == null || n <= 0) return 'Indica un monto mayor a 0';
     return null;
   }
 
@@ -213,8 +250,78 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     return null;
   }
 
+  List<Widget> _camposPrecio(ProductoPreciosRegionConfig cfg) {
+    final fields = <Widget>[];
+    if (cfg.mostrarMonedaLocal) {
+      fields.add(
+        TextFormField(
+          controller: _precioLocalCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(color: AppColors.textPrimary),
+          validator: cfg.localEsObligatorio ? _validarPrecioObligatorio : (v) => _validarOpcionalPositivo(v),
+          decoration: InputDecoration(
+            labelText: cfg.etiquetaMonedaLocal,
+            prefixIcon: const Icon(Icons.payments_rounded),
+          ),
+        ),
+      );
+    }
+    if (cfg.mostrarUsd) {
+      if (fields.isNotEmpty) fields.add(const SizedBox(height: 12));
+      fields.add(
+        TextFormField(
+          controller: _precioUsdCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(color: AppColors.textPrimary),
+          validator: cfg.usdEsObligatorio ? _validarPrecioObligatorio : (v) => _validarOpcionalPositivo(v),
+          decoration: InputDecoration(
+            labelText: cfg.etiquetaUsd(obligatorio: cfg.usdEsObligatorio),
+            prefixIcon: const Icon(Icons.attach_money_rounded),
+          ),
+        ),
+      );
+    }
+    if (cfg.mostrarVes) {
+      fields.add(const SizedBox(height: 12));
+      fields.add(
+        TextFormField(
+          controller: _precioVesCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(color: AppColors.textPrimary),
+          validator: (v) => _validarOpcionalPositivo(v),
+          decoration: InputDecoration(
+            labelText: cfg.etiquetaVes,
+            prefixIcon: const Icon(Icons.currency_exchange_rounded),
+          ),
+        ),
+      );
+    }
+    if (cfg.mostrarCop) {
+      fields.add(const SizedBox(height: 12));
+      fields.add(
+        TextFormField(
+          controller: _precioCopCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(color: AppColors.textPrimary),
+          validator: cfg.localEsObligatorio && !cfg.esVenezuela
+              ? _validarPrecioObligatorio
+              : (v) => _validarOpcionalPositivo(v),
+          decoration: InputDecoration(
+            labelText: cfg.etiquetaCop,
+            prefixIcon: const Icon(Icons.currency_exchange_rounded),
+          ),
+        ),
+      );
+    }
+    return fields;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final preciosCfg = ProductoPreciosRegionConfig.from(
+      context.watch<AppState>().region ?? context.watch<AppState>().usuario?.pais,
+      esVenezuela: context.watch<AppState>().esVenezuela,
+    );
     return FuturisticScaffold(
       title: widget.esEdicion ? 'Editar Producto' : 'Nuevo Producto',
       accentColor: AppColors.violet,
@@ -329,42 +436,13 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
                   const Text('Precios de venta', style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
                   Text(
-                    'Si dejas VES o COP vacíos, el servidor puede calcularlos con la tasa del día.',
+                    preciosCfg.esVenezuela
+                        ? 'Venezuela: USD obligatorio; VES y COP opcionales (se calculan con la tasa si los dejas vacíos).'
+                        : 'Inventario en moneda de ${preciosCfg.monedaLocal}. Solo Venezuela registra las tres monedas.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
                   ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _precioUsdCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(color: AppColors.textPrimary),
-                    validator: _validarPrecioUsd,
-                    decoration: const InputDecoration(
-                      labelText: 'Precio de venta USD *',
-                      prefixIcon: Icon(Icons.attach_money_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _precioVesCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(color: AppColors.textPrimary),
-                    validator: (v) => _validarOpcionalPositivo(v),
-                    decoration: const InputDecoration(
-                      labelText: 'Precio de venta VES (opcional)',
-                      prefixIcon: Icon(Icons.currency_exchange_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _precioCopCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(color: AppColors.textPrimary),
-                    validator: (v) => _validarOpcionalPositivo(v),
-                    decoration: const InputDecoration(
-                      labelText: 'Precio de venta COP (opcional)',
-                      prefixIcon: Icon(Icons.currency_exchange_rounded),
-                    ),
-                  ),
+                  ..._camposPrecio(preciosCfg),
                 ],
               ),
             ),

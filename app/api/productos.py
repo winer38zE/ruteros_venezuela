@@ -5,12 +5,35 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.tenant import obtener_empresa_tenant
 from app.core.deps import require_operaciones, obtener_usuario_actual
-from app.models.core import Producto, PrecioProducto, TipoCliente, Proveedor, TipoTasaUsd, Usuario
+from app.models.core import (
+    Empresa,
+    Pais,
+    Producto,
+    PrecioProducto,
+    TipoCliente,
+    Proveedor,
+    TipoTasaUsd,
+    Usuario,
+)
 from app.schemas.core import ProductoCreate, ProductoUpdate, ProductoResponse
-from app.services.tasas_cambio import obtener_ultima_tasa, convertir_usd_a_ves, convertir_usd_a_cop
+from app.services.tasas_cambio import (
+    convertir_cop_a_usd,
+    convertir_usd_a_ves,
+    convertir_usd_a_cop,
+    obtener_ultima_tasa,
+)
 from typing import List
 
 router = APIRouter()
+
+
+def _empresa_es_venezuela(db: Session, empresa: Empresa) -> bool:
+    if not empresa.pais_id:
+        return True
+    pais = db.query(Pais).filter(Pais.id == empresa.pais_id).first()
+    if not pais:
+        return True
+    return (pais.codigo_iso or "").upper() == "VE"
 
 
 def _aplicar_precios_tier(db: Session, producto: Producto, body: ProductoCreate | ProductoUpdate) -> None:
@@ -50,7 +73,10 @@ def _auto_precios(db: Session, empresa_id, precio_usd: float, tipo_tasa: str = "
 
 def _to_response(db: Session, producto: Producto) -> ProductoResponse:
     prov = db.query(Proveedor).filter(Proveedor.id == producto.proveedor_id).first() if producto.proveedor_id else None
-    ves_calc, cop_calc = _auto_precios(db, producto.empresa_id, float(producto.precio_usd))
+    empresa = db.query(Empresa).filter(Empresa.id == producto.empresa_id).first()
+    ves_calc, cop_calc = (None, None)
+    if empresa and _empresa_es_venezuela(db, empresa):
+        ves_calc, cop_calc = _auto_precios(db, producto.empresa_id, float(producto.precio_usd))
     return ProductoResponse(
         id=producto.id,
         empresa_id=producto.empresa_id,
@@ -88,16 +114,28 @@ def crear_producto(
         if dup:
             raise HTTPException(status_code=400, detail="Ya existe un producto con ese SKU/código")
 
-    precio_ves = producto.precio_ves
-    precio_cop = producto.precio_cop
-    if precio_ves is None or precio_cop is None:
-        auto_ves, auto_cop = _auto_precios(
-            db, empresa_actual.id, producto.precio_base_usd, producto.tipo_tasa_usd or "bcv"
-        )
-        if precio_ves is None:
-            precio_ves = auto_ves
-        if precio_cop is None:
-            precio_cop = auto_cop
+    es_ve = _empresa_es_venezuela(db, empresa_actual)
+    precio_ves = producto.precio_ves if es_ve else None
+    precio_cop = producto.precio_cop if es_ve else producto.precio_cop
+
+    precio_usd = float(producto.precio_base_usd or 0)
+    if es_ve:
+        if precio_ves is None or precio_cop is None:
+            auto_ves, auto_cop = _auto_precios(
+                db, empresa_actual.id, precio_usd, producto.tipo_tasa_usd or "bcv"
+            )
+            if precio_ves is None:
+                precio_ves = auto_ves
+            if precio_cop is None:
+                precio_cop = auto_cop
+    elif precio_usd <= 0 and precio_cop:
+        tasa = obtener_ultima_tasa(db, empresa_actual.id)
+        if tasa:
+            precio_usd = float(convertir_cop_a_usd(Decimal(str(precio_cop)), tasa))
+        else:
+            precio_usd = float(precio_cop)
+    elif precio_usd <= 0:
+        raise HTTPException(status_code=400, detail="Indica el precio de venta del producto")
 
     if producto.proveedor_id:
         prov = db.query(Proveedor).filter(
@@ -110,7 +148,7 @@ def crear_producto(
         nombre=producto.nombre,
         sku=producto.sku,
         categoria=producto.categoria,
-        precio_usd=producto.precio_base_usd,
+        precio_usd=precio_usd,
         precio_ves=precio_ves,
         precio_cop=precio_cop,
         costo_usd=producto.costo_usd,
@@ -208,22 +246,20 @@ def actualizar_producto(
     if body.proveedor_id is not None:
         producto.proveedor_id = body.proveedor_id
 
-    tipo_tasa = body.tipo_tasa_usd or "bcv"
-    if body.precio_base_usd is not None or body.precio_ves is None:
+    es_ve = _empresa_es_venezuela(db, empresa)
+    if body.precio_ves is not None:
+        producto.precio_ves = body.precio_ves if es_ve else None
+    if body.precio_cop is not None:
+        producto.precio_cop = body.precio_cop
+    if es_ve and (body.precio_base_usd is not None or body.precio_ves is None):
+        tipo_tasa = body.tipo_tasa_usd or "bcv"
         auto_ves, auto_cop = _auto_precios(db, empresa.id, float(producto.precio_usd), tipo_tasa)
-        if body.precio_ves is not None:
-            producto.precio_ves = body.precio_ves
-        elif auto_ves is not None:
+        if body.precio_ves is None and auto_ves is not None:
             producto.precio_ves = auto_ves
-        if body.precio_cop is not None:
-            producto.precio_cop = body.precio_cop
-        elif auto_cop is not None:
+        if body.precio_cop is None and auto_cop is not None:
             producto.precio_cop = auto_cop
-    else:
-        if body.precio_ves is not None:
-            producto.precio_ves = body.precio_ves
-        if body.precio_cop is not None:
-            producto.precio_cop = body.precio_cop
+    elif not es_ve:
+        producto.precio_ves = None
 
     _aplicar_precios_tier(db, producto, body)
 

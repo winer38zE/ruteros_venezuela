@@ -8,6 +8,7 @@ import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
 import 'ajuste_inventario_screen.dart';
+import '../utils/producto_precios_region.dart';
 import 'producto_form_screen.dart';
 
 class InventarioScreen extends StatefulWidget {
@@ -119,7 +120,12 @@ class _InventarioScreenState extends State<InventarioScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final esDueno = context.watch<AppState>().puedeOperaciones;
+    final state = context.watch<AppState>();
+    final esDueno = state.puedeOperaciones;
+    final preciosCfg = ProductoPreciosRegionConfig.from(
+      state.region ?? state.usuario?.pais,
+      esVenezuela: state.esVenezuela,
+    );
     final totalValor = _valorado.fold<double>(0, (s, i) => s + i.valorTotalUsd);
     final bajoStock = _items.where((i) => i.bajoStock).length;
     final filtrados = _filtrados;
@@ -259,7 +265,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
                               [
                                 if (p.sku != null && p.sku!.isNotEmpty) 'SKU: ${p.sku}',
                                 if (p.categoria != null && p.categoria!.isNotEmpty) p.categoria,
-                                'Precio: ${_fmt.format(p.precioUsd)}',
+                                'Precio: ${preciosCfg.resumenLista(precioUsd: p.precioUsd, precioVes: p.precioVes, precioCop: p.precioCop, fmt: (n) => _fmt.format(n))}',
                               ].join(' · '),
                             ),
                             trailing: Column(
