@@ -307,6 +307,12 @@ class ApiService {
   }
 
   String _errorMessage(http.Response res) {
+    if (kDebugMode && res.statusCode >= 400) {
+      debugPrint('API ${res.statusCode} ${res.request?.url}: ${res.body}');
+    }
+    if (res.statusCode >= 500) {
+      return 'No se pudo guardar. Intenta de nuevo.';
+    }
     if (res.statusCode == 401) {
       try {
         final data = jsonDecode(res.body);

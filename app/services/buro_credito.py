@@ -297,6 +297,9 @@ def sincronizar_score_inicial(db: Session, cliente: Cliente) -> None:
 
 def actualizar_historial_comportamiento(db: Session, cliente: Cliente) -> None:
     """Recalcula compras, pagos y morosidad. No modifica día de ruta ni el score numérico."""
+    if not cliente.id:
+        return
+
     ventas = (
         db.query(Venta)
         .options(selectinload(Venta.cobros), selectinload(Venta.cuotas))

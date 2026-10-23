@@ -7,10 +7,46 @@ from typing import Any
 from pocketbase.errors import ClientResponseError
 from sqlalchemy import func
 from sqlalchemy.orm.interfaces import LoaderOption
+from sqlalchemy.orm.mapper import Mapper
 
 from app.core.db import reautenticar_admin_pocketbase
 from app.core.pb_orm import filter_compiler, mapper
 from app.core.pb_retry import ejecutar_con_reintentos
+
+
+def _eager_attr_names_from_loader_option(opt: Any) -> list[str]:
+    """Traduce selectinload/joinedload de SQLAlchemy 2 a nombres de relación del ORM PB."""
+    path = getattr(opt, "path", None)
+    if path is not None:
+        natural = getattr(path, "natural_path", None)
+        if natural:
+            names: list[str] = []
+            for token in natural:
+                if isinstance(token, Mapper):
+                    continue
+                key = getattr(token, "key", None)
+                if key:
+                    names.append(key)
+            if names:
+                return names
+        try:
+            tokens = list(path)
+        except TypeError:
+            tokens = []
+        if tokens:
+            names = []
+            for token in tokens:
+                if isinstance(token, Mapper):
+                    continue
+                key = getattr(token, "key", None)
+                if key:
+                    names.append(key)
+            if names:
+                return names
+    attrs = getattr(opt, "attrs", None)
+    if attrs:
+        return [getattr(a, "key", str(a)) for a in attrs]
+    return []
 
 
 class PbQuery:
@@ -58,12 +94,8 @@ class PbQuery:
 
     def options(self, *opts: LoaderOption) -> PbQuery:
         for opt in opts:
-            path = getattr(opt, "path", None)
-            if path is not None and len(path):
-                self._eager.add(path[-1].key)
-            elif hasattr(opt, "attrs"):
-                for a in opt.attrs:
-                    self._eager.add(getattr(a, "key", str(a)))
+            for name in _eager_attr_names_from_loader_option(opt):
+                self._eager.add(name)
         return self
 
     def with_entities(self, *entities: Any) -> PbQuery:
