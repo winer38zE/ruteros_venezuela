@@ -118,6 +118,7 @@ def crear_producto(
         stock_minimo=producto.stock_minimo,
         proveedor_id=producto.proveedor_id,
         empresa_id=empresa_actual.id,
+        activo=True,
     )
 
     db.add(nuevo_producto)

@@ -108,12 +108,13 @@ class InventarioService {
 
   Future<List<ProductoInventario>> listarProductosConStock() async {
     final productosSvc = ProductosService(_api);
-    final results = await Future.wait([
-      productosSvc.listar(),
-      listarStock(),
-    ]);
-    final productos = results[0] as List<ProductoDetalle>;
-    final stockList = results[1] as List<StockProducto>;
+    final productos = await productosSvc.listar();
+    List<StockProducto> stockList = [];
+    try {
+      stockList = await listarStock();
+    } catch (_) {
+      // Si falla /inventario/stock, mostrar al menos el stock del catálogo.
+    }
     final stockMap = {for (final s in stockList) s.productoId: s.stockTotalGlobal};
 
     return productos.map((p) {
