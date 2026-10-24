@@ -8,6 +8,7 @@ import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
 import 'ajuste_inventario_screen.dart';
+import '../utils/producto_precios_region.dart';
 import 'producto_form_screen.dart';
 
 class InventarioScreen extends StatefulWidget {
@@ -39,6 +40,12 @@ class _InventarioScreenState extends State<InventarioScreen> {
     super.dispose();
   }
 
+  void _limpiarFiltros() {
+    _searchCtrl.clear();
+    _busqueda = '';
+    _categoriaFiltro = null;
+  }
+
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
@@ -46,12 +53,12 @@ class _InventarioScreenState extends State<InventarioScreen> {
     });
     try {
       final svc = context.read<AppState>().inventario;
-      final results = await Future.wait([
-        svc.listarProductosConStock(),
-        svc.inventarioValorado(),
-      ]);
-      _items = results[0] as List<ProductoInventario>;
-      _valorado = results[1] as List<InventarioValoradoItem>;
+      _items = await svc.listarProductosConStock();
+      try {
+        _valorado = await svc.inventarioValorado();
+      } catch (_) {
+        _valorado = [];
+      }
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -83,13 +90,24 @@ class _InventarioScreenState extends State<InventarioScreen> {
   }
 
   Future<void> _abrirFormulario([ProductoInventario? item]) async {
+    final esNuevo = item == null;
     final ok = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => ProductoFormScreen(producto: item?.producto),
       ),
     );
-    if (ok == true) _cargar();
+    if (ok == true && mounted) {
+      if (esNuevo) _limpiarFiltros();
+      await _cargar();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(esNuevo ? 'Producto guardado con éxito' : 'Producto actualizado'),
+          backgroundColor: AppColors.emerald,
+        ),
+      );
+    }
   }
 
   Future<void> _abrirAjuste(ProductoInventario item) async {
@@ -102,7 +120,12 @@ class _InventarioScreenState extends State<InventarioScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final esDueno = context.watch<AppState>().puedeOperaciones;
+    final state = context.watch<AppState>();
+    final esDueno = state.puedeOperaciones;
+    final preciosCfg = ProductoPreciosRegionConfig.from(
+      state.region ?? state.usuario?.pais,
+      esVenezuela: state.esVenezuela,
+    );
     final totalValor = _valorado.fold<double>(0, (s, i) => s + i.valorTotalUsd);
     final bajoStock = _items.where((i) => i.bajoStock).length;
     final filtrados = _filtrados;
@@ -127,7 +150,9 @@ class _InventarioScreenState extends State<InventarioScreen> {
               ? Center(child: Text(_error!, style: const TextStyle(color: Color(0xFFEF4444))))
               : RefreshIndicator(
                   onRefresh: _cargar,
+                  color: AppColors.violet,
                   child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                     children: [
                       GlassContainer(
@@ -210,8 +235,20 @@ class _InventarioScreenState extends State<InventarioScreen> {
                       ],
                       const SizedBox(height: 16),
                       const SectionTitle(title: 'Productos'),
-                      if (filtrados.isEmpty)
-                        const EmptyState(icon: Icons.inventory_2_outlined, message: 'No hay productos que coincidan')
+                      if (_items.isEmpty)
+                        EmptyState(
+                          icon: Icons.inventory_2_outlined,
+                          message: esDueno
+                              ? 'Aún no hay productos. Toca + para crear el primero.'
+                              : 'No hay productos en tu inventario.',
+                        )
+                      else if (filtrados.isEmpty)
+                        EmptyState(
+                          icon: Icons.search_off_rounded,
+                          message: 'Ningún producto coincide con tu búsqueda o filtro.',
+                          actionLabel: 'Limpiar filtros',
+                          onAction: () => setState(_limpiarFiltros),
+                        )
                       else
                         ...filtrados.map((item) {
                           final p = item.producto;
@@ -228,7 +265,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
                               [
                                 if (p.sku != null && p.sku!.isNotEmpty) 'SKU: ${p.sku}',
                                 if (p.categoria != null && p.categoria!.isNotEmpty) p.categoria,
-                                'Precio: ${_fmt.format(p.precioUsd)}',
+                                'Precio: ${preciosCfg.resumenLista(precioUsd: p.precioUsd, precioVes: p.precioVes, precioCop: p.precioCop, fmt: (n) => _fmt.format(n))}',
                               ].join(' · '),
                             ),
                             trailing: Column(

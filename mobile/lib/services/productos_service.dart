@@ -48,8 +48,10 @@ class ProductosService {
   ProductosService(this._api);
   final ApiClient _api;
 
-  static const categorias = [
+  static const categoriasBase = [
     'General',
+    'Sábanas',
+    'Alimentos',
     'Repuestos',
     'Accesorios',
     'Lubricantes',
@@ -57,6 +59,20 @@ class ProductosService {
     'Herramientas',
     'Otros',
   ];
+
+  /// Compatibilidad con pantallas que usan [categorias].
+  static List<String> get categorias => List.unmodifiable(categoriasBase);
+
+  static List<String> combinarCategorias({Iterable<String>? extra}) {
+    final set = {...categoriasBase, ...?extra};
+    final list = set.toList()
+      ..sort((a, b) {
+        if (a == 'General') return -1;
+        if (b == 'General') return 1;
+        return a.compareTo(b);
+      });
+    return list;
+  }
 
   Future<List<ProductoDetalle>> listar() async {
     final data = await _api.get('/productos/') as List;

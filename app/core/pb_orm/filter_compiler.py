@@ -8,8 +8,27 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, or_
+from sqlalchemy.orm.mapper import Mapper
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList, Grouping
 from sqlalchemy.sql.functions import Function
+
+
+def sql_column_key(node: Any) -> str | None:
+    """Nombre de columna PocketBase desde expresiones SQLAlchemy 2 (nunca un Mapper)."""
+    if node is None or isinstance(node, Mapper):
+        return None
+    key = getattr(node, "key", None)
+    if isinstance(key, str) and key:
+        return key
+    prop = getattr(node, "property", None)
+    if prop is not None:
+        pk = getattr(prop, "key", None)
+        if isinstance(pk, str) and pk:
+            return pk
+    name = getattr(node, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    return None
 
 
 def compile_filters(model: type, criteria: tuple[Any, ...]) -> str:
@@ -41,9 +60,9 @@ def _compile_one(model: type, crit: Any) -> str:
 def _field_name(expr_left: Any) -> str:
     if isinstance(expr_left, Function) and getattr(expr_left, "name", "") == "lower":
         inner = expr_left.clauses.clauses[0]
-        base = getattr(inner, "key", None) or str(inner)
+        base = sql_column_key(inner) or str(inner)
         return f"{base}:lower"
-    return getattr(expr_left, "key", None) or str(expr_left)
+    return sql_column_key(expr_left) or str(expr_left)
 
 
 def _compile_binary(expr: BinaryExpression) -> str:
