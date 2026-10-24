@@ -20,3 +20,18 @@ EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "tutor-ia-personal")
 EVOLUTION_ENABLED = bool(EVOLUTION_API_URL and EVOLUTION_API_KEY and EVOLUTION_INSTANCE)
 # Si está vacío, se usa el teléfono del dueño y, si no tiene, el del administrador.
 EVOLUTION_ADMIN_PHONE = os.getenv("EVOLUTION_ADMIN_PHONE", "").strip()
+
+# Asistente de voz (Whisper + LLM con function calling, API compatible OpenAI).
+AI_LLM_BASE_URL = os.getenv("AI_LLM_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+AI_LLM_API_KEY = os.getenv("AI_LLM_API_KEY", os.getenv("GROQ_API_KEY", "")).strip()
+AI_LLM_MODEL = os.getenv("AI_LLM_MODEL", "llama-3.3-70b-versatile")
+AI_WHISPER_BASE_URL = os.getenv(
+    "AI_WHISPER_BASE_URL",
+    os.getenv("AI_LLM_BASE_URL", "https://api.groq.com/openai/v1"),
+).rstrip("/")
+AI_WHISPER_API_KEY = os.getenv(
+    "AI_WHISPER_API_KEY",
+    os.getenv("AI_LLM_API_KEY", os.getenv("GROQ_API_KEY", "")),
+).strip()
+AI_WHISPER_MODEL = os.getenv("AI_WHISPER_MODEL", "whisper-large-v3")
+AI_ENABLED = bool(AI_LLM_API_KEY and AI_WHISPER_API_KEY)

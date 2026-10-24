@@ -28,6 +28,9 @@ dependencies:
   connectivity_plus: ^6.1.0
   flutter_local_notifications: ^17.2.4
   timezone: ^0.9.4
+  record: ^5.1.2
+  permission_handler: ^11.3.1
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:
