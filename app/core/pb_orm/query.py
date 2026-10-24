@@ -11,7 +11,23 @@ from sqlalchemy.orm.mapper import Mapper
 
 from app.core.db import reautenticar_admin_pocketbase
 from app.core.pb_orm import filter_compiler, mapper
+from app.core.pb_orm.filter_compiler import sql_column_key
 from app.core.pb_retry import ejecutar_con_reintentos
+
+
+def _unwrap_order_clause(clause: Any) -> tuple[Any, bool]:
+    """Desenvuelve .asc()/.desc(); ignora modifier=None (SQLAlchemy 2)."""
+    desc = False
+    node = clause
+    for _ in range(16):
+        mod = getattr(node, "modifier", None)
+        if mod is not None:
+            mod_name = getattr(mod, "name", None) or getattr(mod, "value", None) or str(mod)
+            desc = str(mod_name).lower().endswith("desc")
+            node = node.element
+            continue
+        break
+    return node, desc
 
 
 def _eager_attr_names_from_loader_option(opt: Any) -> list[str]:
@@ -24,7 +40,7 @@ def _eager_attr_names_from_loader_option(opt: Any) -> list[str]:
             for token in natural:
                 if isinstance(token, Mapper):
                     continue
-                key = getattr(token, "key", None)
+                key = sql_column_key(token)
                 if key:
                     names.append(key)
             if names:
@@ -38,14 +54,29 @@ def _eager_attr_names_from_loader_option(opt: Any) -> list[str]:
             for token in tokens:
                 if isinstance(token, Mapper):
                     continue
-                key = getattr(token, "key", None)
+                key = sql_column_key(token)
                 if key:
                     names.append(key)
             if names:
                 return names
+    attr = getattr(opt, "attr", None)
+    if attr is not None:
+        key = sql_column_key(attr)
+        if key:
+            return [key]
     attrs = getattr(opt, "attrs", None)
-    if attrs:
-        return [getattr(a, "key", str(a)) for a in attrs]
+    if attrs is not None:
+        if isinstance(attrs, str):
+            return [attrs] if attrs else []
+        names = []
+        for a in attrs:
+            if isinstance(a, Mapper):
+                continue
+            key = sql_column_key(a)
+            if key:
+                names.append(key)
+        if names:
+            return names
     return []
 
 
@@ -72,15 +103,10 @@ class PbQuery:
 
     def order_by(self, *clauses: Any) -> PbQuery:
         for clause in clauses:
-            desc = False
-            key = clause
-            if hasattr(clause, "modifier"):
-                key = clause.element
-                desc = str(getattr(clause, "modifier", "")).endswith("DESC")
-            elif hasattr(clause, "element") and not hasattr(clause, "key"):
-                key = clause.element
-                desc = True
-            name = getattr(key, "key", str(key))
+            node, desc = _unwrap_order_clause(clause)
+            name = sql_column_key(node)
+            if not name:
+                raise ValueError(f"No se pudo resolver columna para ORDER BY: {clause!r}")
             self._order.append((name, desc))
         return self
 
@@ -213,8 +239,8 @@ class PbQuery:
                 cols = list(inner.clauses)
                 if len(cols) == 2:
                     a, b = cols
-                    key_a = getattr(a, "key", None)
-                    key_b = getattr(b, "key", None)
+                    key_a = sql_column_key(a)
+                    key_b = sql_column_key(b)
                     vals = []
                     for row in rows:
                         va = getattr(row, key_a, None) if key_a else None
