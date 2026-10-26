@@ -27,6 +27,7 @@ from app.api import (
     cartera,
     paises,
     payroll_admin,
+    ai,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -101,6 +102,7 @@ app.include_router(
 app.include_router(inventario.router, prefix="/api/v1/inventario", tags=["Inventario"])
 app.include_router(contabilidad.router, prefix="/api/v1/contabilidad", tags=["Contabilidad"])
 app.include_router(finanzas.router, prefix="/api/v1/finanzas", tags=["Finanzas"])
+app.include_router(ai.router, prefix="/api/ai", tags=["Asistente IA"])
 
 # Ruta base de estado del servidor
 @app.get("/")
