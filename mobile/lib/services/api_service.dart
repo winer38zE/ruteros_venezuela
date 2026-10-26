@@ -45,6 +45,9 @@ class ApiService {
   String? _usuarioId;
   String? _usuarioJson;
 
+  /// Se invoca ante HTTP 401 (token expirado o sesión inválida).
+  Future<void> Function(ApiException error)? onUnauthorized;
+
   String? get token => _token;
   String? get usuarioId => _usuarioId;
   String? get usuarioJson => _usuarioJson;
@@ -300,11 +303,20 @@ class ApiService {
 
   dynamic _decode(http.Response res) {
     if (res.statusCode >= 400) {
-      throw ApiException(res.statusCode, _errorMessage(res));
+      final exc = ApiException(res.statusCode, _errorMessage(res));
+      if (res.statusCode == 401 &&
+          onUnauthorized != null &&
+          !_esRutaLogin(res.request?.url.path ?? '')) {
+        unawaited(onUnauthorized!(exc));
+      }
+      throw exc;
     }
     if (res.body.isEmpty) return null;
     return jsonDecode(res.body);
   }
+
+  static bool _esRutaLogin(String path) =>
+      path.contains('/auth/login') || path.endsWith('/auth/login');
 
   String _errorMessage(http.Response res) {
     if (kDebugMode && res.statusCode >= 400) {
