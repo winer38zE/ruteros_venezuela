@@ -99,11 +99,15 @@ async def audio_comando(
         logger.exception("Error ejecutando herramienta de voz %s", herramienta)
         raise HTTPException(status_code=500, detail=f"Error al ejecutar la orden: {exc}") from exc
 
+    mensaje_final = mensaje
+    if exito and wa_ok and "whatsapp" not in mensaje.lower():
+        mensaje_final = f"{mensaje} WhatsApp enviado."
+
     return AiAudioComandoResponse(
         transcripcion=transcripcion,
         herramienta=herramienta,
         exito=exito,
-        mensaje=mensaje,
+        mensaje=mensaje_final,
         detalle=detalle,
         whatsapp_enviado=wa_ok,
         whatsapp_detalle=wa_det,
