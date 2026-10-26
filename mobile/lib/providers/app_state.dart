@@ -28,6 +28,7 @@ import '../models/pais_region.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
+    api.onUnauthorized = manejarSesionExpirada;
     auth = AuthService(api, regionSession: regionSession);
     paises = PaisesService(api);
     perfil = PerfilService(api);
@@ -219,6 +220,15 @@ class AppState extends ChangeNotifier {
     usuario = null;
     region = null;
     notifyListeners();
+  }
+
+  /// Cierra sesión cuando la API responde 401 (token JWT expirado, etc.).
+  Future<void> manejarSesionExpirada(ApiException e) async {
+    if (usuario == null) return;
+    error = e.message.isNotEmpty
+        ? e.message
+        : 'Tu sesión expiró. Vuelve a iniciar sesión.';
+    await logout();
   }
 
   void _arrancarSync() {

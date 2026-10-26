@@ -318,9 +318,26 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    if (!state.puedeOperaciones) {
+      return FuturisticScaffold(
+        title: 'Nuevo Producto',
+        accentColor: AppColors.violet,
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Solo Dueño o Administrador pueden crear o editar productos.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+        ),
+      );
+    }
     final preciosCfg = ProductoPreciosRegionConfig.from(
-      context.watch<AppState>().region ?? context.watch<AppState>().usuario?.pais,
-      esVenezuela: context.watch<AppState>().esVenezuela,
+      state.region ?? state.usuario?.pais,
+      esVenezuela: state.esVenezuela,
     );
     return FuturisticScaffold(
       title: widget.esEdicion ? 'Editar Producto' : 'Nuevo Producto',
@@ -402,7 +419,7 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
                     controller: _skuCtrl,
                     style: const TextStyle(color: AppColors.textPrimary),
                     decoration: const InputDecoration(
-                      labelText: 'SKU / Código de barras (opcional)',
+                      labelText: 'SKU / Código (opcional)',
                       prefixIcon: Icon(Icons.qr_code_rounded),
                     ),
                   ),
@@ -460,7 +477,7 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
                     style: const TextStyle(color: AppColors.textPrimary),
                     validator: (v) => _validarOpcionalPositivo(v),
                     decoration: const InputDecoration(
-                      labelText: 'Costo de compra USD (opcional)',
+                      labelText: 'Costo de compra (USD, opcional)',
                       prefixIcon: Icon(Icons.price_change_rounded),
                     ),
                   ),
@@ -484,7 +501,7 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
                     style: const TextStyle(color: AppColors.textPrimary),
                     validator: (v) => _validarOpcionalPositivo(v, entero: true),
                     decoration: const InputDecoration(
-                      labelText: 'Punto mínimo de reorden (alerta)',
+                      labelText: 'Alerta de stock mínimo',
                       prefixIcon: Icon(Icons.notifications_active_rounded),
                       hintText: 'Ej. 5 — avisa cuando el stock llegue ahí',
                     ),

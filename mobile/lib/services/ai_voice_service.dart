@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../config/api_config.dart';
 import 'api_service.dart';
 
 enum AiVoiceUiPhase {
@@ -54,8 +55,9 @@ class AiVoiceService {
   Future<AiVoiceCommandResult> enviarAudio(File file) async {
     final bytes = await file.readAsBytes();
     final name = file.path.split(Platform.pathSeparator).last;
-    final data = await _api.postMultipart(
-      '/api/ai/audio-comando',
+    // Ruta fuera de /api/v1 (montada en FastAPI como /api/ai/...).
+    final data = await _api.postMultipartAbsolute(
+      '${ApiConfig.serverOrigin}/api/ai/audio-comando',
       const {},
       fileField: 'audio',
       bytes: bytes,

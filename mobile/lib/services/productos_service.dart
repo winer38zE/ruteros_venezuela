@@ -52,11 +52,12 @@ class ProductosService {
     'General',
     'Sábanas',
     'Alimentos',
-    'Repuestos',
-    'Accesorios',
-    'Lubricantes',
+    'Bebidas',
+    'Limpieza',
+    'Hogar',
+    'Ropa',
     'Electrónica',
-    'Herramientas',
+    'Repuestos',
     'Otros',
   ];
 

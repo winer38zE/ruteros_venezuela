@@ -16,6 +16,10 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "cliente_nombre": {"type": "string", "description": "Nombre del cliente"},
+                    "nombre_cliente": {
+                        "type": "string",
+                        "description": "Alias de cliente_nombre",
+                    },
                     "telefono": {
                         "type": "string",
                         "description": "Teléfono WhatsApp del cliente (opcional si se conoce el nombre)",
@@ -71,8 +75,10 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "cliente_nombre": {"type": "string"},
+                    "nombre_cliente": {"type": "string", "description": "Alias de cliente_nombre"},
                     "telefono": {"type": "string"},
                     "monto_usd": {"type": "number", "exclusiveMinimum": 0},
+                    "monto": {"type": "number", "description": "Alias de monto_usd"},
                     "metodo_pago": {
                         "type": "string",
                         "enum": [

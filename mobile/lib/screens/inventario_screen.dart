@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
+import '../services/api_service.dart';
 import '../services/inventario_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
@@ -59,6 +60,13 @@ class _InventarioScreenState extends State<InventarioScreen> {
       } catch (_) {
         _valorado = [];
       }
+    } on ApiException catch (e) {
+      _items = [];
+      _valorado = [];
+      _error = e.message;
+      if (e.statusCode == 403) {
+        _error = 'No tienes permiso para ver el inventario.';
+      }
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -90,6 +98,15 @@ class _InventarioScreenState extends State<InventarioScreen> {
   }
 
   Future<void> _abrirFormulario([ProductoInventario? item]) async {
+    final puede = context.read<AppState>().puedeOperaciones;
+    if (!puede) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solo Dueño o Administrador pueden gestionar productos.'),
+        ),
+      );
+      return;
+    }
     final esNuevo = item == null;
     final ok = await Navigator.push<bool>(
       context,
@@ -121,7 +138,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final esDueno = state.puedeOperaciones;
+    final puedeGestionarProductos = state.puedeOperaciones;
     final preciosCfg = ProductoPreciosRegionConfig.from(
       state.region ?? state.usuario?.pais,
       esVenezuela: state.esVenezuela,
@@ -136,9 +153,9 @@ class _InventarioScreenState extends State<InventarioScreen> {
       actions: [
         IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _cargar),
       ],
-      floatingActionButton: esDueno
+      floatingActionButton: puedeGestionarProductos
           ? NeonFab(
-              label: 'Nuevo producto',
+              label: 'Agregar producto',
               icon: Icons.add_rounded,
               color: AppColors.violet,
               onPressed: () => _abrirFormulario(),
@@ -238,14 +255,14 @@ class _InventarioScreenState extends State<InventarioScreen> {
                       if (_items.isEmpty)
                         EmptyState(
                           icon: Icons.inventory_2_outlined,
-                          message: esDueno
-                              ? 'Aún no hay productos. Toca + para crear el primero.'
-                              : 'No hay productos en tu inventario.',
+                          message: puedeGestionarProductos
+                              ? 'Aún no hay productos. Toca «Agregar producto» para crear el primero.'
+                              : 'No hay productos registrados todavía.',
                         )
                       else if (filtrados.isEmpty)
                         EmptyState(
                           icon: Icons.search_off_rounded,
-                          message: 'Ningún producto coincide con tu búsqueda o filtro.',
+                          message: 'No hay productos que coincidan con la búsqueda o el filtro.',
                           actionLabel: 'Limpiar filtros',
                           onAction: () => setState(_limpiarFiltros),
                         )
@@ -255,7 +272,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
                           final color = item.bajoStock ? const Color(0xFFEF4444) : AppColors.emerald;
                           return GlassListTile(
                             accentColor: color,
-                            onTap: esDueno ? () => _abrirFormulario(item) : null,
+                            onTap: puedeGestionarProductos ? () => _abrirFormulario(item) : null,
                             leading: Icon(
                               item.bajoStock ? Icons.warning_amber_rounded : Icons.inventory_2_rounded,
                               color: color,
@@ -273,7 +290,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 StatusBadge(label: '${item.stockTotal} uds', color: color),
-                                if (esDueno)
+                                if (puedeGestionarProductos)
                                   TextButton(
                                     onPressed: () => _abrirAjuste(item),
                                     child: const Text('Ajustar', style: TextStyle(fontSize: 11)),

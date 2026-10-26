@@ -45,6 +45,9 @@ class ApiService {
   String? _usuarioId;
   String? _usuarioJson;
 
+  /// Se invoca ante HTTP 401 (token expirado o sesión inválida).
+  Future<void> Function(ApiException error)? onUnauthorized;
+
   String? get token => _token;
   String? get usuarioId => _usuarioId;
   String? get usuarioJson => _usuarioJson;
@@ -229,6 +232,35 @@ class ApiService {
     }
   }
 
+  /// POST multipart a una URL absoluta (p. ej. `/api/ai/...` fuera de `/api/v1`).
+  Future<dynamic> postMultipartAbsolute(
+    String absoluteUrl,
+    Map<String, String> fields, {
+    required String fileField,
+    required List<int> bytes,
+    required String filename,
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
+    try {
+      final request = http.MultipartRequest('POST', Uri.parse(absoluteUrl));
+      request.headers.addAll(_headers);
+      request.headers.remove('Content-Type');
+      request.fields.addAll(fields);
+      request.files.add(http.MultipartFile.fromBytes(fileField, bytes, filename: filename));
+      final streamed = await _client.send(request).timeout(timeout);
+      final res = await http.Response.fromStream(streamed);
+      return _decode(res);
+    } on SocketException {
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
+    } on TimeoutException {
+      throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(0, 'Error de red: $e');
+    }
+  }
+
   Future<dynamic> postMultipart(
     String path,
     Map<String, String> fields, {
@@ -300,11 +332,20 @@ class ApiService {
 
   dynamic _decode(http.Response res) {
     if (res.statusCode >= 400) {
-      throw ApiException(res.statusCode, _errorMessage(res));
+      final exc = ApiException(res.statusCode, _errorMessage(res));
+      if (res.statusCode == 401 &&
+          onUnauthorized != null &&
+          !_esRutaLogin(res.request?.url.path ?? '')) {
+        unawaited(onUnauthorized!(exc));
+      }
+      throw exc;
     }
     if (res.body.isEmpty) return null;
     return jsonDecode(res.body);
   }
+
+  static bool _esRutaLogin(String path) =>
+      path.contains('/auth/login') || path.endsWith('/auth/login');
 
   String _errorMessage(http.Response res) {
     if (kDebugMode && res.statusCode >= 400) {
