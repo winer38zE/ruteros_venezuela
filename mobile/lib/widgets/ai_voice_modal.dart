@@ -62,10 +62,11 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
   }
 
   Future<bool> _ensureMicPermission() async {
+    if (await _recorder.hasPermission()) return true;
     var status = await Permission.microphone.status;
     if (status.isGranted) return true;
     status = await Permission.microphone.request();
-    if (status.isGranted) return true;
+    if (status.isGranted || await _recorder.hasPermission()) return true;
     if (status.isPermanentlyDenied && mounted) {
       setState(() {
         _phase = AiVoiceUiPhase.error;
@@ -76,33 +77,57 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
   }
 
   Future<void> _startRecording() async {
-    if (_phase == AiVoiceUiPhase.processing) return;
+    if (_phase == AiVoiceUiPhase.processing || _holding) return;
     if (!await _ensureMicPermission()) {
+      if (!mounted) return;
       setState(() {
         _phase = AiVoiceUiPhase.error;
         _statusText = 'Permiso de micrófono denegado.';
       });
       return;
     }
-    final dir = await getTemporaryDirectory();
-    _path = p.join(dir.path, 'ruteros_voz_${DateTime.now().millisecondsSinceEpoch}.m4a');
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100),
-      path: _path!,
-    );
-    setState(() {
-      _holding = true;
-      _phase = AiVoiceUiPhase.listening;
-      _statusText = 'Escuchando…';
-      _transcripcion = null;
-      _resultado = null;
-    });
+    try {
+      if (await _recorder.isRecording()) {
+        await _recorder.stop();
+      }
+      final dir = await getTemporaryDirectory();
+      _path = p.join(dir.path, 'ruteros_voz_${DateTime.now().millisecondsSinceEpoch}.m4a');
+      await _recorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100),
+        path: _path!,
+      );
+      if (!mounted) return;
+      setState(() {
+        _holding = true;
+        _phase = AiVoiceUiPhase.listening;
+        _statusText = 'Escuchando…';
+        _transcripcion = null;
+        _resultado = null;
+      });
+    } catch (e) {
+      _holding = false;
+      if (!mounted) return;
+      setState(() {
+        _phase = AiVoiceUiPhase.error;
+        _statusText = 'No se pudo grabar: $e';
+      });
+    }
   }
 
   Future<void> _stopAndSend() async {
-    if (!_holding) return;
+    if (!_holding && _phase != AiVoiceUiPhase.listening) return;
     _holding = false;
-    final path = await _recorder.stop();
+    String? path;
+    try {
+      path = await _recorder.stop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _phase = AiVoiceUiPhase.error;
+        _statusText = 'Error al detener la grabación: $e';
+      });
+      return;
+    }
     final filePath = path ?? _path;
     if (filePath == null || !File(filePath).existsSync()) {
       setState(() {
@@ -227,10 +252,11 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
                 child: CircularProgressIndicator(strokeWidth: 3),
               )
             else
-              Listener(
-                onPointerDown: (_) => unawaited(_startRecording()),
-                onPointerUp: (_) => unawaited(_stopAndSend()),
-                onPointerCancel: (_) {
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPressStart: (_) => unawaited(_startRecording()),
+                onLongPressEnd: (_) => unawaited(_stopAndSend()),
+                onLongPressCancel: () {
                   if (_holding) unawaited(_stopAndSend());
                 },
                 child: ScaleTransition(

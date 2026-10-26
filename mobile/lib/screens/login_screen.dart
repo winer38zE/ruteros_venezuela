@@ -44,8 +44,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().limpiarError();
       _cargarPaises();
-      _cargarOpcionesBiometria();
       _cargarTasasLogin();
     });
   }
@@ -97,7 +97,11 @@ class _LoginScreenState extends State<LoginScreen> {
       String? seleccion;
       if (guardado != null && lista.any((p) => p.id == guardado.id)) {
         seleccion = guardado.id;
-      } else if (paisHuella != null &&
+      } else if (guardado != null) {
+        await state.regionSession.limpiar();
+      }
+      if (seleccion == null &&
+          paisHuella != null &&
           paisHuella.isNotEmpty &&
           lista.any((p) => p.id == paisHuella)) {
         seleccion = paisHuella;
@@ -115,6 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
               'No hay países disponibles. Ejecuta seed_paises en el servidor.';
         }
       });
+      await _cargarOpcionesBiometria();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -133,12 +138,16 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  bool _paisIdEnCatalogo(String? id) {
+    if (id == null || id.isEmpty) return false;
+    return _paises.any((p) => p.id == id);
+  }
+
   bool get _puedeIniciarSesion =>
       !_cargandoPaises &&
       _errorPaises == null &&
       _paises.isNotEmpty &&
-      _paisIdSeleccionado != null &&
-      _paisIdSeleccionado!.isNotEmpty;
+      _paisIdEnCatalogo(_paisIdSeleccionado);
 
   bool get _puedeIngresarHuella =>
       _puedeIniciarSesion && _dispositivoConHuella && _huellaHabilitada;
@@ -335,7 +344,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: DropdownButtonFormField2<String>(
-        value: _paisIdSeleccionado,
+        value: _paisIdEnCatalogo(_paisIdSeleccionado) ? _paisIdSeleccionado : null,
         isExpanded: true,
         decoration: const InputDecoration(
           labelText: 'País / región',
