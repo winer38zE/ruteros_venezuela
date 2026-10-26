@@ -117,8 +117,12 @@ class ProductoPreciosRegionConfig {
       if (copVal == null || copVal <= 0) {
         throw ArgumentError('Precio COP obligatorio');
       }
-      final usdVal = (usd != null && usd > 0) ? usd : 0;
-      return ProductoPreciosApiPayload(precioUsd: usdVal, precioVes: null, precioCop: copVal);
+      final double usdVal = (usd != null && usd > 0) ? usd : 0.0;
+      return ProductoPreciosApiPayload(
+        precioUsd: usdVal,
+        precioVes: null,
+        precioCop: copVal,
+      );
     }
 
     if (config.monedaLocal == 'USD') {
@@ -130,7 +134,7 @@ class ProductoPreciosRegionConfig {
     if (localVal == null || localVal <= 0) {
       throw ArgumentError('Precio en ${config.monedaLocal} obligatorio');
     }
-    final usdRef = (usd != null && usd > 0) ? usd : localVal;
+    final double usdRef = (usd != null && usd > 0) ? usd : localVal;
     return ProductoPreciosApiPayload(precioUsd: usdRef, precioVes: null, precioCop: null);
   }
 

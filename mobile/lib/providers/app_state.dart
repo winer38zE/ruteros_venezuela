@@ -105,13 +105,42 @@ class AppState extends ChangeNotifier {
       region = await regionSession.leer();
       usuario = await auth.restoreSession();
       region ??= usuario?.pais;
-      if (usuario != null) _arrancarSync();
+      if (usuario != null) {
+        if (!await _sesionRestauradaEsUtilizable()) {
+          await auth.logout(borrarAccesoBiometrico: false);
+          usuario = null;
+          region = null;
+        } else {
+          _arrancarSync();
+        }
+      }
     } catch (_) {
       usuario = null;
     } finally {
       inicializado = true;
       notifyListeners();
     }
+  }
+
+  /// Evita quedar en Home con token viejo (FAB visible pero login/API rotos).
+  Future<bool> _sesionRestauradaEsUtilizable() async {
+    if (!api.hasSession || api.token == null || api.token!.trim().isEmpty) {
+      return false;
+    }
+    try {
+      await api.get('/empresas/datos-bancarios');
+      return true;
+    } on ApiException catch (e) {
+      return e.statusCode != 401 && e.statusCode != 403;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void limpiarError() {
+    if (error == null) return;
+    error = null;
+    notifyListeners();
   }
 
   String get simboloMoneda => region?.simboloMoneda ?? 'Bs.';
