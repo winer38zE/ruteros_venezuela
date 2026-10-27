@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import obtener_usuario_opcional, require_cobrador_o_superior, require_operaciones, rol_confirma_pago
@@ -140,6 +141,38 @@ def _puede_ver_costos(usuario: Usuario) -> bool:
     return usuario.rol in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR)
 
 
+def _asegurar_cobro_en_lista_venta(venta: Venta, cobro: Cobro) -> None:
+    cobros = list(venta.cobros or [])
+    if not any(str(c.id) == str(cobro.id) for c in cobros):
+        cobros.append(cobro)
+    venta.cobros = cobros
+
+
+def _respuesta_cobro(cobro: Cobro, venta: Venta | None) -> CobroResponse:
+    moneda = cobro.moneda_pago
+    if isinstance(moneda, MonedaPago):
+        moneda = moneda.value
+    estado_venta = venta.estado.value if venta and venta.estado else None
+    return CobroResponse(
+        id=str(cobro.id),
+        empresa_id=str(cobro.empresa_id),
+        venta_id=str(cobro.venta_id),
+        cobrador_id=str(cobro.cobrador_id),
+        fecha=cobro.fecha,
+        monto_usd=float(cobro.monto_usd),
+        moneda_pago=str(moneda),
+        tasa_usd_aplicada=float(cobro.tasa_usd_aplicada),
+        tasa_eur_aplicada=float(cobro.tasa_eur_aplicada),
+        sincronizado=bool(cobro.sincronizado if cobro.sincronizado is not None else True),
+        fecha_creacion=cobro.fecha_creacion or cobro.fecha or datetime.utcnow(),
+        es_transferencia=bool(cobro.es_transferencia),
+        verificado=bool(cobro.verificado if cobro.verificado is not None else True),
+        referencia_pago=cobro.referencia_pago,
+        tiene_comprobante=bool(cobro.tiene_comprobante),
+        estado_venta=estado_venta,
+    )
+
+
 def _build_panel_item(db: Session, v: Venta, usuario: Usuario) -> VentaPendienteResponse:
     cobrado = sum(Decimal(str(c.monto_usd)) for c in v.cobros)
     saldo = Decimal(str(v.total_usd)) - cobrado
@@ -235,25 +268,53 @@ def registrar_cobro(
     db: Session = Depends(get_db),
     usuario_header: Usuario = Depends(require_cobrador_o_superior),
 ):
+    try:
+        return _registrar_cobro_interno(db, cobro, usuario_header)
+    except HTTPException:
+        raise
+    except IntegrityError as exc:
+        logger.warning("IntegrityError registrando cobro venta=%s", cobro.venta_id, exc_info=exc)
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo registrar el cobro. Verifica los datos o intenta de nuevo.",
+        ) from exc
+    except Exception as exc:
+        logger.exception(
+            "Error no controlado registrando cobro venta=%s monto=%s",
+            cobro.venta_id,
+            cobro.monto_usd,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo registrar el cobro. Verifica los datos e intenta de nuevo.",
+        ) from exc
+
+
+def _registrar_cobro_interno(
+    db: Session,
+    cobro: CobroCreate,
+    usuario_header: Usuario,
+) -> CobroResponse:
     empresa_actual = obtener_empresa_tenant(db, usuario_header)
 
     venta = (
         db.query(Venta)
         .options(joinedload(Venta.cobros), joinedload(Venta.cliente), joinedload(Venta.cuotas))
-        .filter(Venta.id == cobro.venta_id)
+        .filter(Venta.id == str(cobro.venta_id))
         .first()
     )
     if not venta:
         raise HTTPException(status_code=400, detail="La venta indicada no existe")
-    if venta.empresa_id != empresa_actual.id:
+    if str(venta.empresa_id) != str(empresa_actual.id):
         raise HTTPException(status_code=400, detail="La venta no pertenece a la empresa actual")
 
     cobrador = _resolver_cobrador(db, empresa_actual.id, cobro.cobrador_id, usuario_header)
 
-    db.refresh(venta)
-    cobrado = sum(Decimal(str(c.monto_usd)) for c in venta.cobros)
+    cobrado = sum(Decimal(str(c.monto_usd)) for c in (venta.cobros or []))
     saldo = Decimal(str(venta.total_usd)) - cobrado
     monto = Decimal(str(cobro.monto_usd))
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto del cobro debe ser mayor a cero")
     if monto > saldo + Decimal("0.01"):
         raise HTTPException(
             status_code=400,
@@ -269,9 +330,9 @@ def registrar_cobro(
 
     cobro_id = id_pocketbase_desde_cualquiera(cobro.id) if cobro.id else nuevo_id_pocketbase()
     canal = cobro.canal or ("transferencia" if cobro.es_transferencia else None)
-    electronico = canal in ("transferencia", "pago_movil")
+    electronico = canal in ("transferencia", "pago_movil") or bool(cobro.es_transferencia)
     cuenta_destino = None
-    if electronico:
+    if electronico and canal in ("transferencia", "pago_movil"):
         cuenta_destino = resolver_cuenta_transferencia(
             db, empresa_actual.id, cobro.cuenta_bancaria_id, canal=canal
         )
@@ -295,27 +356,44 @@ def registrar_cobro(
 
     db.add(nuevo_cobro)
     db.flush()
-    db.refresh(venta)
-    recien_verificados = _actualizar_estado_venta(db, venta, nuevo_cobro, cobrador)
-    aplicar_abono_a_cuotas(db, venta, monto)
-    db.refresh(venta, attribute_names=["cliente", "cobros"])
+    _asegurar_cobro_en_lista_venta(venta, nuevo_cobro)
+    recien_verificados = _actualizar_estado_venta(db, venta, nuevo_cobro, usuario_header)
+    try:
+        aplicar_abono_a_cuotas(db, venta, monto)
+    except Exception:
+        logger.exception("No se pudo aplicar abono a cuotas venta=%s", venta.id)
+
     if venta.cliente:
-        if nuevo_cobro.verificado and nuevo_cobro not in recien_verificados:
-            actualizar_score_por_cobro(db, venta, nuevo_cobro)
-        for cobro_previo in recien_verificados:
-            actualizar_score_por_cobro(db, venta, cobro_previo)
-        actualizar_historial_comportamiento(db, venta.cliente)
-    generar_asiento_cobro(db, nuevo_cobro)
+        try:
+            if nuevo_cobro.verificado and nuevo_cobro not in recien_verificados:
+                actualizar_score_por_cobro(db, venta, nuevo_cobro)
+            for cobro_previo in recien_verificados:
+                actualizar_score_por_cobro(db, venta, cobro_previo)
+        except Exception:
+            logger.exception("Score buró omitido tras cobro venta=%s", venta.id)
+        try:
+            actualizar_historial_comportamiento(db, venta.cliente)
+        except Exception:
+            logger.exception("Historial cliente omitido tras cobro venta=%s", venta.id)
+
+    try:
+        generar_asiento_cobro(db, nuevo_cobro)
+    except Exception:
+        logger.exception("Asiento contable omitido para cobro=%s", nuevo_cobro.id)
+
     db.commit()
-    db.refresh(nuevo_cobro)
-    db.refresh(venta, attribute_names=["cliente", "cobros", "cuotas"])
+
+    try:
+        db.refresh(nuevo_cobro)
+    except Exception:
+        logger.exception("Refresh cobro=%s falló tras commit", nuevo_cobro.id)
+
     try:
         enviar_recibo_cobro(db, venta, nuevo_cobro)
     except Exception:
         logger.exception("No se pudo enviar recibo de cobro por correo")
 
-    respuesta = CobroResponse.model_validate(nuevo_cobro)
-    return respuesta.model_copy(update={"estado_venta": venta.estado.value})
+    return _respuesta_cobro(nuevo_cobro, venta)
 
 
 @router.post("/{cobro_id}/enviar-recibo", response_model=EnvioReciboResponse)
