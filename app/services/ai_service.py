@@ -22,6 +22,11 @@ from app.services.ai_llm_tools import HERRAMIENTAS_OPENAI, SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
+WHISPER_PROMPT_CONTEXTO = (
+    "Este es un vendedor de una empresa de Ruteros hablando sobre productos "
+    "como sábanas, arroz, clientes, pedidos y cobros."
+)
+
 
 class AiServiceError(RuntimeError):
     """Error de transcripción o interpretación IA."""
@@ -101,6 +106,7 @@ def transcribir_audio(
     filename: str = "comando.m4a",
     content_type: str = "audio/mp4",
     language: str = "es",
+    prompt: str | None = WHISPER_PROMPT_CONTEXTO,
 ) -> str:
     """Whisper vía SDK OpenAI (compatible Groq: whisper-large-v3)."""
     if not contenido:
@@ -112,12 +118,15 @@ def transcribir_audio(
     buffer.name = filename
 
     try:
-        result = client.audio.transcriptions.create(
-            model=AI_WHISPER_MODEL,
-            file=buffer,
-            language=language,
-            response_format="json",
-        )
+        kwargs: dict[str, Any] = {
+            "model": AI_WHISPER_MODEL,
+            "file": buffer,
+            "language": language,
+            "response_format": "json",
+        }
+        if prompt and prompt.strip():
+            kwargs["prompt"] = prompt.strip()
+        result = client.audio.transcriptions.create(**kwargs)
     except Exception as exc:
         logger.exception("Error transcribiendo con Whisper")
         raise AiTranscriptionError(_mensaje_error_whisper(exc)) from exc
@@ -148,6 +157,7 @@ def interpretar_texto_voz(
     texto: str,
     *,
     contexto_sistema_extra: str | None = None,
+    historial: list[dict[str, str]] | None = None,
 ) -> tuple[str | None, dict[str, Any], str | None]:
     """
     Function calling con el SDK oficial.
@@ -157,16 +167,22 @@ def interpretar_texto_voz(
     if contexto_sistema_extra and contexto_sistema_extra.strip():
         system = f"{SYSTEM_PROMPT}\n\n{contexto_sistema_extra.strip()}"
 
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
+    if historial:
+        for item in historial[-8:]:
+            role = (item.get("role") or "").strip()
+            content = (item.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": texto})
+
     client = _llm_client()
     try:
         completion = client.chat.completions.create(
             model=AI_LLM_MODEL,
             temperature=AI_LLM_TEMPERATURE,
             max_tokens=AI_LLM_MAX_TOKENS,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": texto},
-            ],
+            messages=messages,
             tools=HERRAMIENTAS_OPENAI,
             tool_choice="auto",
         )

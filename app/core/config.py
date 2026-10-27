@@ -51,3 +51,13 @@ AI_WHISPER_API_KEY = os.getenv(
 ).strip()
 AI_WHISPER_MODEL = os.getenv("AI_WHISPER_MODEL", "whisper-large-v3")
 AI_ENABLED = bool(AI_LLM_API_KEY and AI_WHISPER_API_KEY)
+
+# TTS respuestas del asistente (OpenAI tts-1; fallback gTTS si no hay clave OpenAI).
+AI_TTS_API_KEY = os.getenv(
+    "AI_TTS_API_KEY",
+    os.getenv("OPENAI_API_KEY", ""),
+).strip()
+AI_TTS_BASE_URL = os.getenv("AI_TTS_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+AI_TTS_MODEL = os.getenv("AI_TTS_MODEL", "tts-1")
+AI_TTS_VOICE = os.getenv("AI_TTS_VOICE", "nova")
+AI_TTS_PROVIDER = os.getenv("AI_TTS_PROVIDER", "auto").strip().lower()

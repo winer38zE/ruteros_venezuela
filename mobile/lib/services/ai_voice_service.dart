@@ -22,6 +22,7 @@ class AiVoiceCommandResult {
     this.detalle = const {},
     this.whatsappEnviado = false,
     this.whatsappDetalle,
+    this.audioBase64,
   });
 
   factory AiVoiceCommandResult.fromJson(Map<String, dynamic> json) {
@@ -35,6 +36,7 @@ class AiVoiceCommandResult {
           : const {},
       whatsappEnviado: json['whatsapp_enviado'] == true,
       whatsappDetalle: json['whatsapp_detalle']?.toString(),
+      audioBase64: json['audio_base64']?.toString(),
     );
   }
 
@@ -45,6 +47,7 @@ class AiVoiceCommandResult {
   final Map<String, dynamic> detalle;
   final bool whatsappEnviado;
   final String? whatsappDetalle;
+  final String? audioBase64;
 }
 
 class AiVoiceService {

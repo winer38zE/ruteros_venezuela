@@ -6,9 +6,11 @@ from app.services.ai_voice_session import (
     enriquecer_args_desde_turno,
     fusionar_args,
     guardar,
+    historial_mensajes_para_llm,
     limpiar,
     mensaje_pendiente_registrar_cliente,
     preparar_ejecucion,
+    registrar_intercambio,
 )
 
 
@@ -56,3 +58,53 @@ def test_mensaje_no_repite_nombre():
     assert "Edwuar" in msg
     assert "teléfono" in msg.lower()
     assert "nombre del cliente" not in msg.lower()
+
+
+def test_solo_telefono_con_sesion_activa_no_pierde_nombre():
+    uid = "usr-test-3"
+    limpiar(uid)
+    h, args, msg, listo = preparar_ejecucion(
+        uid,
+        None,
+        {},
+        "Registrar cliente Edwuar Cárdenas",
+        "¿Cuál es el teléfono?",
+    )
+    assert listo is False
+    assert args.get("nombre") == "Edwuar Cárdenas"
+
+    registrar_intercambio(
+        uid,
+        intent="registrar_cliente",
+        partial=args,
+        transcripcion_usuario="Registrar cliente Edwuar Cárdenas",
+        respuesta_asistente=msg,
+    )
+    h, args, msg, listo = preparar_ejecucion(
+        uid,
+        None,
+        {},
+        "04141234567",
+        "¿Qué deseas hacer?",
+    )
+    assert listo is True
+    assert args["nombre"] == "Edwuar Cárdenas"
+    assert "04141234567" in str(args["telefono"])
+    limpiar(uid)
+
+
+def test_historial_mensajes_para_groq():
+    uid = "usr-test-4"
+    limpiar(uid)
+    registrar_intercambio(
+        uid,
+        intent="registrar_cliente",
+        partial={"nombre": "Edwuar"},
+        transcripcion_usuario="Registrar cliente Edwuar",
+        respuesta_asistente="¿Cuál es el teléfono?",
+    )
+    hist = historial_mensajes_para_llm(uid)
+    assert len(hist) == 2
+    assert hist[0]["role"] == "user"
+    assert hist[1]["role"] == "assistant"
+    limpiar(uid)

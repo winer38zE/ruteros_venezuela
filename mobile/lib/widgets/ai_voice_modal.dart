@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -35,10 +38,12 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
   static const _listeningRed = Color(0xFFEF4444);
 
   final AudioRecorder _recorder = AudioRecorder();
+  final AudioPlayer _responsePlayer = AudioPlayer();
   AiVoiceUiPhase _phase = AiVoiceUiPhase.idle;
   String _statusText = 'Mantén pulsado el micrófono y dicta tu orden';
   String? _transcripcion;
   String? _resultado;
+  String? _ultimoAudioBase64;
   bool _holding = false;
   String? _path;
   late AnimationController _pulse;
@@ -58,7 +63,29 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
   void dispose() {
     _pulse.dispose();
     _recorder.dispose();
+    unawaited(_responsePlayer.dispose());
     super.dispose();
+  }
+
+  Future<void> _reproducirRespuestaVoz(String? audioBase64) async {
+    final payload = audioBase64?.trim();
+    if (payload == null || payload.isEmpty) return;
+    try {
+      final bytes = base64Decode(payload);
+      final dir = await getTemporaryDirectory();
+      final path = p.join(
+        dir.path,
+        'ai_voz_resp_${DateTime.now().millisecondsSinceEpoch}.mp3',
+      );
+      final file = File(path);
+      await file.writeAsBytes(bytes, flush: true);
+      await _responsePlayer.stop();
+      await _responsePlayer.play(DeviceFileSource(path));
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('No se pudo reproducir audio TTS: $e');
+      }
+    }
   }
 
   Future<bool> _ensureMicPermission() async {
@@ -103,6 +130,7 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
         _statusText = 'Escuchando…';
         _transcripcion = null;
         _resultado = null;
+        _ultimoAudioBase64 = null;
       });
     } catch (e) {
       _holding = false;
@@ -153,7 +181,9 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
         _phase = result.exito ? AiVoiceUiPhase.success : AiVoiceUiPhase.error;
         _statusText = result.exito ? '¡Listo!' : result.mensaje;
         _resultado = result.exito ? '${result.mensaje}$wa' : result.mensaje;
+        _ultimoAudioBase64 = result.audioBase64;
       });
+      unawaited(_reproducirRespuestaVoz(result.audioBase64));
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -231,9 +261,23 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  '“$_transcripcion”',
-                  style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 13),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Entendí:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '“$_transcripcion”',
+                      style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 13),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -243,6 +287,14 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
                 _resultado!,
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+            if (_ultimoAudioBase64 != null && _ultimoAudioBase64!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => unawaited(_reproducirRespuestaVoz(_ultimoAudioBase64)),
+                icon: const Icon(Icons.volume_up_rounded, size: 20),
+                label: const Text('Repetir voz'),
               ),
             ],
             const SizedBox(height: 24),
