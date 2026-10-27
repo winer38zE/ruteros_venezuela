@@ -61,6 +61,9 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("stock_minimo", "INTEGER DEFAULT 0"),
             ("proveedor_id", "CHAR(36)"),
             ("pais_id", "CHAR(36)"),
+            ("proveedor", "VARCHAR(200)"),
+            ("condicion_pago", "VARCHAR(20)"),
+            ("fecha_limite_pago", "DATE"),
         ],
         "tasas_cambio": [
             ("usd_bcv_bs", "NUMERIC(12, 4)"),

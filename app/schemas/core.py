@@ -423,6 +423,12 @@ class ProductoCreate(BaseModel):
     precio_mayorista_usd: Optional[float] = None
     precio_detal_usd: Optional[float] = None
     proveedor_id: Optional[RecordId] = None
+    proveedor: Optional[str] = Field(default=None, max_length=200)
+    condicion_pago: Optional[str] = Field(
+        default=None,
+        pattern="^(contado|credito|plazo)$",
+    )
+    fecha_limite_pago: Optional[date] = None
     tipo_tasa_usd: Optional[str] = Field(default="bcv", pattern="^(bcv|paralelo)$")
 
 class ProductoUpdate(BaseModel):
@@ -438,6 +444,12 @@ class ProductoUpdate(BaseModel):
     precio_mayorista_usd: Optional[float] = None
     precio_detal_usd: Optional[float] = None
     proveedor_id: Optional[RecordId] = None
+    proveedor: Optional[str] = Field(default=None, max_length=200)
+    condicion_pago: Optional[str] = Field(
+        default=None,
+        pattern="^(contado|credito|plazo)$",
+    )
+    fecha_limite_pago: Optional[date] = None
     tipo_tasa_usd: Optional[str] = Field(default=None, pattern="^(bcv|paralelo)$")
 
 class ProductoResponse(BaseModel):
@@ -455,6 +467,9 @@ class ProductoResponse(BaseModel):
     activo: bool = True
     proveedor_id: Optional[RecordId] = None
     proveedor_nombre: Optional[str] = None
+    proveedor: Optional[str] = None
+    condicion_pago: Optional[str] = None
+    fecha_limite_pago: Optional[date] = None
     precio_ves_calculado: Optional[float] = None
     precio_cop_calculado: Optional[float] = None
 

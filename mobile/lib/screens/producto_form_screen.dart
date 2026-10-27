@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../services/api_service.dart';
 import '../services/productos_service.dart';
-import '../services/proveedores_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../utils/producto_precios_region.dart';
@@ -31,14 +31,23 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
   final _costoCtrl = TextEditingController();
   final _stockCtrl = TextEditingController();
   final _stockMinCtrl = TextEditingController();
+  final _proveedorCtrl = TextEditingController();
 
   static const _nuevaCategoriaToken = '__nueva_categoria__';
+  static const _condicionesPago = <String, String>{
+    'contado': 'Contado',
+    'credito': 'Crédito',
+    'plazo': 'Plazo',
+  };
 
   late List<String> _categorias;
   String? _categoria;
-  String? _proveedorId;
-  List<Proveedor> _proveedores = [];
+  String _condicionPago = 'contado';
+  DateTime? _fechaLimitePago;
   bool _guardando = false;
+
+  bool get _requiereFechaLimite =>
+      _condicionPago == 'credito' || _condicionPago == 'plazo';
 
   @override
   void initState() {
@@ -57,6 +66,9 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
       _stockCtrl.text = p.stock.toString();
       _stockMinCtrl.text = p.stockMinimo.toString();
       _categoria = p.categoria ?? _categorias.first;
+      _proveedorCtrl.text = p.proveedor ?? '';
+      _condicionPago = _condicionesPago.containsKey(p.condicionPago) ? p.condicionPago! : 'contado';
+      _fechaLimitePago = p.fechaLimitePago;
     } else {
       _categoria = _categorias.first;
     }
@@ -75,14 +87,6 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
         });
       }
     });
-    _cargarProveedores();
-  }
-
-  Future<void> _cargarProveedores() async {
-    try {
-      _proveedores = await context.read<AppState>().proveedores.listar();
-      if (mounted) setState(() {});
-    } catch (_) {}
   }
 
   @override
@@ -96,7 +100,27 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     _costoCtrl.dispose();
     _stockCtrl.dispose();
     _stockMinCtrl.dispose();
+    _proveedorCtrl.dispose();
     super.dispose();
+  }
+
+  String? _fechaLimiteIso() {
+    if (!_requiereFechaLimite || _fechaLimitePago == null) return null;
+    return DateFormat('yyyy-MM-dd').format(_fechaLimitePago!);
+  }
+
+  Future<void> _elegirFechaLimite() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _fechaLimitePago ?? now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 5)),
+      helpText: 'Fecha límite de pago',
+    );
+    if (picked != null && mounted) {
+      setState(() => _fechaLimitePago = picked);
+    }
   }
 
   double? _parseOpt(String text) {
@@ -170,6 +194,16 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
       return;
     }
 
+    if (_requiereFechaLimite && _fechaLimitePago == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Indica la fecha límite de pago')),
+      );
+      return;
+    }
+
+    final proveedorTxt = _proveedorCtrl.text.trim();
+    final fechaIso = _fechaLimiteIso();
+
     setState(() => _guardando = true);
     try {
       final svc = context.read<AppState>().productos;
@@ -184,6 +218,9 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
           precioCop: preciosApi.precioCop,
           costoUsd: costo,
           stockMinimo: stockMin,
+          proveedor: proveedorTxt,
+          condicionPago: _condicionPago,
+          fechaLimitePago: fechaIso,
         );
       } else {
         final stockInicial = int.parse(_stockCtrl.text.trim());
@@ -197,7 +234,9 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
           costoUsd: costo,
           stockInicial: stockInicial,
           stockMinimo: stockMin,
-          proveedorId: _proveedorId,
+          proveedor: proveedorTxt.isEmpty ? null : proveedorTxt,
+          condicionPago: _condicionPago,
+          fechaLimitePago: fechaIso,
         );
       }
       if (!mounted) return;
@@ -423,22 +462,59 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
                       prefixIcon: Icon(Icons.qr_code_rounded),
                     ),
                   ),
-                  if (_proveedores.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _proveedorCtrl,
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Proveedor',
+                      prefixIcon: Icon(Icons.local_shipping_outlined),
+                      hintText: 'Nombre del proveedor',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: _condicionPago,
+                    decoration: const InputDecoration(
+                      labelText: 'Condición de pago',
+                      prefixIcon: Icon(Icons.payments_outlined),
+                    ),
+                    dropdownColor: AppColors.bgElevated,
+                    items: _condicionesPago.entries
+                        .map(
+                          (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() {
+                        _condicionPago = v;
+                        if (!_requiereFechaLimite) _fechaLimitePago = null;
+                      });
+                    },
+                  ),
+                  if (_requiereFechaLimite) ...[
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: _proveedorId,
-                      decoration: const InputDecoration(
-                        labelText: 'Proveedor (opcional)',
-                        prefixIcon: Icon(Icons.local_shipping_outlined),
-                      ),
-                      dropdownColor: AppColors.bgElevated,
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('Sin proveedor')),
-                        ..._proveedores.map(
-                          (p) => DropdownMenuItem(value: p.id, child: Text(p.nombre)),
+                    InkWell(
+                      onTap: _elegirFechaLimite,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Fecha límite de pago *',
+                          prefixIcon: Icon(Icons.event_rounded),
                         ),
-                      ],
-                      onChanged: (v) => setState(() => _proveedorId = v),
+                        child: Text(
+                          _fechaLimitePago == null
+                              ? 'Toca para elegir fecha'
+                              : DateFormat('dd/MM/yyyy').format(_fechaLimitePago!),
+                          style: TextStyle(
+                            color: _fechaLimitePago == null
+                                ? AppColors.textMuted
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ],

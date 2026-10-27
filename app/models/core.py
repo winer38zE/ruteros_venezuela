@@ -475,6 +475,9 @@ class Producto(Base):
     stock = Column(Integer, default=0)
     stock_minimo = Column(Integer, default=0)
     activo = Column(Boolean, default=True)
+    proveedor = Column(String, nullable=True)
+    condicion_pago = Column(String, nullable=True)
+    fecha_limite_pago = Column(Date, nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     empresa = relationship("Empresa", back_populates="productos")
