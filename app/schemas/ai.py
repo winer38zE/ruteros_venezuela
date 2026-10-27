@@ -16,3 +16,7 @@ class AiAudioComandoResponse(BaseModel):
     detalle: dict[str, Any] = Field(default_factory=dict)
     whatsapp_enviado: bool = False
     whatsapp_detalle: Optional[str] = None
+    audio_base64: Optional[str] = Field(
+        default=None,
+        description="Respuesta hablada (MP3 en base64) para reproducir en la app.",
+    )

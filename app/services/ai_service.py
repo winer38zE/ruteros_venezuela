@@ -22,6 +22,11 @@ from app.services.ai_llm_tools import HERRAMIENTAS_OPENAI, SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
+WHISPER_PROMPT_CONTEXTO = (
+    "Este es un vendedor de una empresa de Ruteros hablando sobre productos "
+    "como sábanas, arroz, clientes, pedidos y cobros."
+)
+
 
 class AiServiceError(RuntimeError):
     """Error de transcripción o interpretación IA."""
@@ -101,6 +106,7 @@ def transcribir_audio(
     filename: str = "comando.m4a",
     content_type: str = "audio/mp4",
     language: str = "es",
+    prompt: str | None = WHISPER_PROMPT_CONTEXTO,
 ) -> str:
     """Whisper vía SDK OpenAI (compatible Groq: whisper-large-v3)."""
     if not contenido:
@@ -112,12 +118,15 @@ def transcribir_audio(
     buffer.name = filename
 
     try:
-        result = client.audio.transcriptions.create(
-            model=AI_WHISPER_MODEL,
-            file=buffer,
-            language=language,
-            response_format="json",
-        )
+        kwargs: dict[str, Any] = {
+            "model": AI_WHISPER_MODEL,
+            "file": buffer,
+            "language": language,
+            "response_format": "json",
+        }
+        if prompt and prompt.strip():
+            kwargs["prompt"] = prompt.strip()
+        result = client.audio.transcriptions.create(**kwargs)
     except Exception as exc:
         logger.exception("Error transcribiendo con Whisper")
         raise AiTranscriptionError(_mensaje_error_whisper(exc)) from exc
