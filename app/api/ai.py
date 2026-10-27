@@ -13,6 +13,11 @@ from app.schemas.ai import AiAudioComandoResponse
 from app.services.ai_llm import AiLlmError, interpretar_texto_voz
 from app.services.ai_transcription import AiTranscriptionError, transcribir_audio
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
+from app.services.ai_voice_session import (
+    limpiar as limpiar_sesion_voz,
+    preparar_ejecucion,
+    texto_contexto_para_llm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +77,13 @@ async def audio_comando(
             detalle={"codigo": "transcripcion_fallida"},
         )
 
+    uid = str(usuario.id)
+    contexto = texto_contexto_para_llm(uid)
     try:
-        herramienta, args, mensaje_libre = interpretar_texto_voz(transcripcion)
+        herramienta, args, mensaje_libre = interpretar_texto_voz(
+            transcripcion,
+            contexto_sistema_extra=contexto,
+        )
     except AiLlmError as exc:
         return AiAudioComandoResponse(
             transcripcion=transcripcion,
@@ -81,6 +91,27 @@ async def audio_comando(
             exito=False,
             mensaje=str(exc),
             detalle={"codigo": "llm_fallido"},
+        )
+
+    herramienta, args, mensaje_pendiente, listo = preparar_ejecucion(
+        uid,
+        herramienta,
+        args,
+        transcripcion,
+        mensaje_libre,
+    )
+
+    if not listo:
+        return AiAudioComandoResponse(
+            transcripcion=transcripcion,
+            herramienta=herramienta or "ninguna",
+            exito=False,
+            mensaje=mensaje_pendiente or mensaje_libre or "Necesito un dato más para continuar.",
+            detalle={
+                "codigo": "flujo_pendiente",
+                "parcial": args,
+                "intent": herramienta,
+            },
         )
 
     if not herramienta:
@@ -138,6 +169,9 @@ async def audio_comando(
             mensaje="No pude completar la orden. Intenta de nuevo o repite con más detalle.",
             detalle={"codigo": "error_interno", "detalle_tecnico": str(exc)},
         )
+
+    if exito:
+        limpiar_sesion_voz(uid)
 
     mensaje_final = mensaje
     if exito and wa_ok and "whatsapp" not in mensaje.lower():

@@ -40,6 +40,7 @@ AI_LLM_API_KEY = os.getenv("AI_LLM_API_KEY", os.getenv("GROQ_API_KEY", "")).stri
 # llama-3.3-70b-versatile fue retirado en Groq; usar gpt-oss-120b o llama-3.1-8b-instant.
 AI_LLM_MODEL = os.getenv("AI_LLM_MODEL", "openai/gpt-oss-120b")
 AI_LLM_MAX_TOKENS = max(256, int(os.getenv("AI_LLM_MAX_TOKENS", "800")))
+AI_LLM_TEMPERATURE = float(os.getenv("AI_LLM_TEMPERATURE", "0.1"))
 AI_WHISPER_BASE_URL = _normalizar_ai_base_url(
     os.getenv("AI_WHISPER_BASE_URL") or os.getenv("AI_LLM_BASE_URL"),
     default=_GROQ_OPENAI_V1,

@@ -269,7 +269,15 @@ def _registrar_cliente(
     telefono = str(args.get("telefono") or "").strip() or None
     direccion = str(args.get("direccion") or "").strip() or None
     if not nombre:
-        raise HTTPException(status_code=400, detail="Falta el nombre del cliente.")
+        return _respuesta_fallo(
+            "Falta el nombre del cliente.",
+            {"codigo": "cliente_incompleto", "campo": "nombre"},
+        )
+    if not telefono:
+        return _respuesta_fallo(
+            f"Nombre «{nombre}» anotado. ¿Cuál es el teléfono del cliente?",
+            {"codigo": "cliente_incompleto", "campo": "telefono", "nombre": nombre},
+        )
 
     ident = _identificacion_desde_voz(args.get("identificacion"), telefono)
     existente = db.query(Cliente).filter(Cliente.identificacion == ident).first()

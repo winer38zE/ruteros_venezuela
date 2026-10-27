@@ -13,6 +13,7 @@ from app.core.config import (
     AI_LLM_BASE_URL,
     AI_LLM_MAX_TOKENS,
     AI_LLM_MODEL,
+    AI_LLM_TEMPERATURE,
     AI_WHISPER_API_KEY,
     AI_WHISPER_BASE_URL,
     AI_WHISPER_MODEL,
@@ -143,19 +144,27 @@ def _normalizar_argumentos_herramienta(nombre: str, args: dict[str, Any]) -> dic
     return out
 
 
-def interpretar_texto_voz(texto: str) -> tuple[str | None, dict[str, Any], str | None]:
+def interpretar_texto_voz(
+    texto: str,
+    *,
+    contexto_sistema_extra: str | None = None,
+) -> tuple[str | None, dict[str, Any], str | None]:
     """
     Function calling con el SDK oficial.
     Devuelve (herramienta, argumentos, mensaje_sin_tool).
     """
+    system = SYSTEM_PROMPT
+    if contexto_sistema_extra and contexto_sistema_extra.strip():
+        system = f"{SYSTEM_PROMPT}\n\n{contexto_sistema_extra.strip()}"
+
     client = _llm_client()
     try:
         completion = client.chat.completions.create(
             model=AI_LLM_MODEL,
-            temperature=0.1,
+            temperature=AI_LLM_TEMPERATURE,
             max_tokens=AI_LLM_MAX_TOKENS,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system},
                 {"role": "user", "content": texto},
             ],
             tools=HERRAMIENTAS_OPENAI,

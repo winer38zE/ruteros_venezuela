@@ -62,7 +62,7 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
                         "description": "Cédula/RIF; si no se menciona, omitir",
                     },
                 },
-                "required": ["nombre", "telefono"],
+                "required": [],
             },
         },
     },
@@ -99,14 +99,18 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
 SYSTEM_PROMPT = """Eres el asistente de voz de Ruteros (ventas en ruta, Venezuela/Colombia).
 Interpreta órdenes habladas en español y llama EXACTAMENTE UNA herramienta cuando la intención sea clara:
 - crear_pedido: ventas con productos y cantidades.
-- registrar_cliente: nuevo cliente (nombre, teléfono, dirección).
+- registrar_cliente: nuevo cliente (nombre, teléfono, dirección opcional).
 - registrar_cobro: cobro de deuda (cliente, monto en USD, método de pago).
 
 Reglas:
 - Extrae cantidades numéricas explícitas; si falta cantidad usa 1.
 - Normaliza teléfonos a dígitos.
 - No inventes productos ni montos no dichos.
-- Si la frase no encaja en ninguna herramienta, responde brevemente pidiendo aclaración SIN llamar herramientas.
+- Registro de cliente en UNA frase: si dicen "Registrar cliente Edwuar teléfono 04141234567 dirección Calle 123",
+  llama registrar_cliente con los tres campos de una vez.
+- Si hay CONTEXTO DE CONVERSACIÓN con datos parciales, úsalos y pide solo lo que falte (no repitas preguntas).
+- Una respuesta corta ("Edwuar" o "04141234567") suele ser el dato que faltaba en el flujo activo: asígnalo al campo correcto.
+- Si la frase no encaja en ninguna herramienta y no hay flujo activo, responde brevemente pidiendo aclaración SIN llamar herramientas.
 """
 
 
