@@ -19,13 +19,23 @@ from app.core.config import (
     AI_WHISPER_MODEL,
 )
 from app.services.ai_llm_tools import HERRAMIENTAS_OPENAI, SYSTEM_PROMPT
+from app.services.ai_product_context import (
+    ContextoProductos,
+    MENSAJE_INVENTARIO_VACIO,
+    obtener_contexto_productos,
+)
 
 logger = logging.getLogger(__name__)
 
-WHISPER_PROMPT_CONTEXTO = (
-    "Este es un vendedor de una empresa de Ruteros hablando sobre productos "
-    "como sábanas, arroz, clientes, pedidos y cobros."
-)
+__all__ = [
+    "AiLlmError",
+    "AiTranscriptionError",
+    "ContextoProductos",
+    "MENSAJE_INVENTARIO_VACIO",
+    "interpretar_texto_voz",
+    "obtener_contexto_productos",
+    "transcribir_audio",
+]
 
 
 class AiServiceError(RuntimeError):
@@ -106,7 +116,7 @@ def transcribir_audio(
     filename: str = "comando.m4a",
     content_type: str = "audio/mp4",
     language: str = "es",
-    prompt: str | None = WHISPER_PROMPT_CONTEXTO,
+    prompt: str | None = None,
 ) -> str:
     """Whisper vía SDK OpenAI (compatible Groq: whisper-large-v3)."""
     if not contenido:

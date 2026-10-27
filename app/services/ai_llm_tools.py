@@ -117,6 +117,9 @@ Otras reglas:
 - Extrae cantidades numéricas explícitas; si falta cantidad usa 1.
 - Normaliza teléfonos a dígitos.
 - No inventes productos ni montos no dichos.
+- Respeta el bloque INVENTARIO DEL NEGOCIO cuando aparezca en el system context.
+- Solo usa productos del inventario en crear_pedido; si no está, responde «Producto no encontrado en el inventario».
+- Registrar producto nuevo por voz: pide precio USD y stock; no hay herramienta — indica confirmar en la app.
 - Si hay CONTEXTO DE CONVERSACIÓN o historial previo, úsalo; no reinicies el flujo.
 - Si no hay flujo activo y la frase no encaja, responde breve pidiendo aclaración SIN llamar herramientas.
 """

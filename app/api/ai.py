@@ -11,6 +11,7 @@ from app.core.deps import require_ruta_o_superior
 from app.models.core import Usuario
 from app.schemas.ai import AiAudioComandoResponse
 from app.services.ai_llm import AiLlmError, interpretar_texto_voz
+from app.services.ai_product_context import MENSAJE_INVENTARIO_VACIO, obtener_contexto_productos
 from app.services.ai_transcription import AiTranscriptionError, transcribir_audio
 from app.services.ai_tts import sintetizar_voz_base64
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
@@ -74,11 +75,24 @@ async def audio_comando(
         logger.info("Content-Type audio recibido: %s", ctype)
 
     filename = audio.filename or "comando.m4a"
+
+    inventario = obtener_contexto_productos(db, usuario.empresa_id)
+    if inventario.vacio:
+        return _respuesta_voz(
+            transcripcion="",
+            herramienta="ninguna",
+            exito=False,
+            mensaje=MENSAJE_INVENTARIO_VACIO,
+            detalle={"codigo": "inventario_vacio"},
+        )
+
+    whisper_prompt = inventario.prompt_whisper()
     try:
         transcripcion = transcribir_audio(
             contenido,
             filename=filename,
             content_type=ctype if ctype != "application/octet-stream" else "audio/mp4",
+            prompt=whisper_prompt,
         )
     except AiTranscriptionError as exc:
         return _respuesta_voz(
@@ -90,7 +104,11 @@ async def audio_comando(
         )
 
     uid = str(usuario.id)
-    contexto = texto_contexto_para_llm(uid)
+    partes_contexto = [
+        inventario.bloque_inventario_llm(),
+        texto_contexto_para_llm(uid),
+    ]
+    contexto = "\n\n".join(p for p in partes_contexto if p and p.strip())
     historial = historial_mensajes_para_llm(uid)
     try:
         herramienta, args, mensaje_libre = interpretar_texto_voz(
@@ -154,6 +172,26 @@ async def audio_comando(
             exito=False,
             mensaje=msg,
             detalle={},
+        )
+
+    if herramienta == "registrar_producto":
+        msg = (
+            mensaje_libre
+            or "Para guardar el producto, completa precio y stock en la app móvil por ahora."
+        )
+        registrar_intercambio(
+            uid,
+            intent="general",
+            partial={},
+            transcripcion_usuario=transcripcion,
+            respuesta_asistente=msg,
+        )
+        return _respuesta_voz(
+            transcripcion=transcripcion,
+            herramienta="ninguna",
+            exito=False,
+            mensaje=msg,
+            detalle={"codigo": "registrar_producto_manual"},
         )
 
     if herramienta not in ("crear_pedido", "registrar_cliente", "registrar_cobro"):
