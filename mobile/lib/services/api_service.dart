@@ -352,6 +352,12 @@ class ApiService {
       debugPrint('API ${res.statusCode} ${res.request?.url}: ${res.body}');
     }
     if (res.statusCode >= 500) {
+      try {
+        final data = jsonDecode(res.body);
+        if (data is Map && data['detail'] != null) {
+          return data['detail'].toString();
+        }
+      } catch (_) {}
       return 'No se pudo guardar. Intenta de nuevo.';
     }
     if (res.statusCode == 401) {

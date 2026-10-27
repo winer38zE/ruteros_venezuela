@@ -1,6 +1,7 @@
 """Inventario de la empresa para Whisper y Groq (cache 5 min)."""
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.core import Producto
+
+logger = logging.getLogger(__name__)
 
 MENSAJE_INVENTARIO_VACIO = (
     "El inventario está vacío. Por favor, agregue productos primero antes de usar el asistente de voz."
@@ -26,13 +29,16 @@ class ContextoProductos:
 
     nombres: tuple[str, ...]
     total: int
+    consulta_ok: bool = True
 
     @property
     def vacio(self) -> bool:
-        return self.total <= 0
+        return self.consulta_ok and self.total <= 0
 
     def prompt_whisper(self) -> str | None:
-        if self.vacio or not self.nombres:
+        if not self.consulta_ok:
+            return _WHISPER_SIN_INVENTARIO
+        if self.total <= 0 or not self.nombres:
             return None
         items = ", ".join(self.nombres)
         return (
@@ -63,23 +69,55 @@ def _empresa_key(empresa_id: Any) -> str:
     return str(empresa_id)
 
 
+_WHISPER_SIN_INVENTARIO = (
+    "Contexto del negocio: vendedor de ruta hablando de clientes, pedidos, cobros y productos."
+)
+
+
+def _extraer_nombre_producto(fila: Any) -> str | None:
+    """PocketBase ORM devuelve instancias Producto; SQLAlchemy clásico puede devolver str o tupla."""
+    if fila is None:
+        return None
+    if isinstance(fila, Producto):
+        texto = str(fila.nombre or "").strip()
+        return texto or None
+    if isinstance(fila, str):
+        texto = fila.strip()
+        return texto or None
+    if isinstance(fila, (list, tuple)):
+        if not fila:
+            return None
+        return _extraer_nombre_producto(fila[0])
+    nombre = getattr(fila, "nombre", None)
+    if nombre is not None:
+        texto = str(nombre).strip()
+        return texto or None
+    return None
+
+
 def _consultar_inventario(db: Session, empresa_id: Any) -> ContextoProductos:
-    base = db.query(Producto).filter(
+    filtro = (
         Producto.empresa_id == empresa_id,
         Producto.activo.is_(True),
     )
-    total = base.count()
+    total = int(db.query(Producto).filter(*filtro).count())
     if total == 0:
-        return ContextoProductos(nombres=(), total=0)
+        return ContextoProductos(nombres=(), total=0, consulta_ok=True)
 
-    filas = (
-        base.with_entities(Producto.nombre)
+    # PbQuery.with_entities() es no-op: siempre hay que leer Producto.nombre del modelo.
+    productos = (
+        db.query(Producto)
+        .filter(*filtro)
         .order_by(Producto.nombre.asc())
         .limit(_LIMITE_NOMBRES_PROMPT)
         .all()
     )
-    nombres = tuple(n.strip() for (n,) in filas if n and str(n).strip())
-    return ContextoProductos(nombres=nombres, total=total)
+    nombres: list[str] = []
+    for fila in productos:
+        nombre = _extraer_nombre_producto(fila)
+        if nombre:
+            nombres.append(nombre)
+    return ContextoProductos(nombres=tuple(nombres), total=total, consulta_ok=True)
 
 
 def invalidar_cache_inventario(empresa_id: Any) -> None:
@@ -98,7 +136,11 @@ def obtener_contexto_productos(db: Session, empresa_id: Any) -> ContextoProducto
         if hit and ahora - hit[0] < _CACHE_TTL_SEG:
             return hit[1]
 
-    ctx = _consultar_inventario(db, empresa_id)
+    try:
+        ctx = _consultar_inventario(db, empresa_id)
+    except Exception:
+        logger.exception("Error leyendo inventario para asistente de voz (empresa=%s)", empresa_id)
+        ctx = ContextoProductos(nombres=(), total=0, consulta_ok=False)
     with _LOCK:
         _CACHE[key] = (ahora, ctx)
     return ctx

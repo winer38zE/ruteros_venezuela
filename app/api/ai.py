@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
@@ -27,13 +31,61 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_HERRAMIENTAS_VALIDAS = frozenset(
+    {"crear_pedido", "registrar_cliente", "registrar_cobro", "ninguna"}
+)
+
+
+def _normalizar_herramienta(nombre: str | None) -> str:
+    if not nombre:
+        return "ninguna"
+    limpio = str(nombre).strip()
+    return limpio if limpio in _HERRAMIENTAS_VALIDAS else "ninguna"
+
+
+def _sanitizar_json(valor: Any) -> Any:
+    if valor is None or isinstance(valor, (str, int, float, bool)):
+        return valor
+    if isinstance(valor, uuid.UUID):
+        return str(valor)
+    if isinstance(valor, Decimal):
+        return float(valor)
+    if isinstance(valor, (datetime, date)):
+        return valor.isoformat()
+    if isinstance(valor, dict):
+        return {str(k): _sanitizar_json(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [_sanitizar_json(v) for v in valor]
+    return str(valor)
+
 
 def _respuesta_voz(**kwargs) -> AiAudioComandoResponse:
-    """Arma la respuesta JSON e incluye TTS del mensaje al usuario."""
+    """Arma la respuesta JSON; TTS opcional (fallos no rompen el endpoint)."""
+    kwargs["herramienta"] = _normalizar_herramienta(kwargs.get("herramienta"))
+    detalle = kwargs.get("detalle")
+    if detalle:
+        kwargs["detalle"] = _sanitizar_json(detalle)
+
     mensaje = (kwargs.get("mensaje") or "").strip()
     if mensaje and kwargs.get("audio_base64") is None:
-        kwargs["audio_base64"] = sintetizar_voz_base64(mensaje)
-    return AiAudioComandoResponse(**kwargs)
+        try:
+            kwargs["audio_base64"] = sintetizar_voz_base64(mensaje)
+        except Exception:
+            logger.exception("TTS falló al armar respuesta de voz")
+            kwargs["audio_base64"] = None
+
+    try:
+        return AiAudioComandoResponse(**kwargs)
+    except Exception:
+        logger.exception("Validación de AiAudioComandoResponse falló")
+        return AiAudioComandoResponse(
+            transcripcion=str(kwargs.get("transcripcion") or ""),
+            herramienta="ninguna",
+            exito=bool(kwargs.get("exito")),
+            mensaje=mensaje or "Respuesta procesada.",
+            detalle={"codigo": "respuesta_normalizada"},
+            audio_base64=kwargs.get("audio_base64"),
+        )
 
 
 _MAX_AUDIO_BYTES = 12 * 1024 * 1024
@@ -55,6 +107,26 @@ async def audio_comando(
     usuario: Usuario = Depends(require_ruta_o_superior),
     db=Depends(get_db),
 ):
+    try:
+        return await _procesar_audio_comando(audio, usuario, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error no controlado en audio-comando")
+        return _respuesta_voz(
+            transcripcion="",
+            herramienta="ninguna",
+            exito=False,
+            mensaje="No pude procesar el audio. Intenta de nuevo.",
+            detalle={"codigo": "error_interno", "detalle_tecnico": str(exc)[:240]},
+        )
+
+
+async def _procesar_audio_comando(
+    audio: UploadFile,
+    usuario: Usuario,
+    db,
+) -> AiAudioComandoResponse:
     if not AI_ENABLED:
         raise HTTPException(
             status_code=503,
@@ -104,16 +176,21 @@ async def audio_comando(
         )
 
     uid = str(usuario.id)
-    partes_contexto = [
-        inventario.bloque_inventario_llm(),
-        texto_contexto_para_llm(uid),
-    ]
-    contexto = "\n\n".join(p for p in partes_contexto if p and p.strip())
+    partes_contexto = []
+    if inventario.consulta_ok:
+        bloque_inv = inventario.bloque_inventario_llm()
+        if bloque_inv:
+            partes_contexto.append(bloque_inv)
+    ctx_sesion = texto_contexto_para_llm(uid)
+    if ctx_sesion:
+        partes_contexto.append(ctx_sesion)
+    contexto = "\n\n".join(partes_contexto)
+
     historial = historial_mensajes_para_llm(uid)
     try:
         herramienta, args, mensaje_libre = interpretar_texto_voz(
             transcripcion,
-            contexto_sistema_extra=contexto,
+            contexto_sistema_extra=contexto or None,
             historial=historial,
         )
     except AiLlmError as exc:
@@ -137,7 +214,10 @@ async def audio_comando(
         msg_usuario = (
             mensaje_pendiente or mensaje_libre or "Necesito un dato más para continuar."
         )
-        intent_guard = herramienta or "registrar_cliente"
+        intent_guard = (herramienta or "registrar_cliente").strip()
+        herramienta_resp = _normalizar_herramienta(herramienta)
+        if herramienta_resp == "ninguna":
+            herramienta_resp = "registrar_cliente"
         registrar_intercambio(
             uid,
             intent=intent_guard,
@@ -147,13 +227,13 @@ async def audio_comando(
         )
         return _respuesta_voz(
             transcripcion=transcripcion,
-            herramienta=herramienta or "ninguna",
+            herramienta=herramienta_resp,
             exito=False,
             mensaje=msg_usuario,
             detalle={
                 "codigo": "flujo_pendiente",
-                "parcial": args,
-                "intent": herramienta,
+                "parcial": _sanitizar_json(args or {}),
+                "intent": intent_guard,
             },
         )
 
@@ -200,7 +280,7 @@ async def audio_comando(
             herramienta="ninguna",
             exito=False,
             mensaje=f"Herramienta no soportada: {herramienta}",
-            detalle={"args": args},
+            detalle={"args": _sanitizar_json(args)},
         )
 
     try:
@@ -228,7 +308,7 @@ async def audio_comando(
                 herramienta=herramienta,
                 exito=False,
                 mensaje=mensaje_err,
-                detalle=detalle_err,
+                detalle=detalle_err if isinstance(detalle_err, dict) else {},
             )
         raise
     except Exception as exc:
@@ -238,7 +318,7 @@ async def audio_comando(
             herramienta=herramienta,
             exito=False,
             mensaje="No pude completar la orden. Intenta de nuevo o repite con más detalle.",
-            detalle={"codigo": "error_interno", "detalle_tecnico": str(exc)},
+            detalle={"codigo": "error_interno", "detalle_tecnico": str(exc)[:240]},
         )
 
     if exito:
