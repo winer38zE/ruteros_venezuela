@@ -462,6 +462,11 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
                       prefixIcon: Icon(Icons.qr_code_rounded),
                     ),
                   ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Proveedor y condición de pago',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _proveedorCtrl,
