@@ -143,13 +143,26 @@ class _PagoNominaScreenState extends State<PagoNominaScreen> {
     }
   }
 
+  double get _usdToVesNomina {
+    if (_tasas != null) return _tasas!.usdToVes;
+    final Map<String, dynamic> tasas =
+        _calculo?.tasas ?? const <String, dynamic>{};
+    return (tasas['USD_TO_VES'] as num?)?.toDouble() ?? 887.30;
+  }
+
+  double get _usdToCopNomina {
+    if (_tasas != null) return _tasas!.usdToCop;
+    final Map<String, dynamic> tasas =
+        _calculo?.tasas ?? const <String, dynamic>{};
+    return (tasas['USD_TO_COP'] as num?)?.toDouble() ?? 3144.0;
+  }
+
   void _onCambioMonedaLocal(String moneda, String value) {
-    final tasas = _tasas ?? _calculo?.tasas;
-    if (tasas == null || _calculo == null) return;
+    if (_calculo == null) return;
     final monto = double.tryParse(value.replaceAll(',', '.')) ?? 0;
     if (monto <= 0) return;
-    final usdToVes = (tasas['USD_TO_VES'] as num?)?.toDouble() ?? 887.30;
-    final usdToCop = (tasas['USD_TO_COP'] as num?)?.toDouble() ?? 3144.0;
+    final usdToVes = _usdToVesNomina;
+    final usdToCop = _usdToCopNomina;
     final totalUsd = _calculo!.totalPagarUsd;
     double eqUsd = 0;
     if (moneda == 'USD') eqUsd = monto;
