@@ -15,6 +15,7 @@ class AIVoiceButtonWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fab = FloatingActionButton(
+      heroTag: 'ruteros_ai_voice_fab',
       onPressed: () => AiVoiceModal.show(context),
       backgroundColor: AppColors.violet,
       foregroundColor: Colors.white,
