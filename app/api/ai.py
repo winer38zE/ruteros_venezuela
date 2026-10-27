@@ -12,7 +12,7 @@ from app.models.core import Usuario
 from app.schemas.ai import AiAudioComandoResponse
 from app.services.ai_llm import AiLlmError, interpretar_texto_voz
 from app.services.ai_transcription import AiTranscriptionError, transcribir_audio
-from app.services.ai_voice_executor import ejecutar_herramienta_voz
+from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +93,39 @@ async def audio_comando(
         exito, mensaje, detalle, (wa_ok, wa_det) = ejecutar_herramienta_voz(
             db, usuario, herramienta, args
         )
-    except HTTPException:
+    except VoiceUserError as exc:
+        return AiAudioComandoResponse(
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            exito=False,
+            mensaje=exc.message,
+            detalle=exc.detalle,
+        )
+    except HTTPException as exc:
+        if exc.status_code in (400, 404, 422):
+            detalle_err = exc.detail if isinstance(exc.detail, dict) else {}
+            mensaje_err = (
+                exc.detail
+                if isinstance(exc.detail, str)
+                else str(exc.detail)
+            )
+            return AiAudioComandoResponse(
+                transcripcion=transcripcion,
+                herramienta=herramienta,
+                exito=False,
+                mensaje=mensaje_err,
+                detalle=detalle_err,
+            )
         raise
     except Exception as exc:
         logger.exception("Error ejecutando herramienta de voz %s", herramienta)
-        raise HTTPException(status_code=500, detail=f"Error al ejecutar la orden: {exc}") from exc
+        return AiAudioComandoResponse(
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            exito=False,
+            mensaje="No pude completar la orden. Intenta de nuevo o repite con más detalle.",
+            detalle={"codigo": "error_interno", "detalle_tecnico": str(exc)},
+        )
 
     mensaje_final = mensaje
     if exito and wa_ok and "whatsapp" not in mensaje.lower():
