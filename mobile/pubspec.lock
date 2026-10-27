@@ -1041,7 +1041,7 @@ packages:
     source: hosted
     version: "1.2.1"
   record_linux:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: record_linux
       sha256: "31181787bf7eccb0e298835836b69b3cd0a903863b75d70e937de3dec71cd8f3"
