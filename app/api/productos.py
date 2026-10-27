@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,20 @@ from app.services.tasas_cambio import (
 from typing import List
 
 router = APIRouter()
+
+
+def _resolver_proveedor_pago(
+    *,
+    proveedor: str | None,
+    condicion_pago: str | None,
+    fecha_limite_pago: date | None,
+) -> tuple[str | None, str | None, date | None]:
+    prov = proveedor.strip() if proveedor and proveedor.strip() else None
+    cond = (condicion_pago or "contado").strip().lower()
+    if cond not in ("contado", "credito", "plazo"):
+        cond = "contado"
+    fecha = fecha_limite_pago if cond in ("credito", "plazo") else None
+    return prov, cond, fecha
 
 
 def _empresa_es_venezuela(db: Session, empresa: Empresa) -> bool:
@@ -92,6 +107,9 @@ def _to_response(db: Session, producto: Producto) -> ProductoResponse:
         activo=producto.activo,
         proveedor_id=producto.proveedor_id,
         proveedor_nombre=prov.nombre if prov else None,
+        proveedor=producto.proveedor,
+        condicion_pago=producto.condicion_pago,
+        fecha_limite_pago=producto.fecha_limite_pago,
         precio_ves_calculado=ves_calc,
         precio_cop_calculado=cop_calc,
     )
@@ -144,6 +162,17 @@ def crear_producto(
         if not prov:
             raise HTTPException(status_code=400, detail="Proveedor no encontrado")
 
+    prov_txt, cond_pago, fecha_limite = _resolver_proveedor_pago(
+        proveedor=producto.proveedor,
+        condicion_pago=producto.condicion_pago,
+        fecha_limite_pago=producto.fecha_limite_pago,
+    )
+    if cond_pago in ("credito", "plazo") and fecha_limite is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Indica la fecha límite de pago para crédito o plazo.",
+        )
+
     nuevo_producto = Producto(
         nombre=producto.nombre,
         sku=producto.sku,
@@ -155,6 +184,9 @@ def crear_producto(
         stock=int(producto.stock_actual),
         stock_minimo=producto.stock_minimo,
         proveedor_id=producto.proveedor_id,
+        proveedor=prov_txt,
+        condicion_pago=cond_pago,
+        fecha_limite_pago=fecha_limite,
         empresa_id=empresa_actual.id,
         activo=True,
     )
@@ -248,6 +280,25 @@ def actualizar_producto(
         producto.activo = body.activo
     if body.proveedor_id is not None:
         producto.proveedor_id = body.proveedor_id
+    if body.proveedor is not None:
+        producto.proveedor = body.proveedor.strip() or None
+    if body.condicion_pago is not None or body.fecha_limite_pago is not None:
+        prov_txt, cond_pago, fecha_limite = _resolver_proveedor_pago(
+            proveedor=body.proveedor if body.proveedor is not None else producto.proveedor,
+            condicion_pago=body.condicion_pago or producto.condicion_pago,
+            fecha_limite_pago=(
+                body.fecha_limite_pago
+                if body.fecha_limite_pago is not None
+                else producto.fecha_limite_pago
+            ),
+        )
+        if cond_pago in ("credito", "plazo") and fecha_limite is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Indica la fecha límite de pago para crédito o plazo.",
+            )
+        producto.condicion_pago = cond_pago
+        producto.fecha_limite_pago = fecha_limite
 
     es_ve = _empresa_es_venezuela(db, empresa)
     if body.precio_ves is not None:

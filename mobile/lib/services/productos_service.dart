@@ -12,6 +12,9 @@ class ProductoDetalle {
   final int stock;
   final int stockMinimo;
   final bool activo;
+  final String? proveedor;
+  final String? condicionPago;
+  final DateTime? fechaLimitePago;
 
   ProductoDetalle({
     required this.id,
@@ -25,7 +28,17 @@ class ProductoDetalle {
     required this.stock,
     required this.stockMinimo,
     this.activo = true,
+    this.proveedor,
+    this.condicionPago,
+    this.fechaLimitePago,
   });
+
+  static DateTime? _parseFecha(dynamic raw) {
+    if (raw == null) return null;
+    final s = raw.toString();
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s.length <= 10 ? '${s}T00:00:00' : s);
+  }
 
   factory ProductoDetalle.fromJson(Map<String, dynamic> j) => ProductoDetalle(
         id: j['id'],
@@ -39,6 +52,9 @@ class ProductoDetalle {
         stock: j['stock'] ?? 0,
         stockMinimo: j['stock_minimo'] ?? 0,
         activo: j['activo'] ?? true,
+        proveedor: j['proveedor']?.toString(),
+        condicionPago: j['condicion_pago']?.toString(),
+        fechaLimitePago: _parseFecha(j['fecha_limite_pago']),
       );
 
   bool get bajoStock => stockMinimo > 0 && stock <= stockMinimo;
@@ -96,6 +112,9 @@ class ProductosService {
     int stockInicial = 0,
     int stockMinimo = 0,
     String? proveedorId,
+    String? proveedor,
+    String? condicionPago,
+    String? fechaLimitePago,
   }) async {
     final data = await _api.post('/productos/', {
       'nombre': nombre,
@@ -108,6 +127,10 @@ class ProductosService {
       'stock_actual': stockInicial,
       'stock_minimo': stockMinimo,
       if (proveedorId != null) 'proveedor_id': proveedorId,
+      if (proveedor != null && proveedor.isNotEmpty) 'proveedor': proveedor,
+      if (condicionPago != null && condicionPago.isNotEmpty) 'condicion_pago': condicionPago,
+      if (fechaLimitePago != null && fechaLimitePago.isNotEmpty)
+        'fecha_limite_pago': fechaLimitePago,
     });
     return ProductoDetalle.fromJson(data);
   }
@@ -122,6 +145,9 @@ class ProductosService {
     double? precioCop,
     double? costoUsd,
     int? stockMinimo,
+    String? proveedor,
+    String? condicionPago,
+    String? fechaLimitePago,
   }) async {
     final body = <String, dynamic>{};
     if (nombre != null) body['nombre'] = nombre;
@@ -132,6 +158,11 @@ class ProductosService {
     if (precioCop != null) body['precio_cop'] = precioCop;
     if (costoUsd != null) body['costo_usd'] = costoUsd;
     if (stockMinimo != null) body['stock_minimo'] = stockMinimo;
+    if (proveedor != null) body['proveedor'] = proveedor.isEmpty ? null : proveedor;
+    if (condicionPago != null) body['condicion_pago'] = condicionPago;
+    if (fechaLimitePago != null) {
+      body['fecha_limite_pago'] = fechaLimitePago.isEmpty ? null : fechaLimitePago;
+    }
 
     final data = await _api.put('/productos/$id', body);
     return ProductoDetalle.fromJson(data);

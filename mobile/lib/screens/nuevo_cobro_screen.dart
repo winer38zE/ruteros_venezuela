@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../providers/app_state.dart';
+import '../services/api_service.dart';
 import '../services/cobros_service.dart';
 import '../services/tasas_service.dart';
 import '../theme/app_theme.dart';
@@ -195,6 +196,12 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
       }
       if (!mounted) return;
       Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

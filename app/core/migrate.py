@@ -61,6 +61,9 @@ def aplicar_migraciones_sqlite(engine) -> None:
             ("stock_minimo", "INTEGER DEFAULT 0"),
             ("proveedor_id", "CHAR(36)"),
             ("pais_id", "CHAR(36)"),
+            ("proveedor", "VARCHAR(200)"),
+            ("condicion_pago", "VARCHAR(20)"),
+            ("fecha_limite_pago", "DATE"),
         ],
         "tasas_cambio": [
             ("usd_bcv_bs", "NUMERIC(12, 4)"),
@@ -177,6 +180,7 @@ def aplicar_migraciones_sqlite(engine) -> None:
 
         _asegurar_tabla_cuentas_bancarias_empleados(conn)
         _asegurar_tabla_pagos_nomina(conn)
+        _asegurar_tabla_pago_empleado_nomina(conn)
         _asegurar_tabla_paises(conn)
         _asegurar_tabla_payroll_rules(conn)
 
@@ -410,6 +414,38 @@ def _asegurar_tabla_cuentas_bancarias_empleados(conn) -> None:
                 activa BOOLEAN NOT NULL DEFAULT 1,
                 verificada_por_dueno BOOLEAN NOT NULL DEFAULT 0,
                 fecha_actualizacion DATETIME,
+                fecha_creacion DATETIME
+            )
+            """
+        )
+    )
+
+
+def _asegurar_tabla_pago_empleado_nomina(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS pago_empleado_nomina (
+                id CHAR(36) PRIMARY KEY,
+                empresa_id CHAR(36) NOT NULL,
+                usuario_id CHAR(36) NOT NULL,
+                pais_id CHAR(36),
+                fecha_pago DATE NOT NULL,
+                pais VARCHAR(2) NOT NULL,
+                moneda_principal VARCHAR(8) NOT NULL DEFAULT 'USD',
+                tipo_pago VARCHAR(32) NOT NULL,
+                salario_base NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                total_comisiones NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                total_bonos NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                porcentaje_cobro NUMERIC(5, 2),
+                total_pagar_usd NUMERIC(12, 2) NOT NULL DEFAULT 0,
+                total_pagar_local NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                tasa_cambio_aplicada NUMERIC(12, 4),
+                detalles_pago TEXT,
+                estado VARCHAR(20) NOT NULL DEFAULT 'realizado',
+                movimiento_financiero_id CHAR(36),
+                registrado_por_id CHAR(36),
+                notas VARCHAR(500),
                 fecha_creacion DATETIME
             )
             """

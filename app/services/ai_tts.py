@@ -56,20 +56,24 @@ def _tts_gtts_base64(texto: str, *, lang: str = "es") -> str | None:
 
 
 def sintetizar_voz_base64(texto: str, *, lang: str = "es") -> str | None:
-    """Convierte texto a MP3 codificado en base64. Devuelve None si falla."""
+    """Convierte texto a MP3 codificado en base64. Devuelve None si falla (nunca lanza)."""
     limpio = (texto or "").strip()
     if not limpio:
         return None
 
-    provider = AI_TTS_PROVIDER or "auto"
-    if provider == "gtts":
+    try:
+        provider = AI_TTS_PROVIDER or "auto"
+        if provider == "gtts":
+            return _tts_gtts_base64(limpio, lang=lang)
+
+        if provider in ("openai", "auto") and AI_TTS_API_KEY:
+            audio = _tts_openai_base64(limpio)
+            if audio:
+                return audio
+            if provider == "openai":
+                return None
+
         return _tts_gtts_base64(limpio, lang=lang)
-
-    if provider in ("openai", "auto") and AI_TTS_API_KEY:
-        audio = _tts_openai_base64(limpio)
-        if audio:
-            return audio
-        if provider == "openai":
-            return None
-
-    return _tts_gtts_base64(limpio, lang=lang)
+    except Exception:
+        logger.exception("Error inesperado en sintetizar_voz_base64")
+        return None
