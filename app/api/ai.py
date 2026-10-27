@@ -64,12 +64,24 @@ async def audio_comando(
             content_type=ctype if ctype != "application/octet-stream" else "audio/mp4",
         )
     except AiTranscriptionError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return AiAudioComandoResponse(
+            transcripcion="",
+            herramienta="ninguna",
+            exito=False,
+            mensaje=str(exc),
+            detalle={"codigo": "transcripcion_fallida"},
+        )
 
     try:
         herramienta, args, mensaje_libre = interpretar_texto_voz(transcripcion)
     except AiLlmError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return AiAudioComandoResponse(
+            transcripcion=transcripcion,
+            herramienta="ninguna",
+            exito=False,
+            mensaje=str(exc),
+            detalle={"codigo": "llm_fallido"},
+        )
 
     if not herramienta:
         return AiAudioComandoResponse(

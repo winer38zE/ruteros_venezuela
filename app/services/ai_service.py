@@ -6,11 +6,12 @@ import json
 import logging
 from typing import Any
 
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 
 from app.core.config import (
     AI_LLM_API_KEY,
     AI_LLM_BASE_URL,
+    AI_LLM_MAX_TOKENS,
     AI_LLM_MODEL,
     AI_WHISPER_API_KEY,
     AI_WHISPER_BASE_URL,
@@ -31,6 +32,52 @@ class AiTranscriptionError(AiServiceError):
 
 class AiLlmError(AiServiceError):
     pass
+
+
+_MENSAJE_MODELO_IA_NO_DISPONIBLE = (
+    "El modelo de IA no está disponible. Contacta al administrador."
+)
+
+
+def _es_modelo_ia_no_disponible(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None)
+    if status == 404:
+        return True
+    if isinstance(exc, APIStatusError) and exc.status_code == 404:
+        return True
+    texto = str(exc).lower()
+    return any(
+        frag in texto
+        for frag in (
+            "model_not_found",
+            "does not exist",
+            "decommissioned",
+            "no longer supported",
+            "model is decommissioned",
+        )
+    )
+
+
+def _mensaje_error_llm(exc: Exception) -> str:
+    if _es_modelo_ia_no_disponible(exc):
+        logger.error(
+            "Groq/OpenAI modelo no disponible (model=%s): %s",
+            AI_LLM_MODEL,
+            exc,
+        )
+        return _MENSAJE_MODELO_IA_NO_DISPONIBLE
+    return f"No se pudo contactar al modelo de IA: {exc}"
+
+
+def _mensaje_error_whisper(exc: Exception) -> str:
+    if _es_modelo_ia_no_disponible(exc):
+        logger.error(
+            "Whisper modelo no disponible (model=%s): %s",
+            AI_WHISPER_MODEL,
+            exc,
+        )
+        return _MENSAJE_MODELO_IA_NO_DISPONIBLE
+    return f"No se pudo transcribir el audio: {exc}"
 
 
 def _llm_client() -> OpenAI:
@@ -72,7 +119,7 @@ def transcribir_audio(
         )
     except Exception as exc:
         logger.exception("Error transcribiendo con Whisper")
-        raise AiTranscriptionError(f"No se pudo transcribir el audio: {exc}") from exc
+        raise AiTranscriptionError(_mensaje_error_whisper(exc)) from exc
 
     texto = (getattr(result, "text", None) or "").strip()
     if not texto and isinstance(result, dict):
@@ -106,6 +153,7 @@ def interpretar_texto_voz(texto: str) -> tuple[str | None, dict[str, Any], str |
         completion = client.chat.completions.create(
             model=AI_LLM_MODEL,
             temperature=0.1,
+            max_tokens=AI_LLM_MAX_TOKENS,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": texto},
@@ -114,8 +162,8 @@ def interpretar_texto_voz(texto: str) -> tuple[str | None, dict[str, Any], str |
             tool_choice="auto",
         )
     except Exception as exc:
-        logger.exception("Error LLM function calling")
-        raise AiLlmError(f"No se pudo contactar al modelo de IA: {exc}") from exc
+        logger.exception("Error LLM function calling (model=%s)", AI_LLM_MODEL)
+        raise AiLlmError(_mensaje_error_llm(exc)) from exc
 
     if not completion.choices:
         raise AiLlmError("Respuesta vacía del modelo de IA.")
