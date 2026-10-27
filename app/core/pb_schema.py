@@ -57,6 +57,7 @@ _ORDEN_COLECCIONES: tuple[str, ...] = (
     "movimientos_inventario",
     "movimientos_financieros",
     "pagos_nomina",
+    "pago_empleado_nomina",
     "visitas_diarias",
     "notas_seguimiento_cobranza",
     "acuerdos_pago",

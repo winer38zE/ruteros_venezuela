@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/futuristic_screen.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_list_tile.dart';
+import 'pago_nomina_screen.dart';
 
 class NominaScreen extends StatefulWidget {
   const NominaScreen({super.key});
@@ -201,6 +202,17 @@ class _NominaScreenState extends State<NominaScreen> {
       title: 'Nómina de Personal',
       accentColor: AppColors.violet,
       actions: [
+        IconButton(
+          icon: const Icon(Icons.person_add_alt_1_rounded),
+          tooltip: 'Pago individual',
+          onPressed: () async {
+            final ok = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(builder: (_) => const PagoNominaScreen()),
+            );
+            if (ok == true) _cargar();
+          },
+        ),
         IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _cargar),
       ],
       body: _cargando

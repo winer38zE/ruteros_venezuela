@@ -136,6 +136,12 @@ class EstadoPagoNomina(str, enum.Enum):
     REALIZADO = "realizado"
 
 
+class TipoPagoNominaEmpleado(str, enum.Enum):
+    SALARIO_BASICO = "salario_basico"
+    COMISION = "comision"
+    MIXTO = "mixto"
+
+
 class CanalCuentaEmpleado(str, enum.Enum):
     TRANSFERENCIA = "transferencia"
     PAGO_MOVIL = "pago_movil"
@@ -759,6 +765,39 @@ class PagoNomina(Base):
     )
     fecha_pago = Column(DateTime, nullable=True)
     pagado_por_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=True)
+    notas = Column(String(500), nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    usuario = relationship("Usuario", foreign_keys=[usuario_id])
+    movimiento_financiero = relationship("MovimientoFinanciero", foreign_keys=[movimiento_financiero_id])
+
+
+class PagoEmpleadoNomina(Base):
+    """Pago flexible de nómina por empleado (VE multi-moneda / CO por esquema)."""
+
+    __tablename__ = "pago_empleado_nomina"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    usuario_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=False, index=True)
+    pais_id = Column(GUID(), ForeignKey("paises.id"), nullable=True, index=True)
+    fecha_pago = Column(Date, nullable=False)
+    pais = Column(String(2), nullable=False)
+    moneda_principal = Column(String(8), nullable=False, default="USD")
+    tipo_pago = Column(String(32), nullable=False)
+    salario_base = Column(Numeric(14, 2), nullable=False, default=0)
+    total_comisiones = Column(Numeric(14, 2), nullable=False, default=0)
+    total_bonos = Column(Numeric(14, 2), nullable=False, default=0)
+    porcentaje_cobro = Column(Numeric(5, 2), nullable=True)
+    total_pagar_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    total_pagar_local = Column(Numeric(14, 2), nullable=False, default=0)
+    tasa_cambio_aplicada = Column(Numeric(12, 4), nullable=True)
+    detalles_pago = Column(JSON, nullable=True)
+    estado = Column(Enum(EstadoPagoNomina), nullable=False, default=EstadoPagoNomina.REALIZADO)
+    movimiento_financiero_id = Column(
+        GUID(), ForeignKey("movimientos_financieros.id"), nullable=True
+    )
+    registrado_por_id = Column(GUID(), ForeignKey("usuarios.id"), nullable=True)
     notas = Column(String(500), nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 

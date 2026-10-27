@@ -1086,6 +1086,78 @@ class GenerarCorteNominaRequest(BaseModel):
 class MarcarPagoNominaRealizadoRequest(BaseModel):
     notas: Optional[str] = Field(default=None, max_length=500)
 
+
+class NominaCalcularRequest(BaseModel):
+    usuario_id: RecordId
+    pais: Optional[str] = Field(default=None, pattern="^(VE|CO|ve|co)$")
+    tipo_pago: str = Field(default="mixto", pattern="^(salario_basico|comision|mixto)$")
+    fecha_pago: Optional[date] = None
+    salario_base: Optional[float] = Field(default=None, ge=0)
+    total_bonos: float = Field(default=0, ge=0)
+    porcentaje_cobro: Optional[float] = Field(default=None, ge=0, le=100)
+    detalles_pago: Optional[dict[str, float]] = None
+    datos_extra: Optional[dict] = None
+
+
+class NominaCalcularResponse(BaseModel):
+    usuario_id: RecordId
+    empleado_nombre: str
+    rol: str
+    pais: str
+    moneda_principal: str
+    tipo_pago: str
+    fecha_pago: str
+    periodo_desde: str
+    periodo_hasta: str
+    salario_base: float
+    salario_base_usd: float
+    total_comisiones: float
+    total_bonos: float
+    porcentaje_cobro: Optional[float] = None
+    num_ventas: int = 0
+    total_cobrado_usd: float = 0
+    total_pagar_usd: float
+    total_pagar_local: float
+    tasa_cambio_aplicada: float
+    tasas: dict[str, float | str] = Field(default_factory=dict)
+    detalles_pago: dict[str, float] = Field(default_factory=dict)
+    advertencia_detalle: Optional[str] = None
+
+
+class NominaProcesarRequest(NominaCalcularRequest):
+    forzar_desglose: bool = False
+    notas: Optional[str] = Field(default=None, max_length=500)
+
+
+class NominaPagoEmpleadoResponse(BaseModel):
+    id: RecordId
+    usuario_id: RecordId
+    empleado_nombre: str
+    pais: str
+    moneda_principal: str
+    tipo_pago: str
+    fecha_pago: date
+    salario_base: float
+    total_comisiones: float
+    total_bonos: float
+    total_pagar_usd: float
+    total_pagar_local: float
+    tasa_cambio_aplicada: Optional[float] = None
+    detalles_pago: Optional[dict] = None
+    estado: str
+    movimiento_financiero_id: Optional[RecordId] = None
+    notas: Optional[str] = None
+    fecha_creacion: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TasasNominaResponse(BaseModel):
+    USD_TO_VES: float
+    USD_TO_COP: float
+    origen: str = "defecto"
+    fecha_referencia: Optional[str] = None
+
 # --- PROVEEDORES ---
 class ProveedorCreate(BaseModel):
     nombre: str

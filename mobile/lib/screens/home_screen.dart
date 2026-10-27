@@ -19,6 +19,7 @@ import 'usuarios_screen.dart';
 import 'clientes_screen.dart';
 import 'tasas_screen.dart';
 import 'nomina_screen.dart';
+import 'pago_nomina_screen.dart';
 import 'panel_cobranza_screen.dart';
 import 'cartera_critica_screen.dart';
 import 'proveedores_screen.dart';
@@ -94,7 +95,7 @@ class HomeScreen extends StatelessWidget {
           title: 'Pago de Nómina',
           subtitle: 'Sueldos, comisiones y egresos por país',
           color: AppColors.violet,
-          screen: NominaScreen(),
+          screen: PagoNominaScreen(),
           badge: 'PAY',
         ),
       ];
