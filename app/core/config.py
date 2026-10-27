@@ -22,13 +22,29 @@ EVOLUTION_ENABLED = bool(EVOLUTION_API_URL and EVOLUTION_API_KEY and EVOLUTION_I
 EVOLUTION_ADMIN_PHONE = os.getenv("EVOLUTION_ADMIN_PHONE", "").strip()
 
 # Asistente de voz (Whisper + LLM con function calling, API compatible OpenAI).
-AI_LLM_BASE_URL = os.getenv("AI_LLM_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+_GROQ_OPENAI_V1 = "https://api.groq.com/openai/v1"
+
+
+def _normalizar_ai_base_url(raw: str | None, *, default: str) -> str:
+    url = (raw or default).strip().rstrip("/")
+    if "api.groq.com" in url and "/openai/v1" not in url:
+        return _GROQ_OPENAI_V1
+    return url or default
+
+
+AI_LLM_BASE_URL = _normalizar_ai_base_url(
+    os.getenv("AI_LLM_BASE_URL"),
+    default=_GROQ_OPENAI_V1,
+)
 AI_LLM_API_KEY = os.getenv("AI_LLM_API_KEY", os.getenv("GROQ_API_KEY", "")).strip()
-AI_LLM_MODEL = os.getenv("AI_LLM_MODEL", "llama-3.3-70b-versatile")
-AI_WHISPER_BASE_URL = os.getenv(
-    "AI_WHISPER_BASE_URL",
-    os.getenv("AI_LLM_BASE_URL", "https://api.groq.com/openai/v1"),
-).rstrip("/")
+# llama-3.3-70b-versatile fue retirado en Groq; usar gpt-oss-120b o llama-3.1-8b-instant.
+AI_LLM_MODEL = os.getenv("AI_LLM_MODEL", "openai/gpt-oss-120b")
+AI_LLM_MAX_TOKENS = max(256, int(os.getenv("AI_LLM_MAX_TOKENS", "800")))
+AI_LLM_TEMPERATURE = float(os.getenv("AI_LLM_TEMPERATURE", "0.1"))
+AI_WHISPER_BASE_URL = _normalizar_ai_base_url(
+    os.getenv("AI_WHISPER_BASE_URL") or os.getenv("AI_LLM_BASE_URL"),
+    default=_GROQ_OPENAI_V1,
+)
 AI_WHISPER_API_KEY = os.getenv(
     "AI_WHISPER_API_KEY",
     os.getenv("AI_LLM_API_KEY", os.getenv("GROQ_API_KEY", "")),

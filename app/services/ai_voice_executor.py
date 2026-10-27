@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -36,11 +37,37 @@ from app.services.buro_credito import (
 )
 from app.services.contabilidad import generar_asiento_cobro, generar_asiento_venta
 from app.services.evolution_service import enviar_texto
-from app.services.inventario import calcular_total_detalles, procesar_detalles_venta
+from app.services.inventario import (
+    calcular_total_detalles,
+    procesar_detalles_venta,
+    stock_disponible,
+)
 from app.services.rutas import asignar_dia_orden, dia_actual, siguiente_orden_secuencial
 from app.services.tasas_cambio import obtener_ultima_tasa
 
 logger = logging.getLogger(__name__)
+
+VoiceResult = tuple[bool, str, dict[str, Any], tuple[bool, str | None]]
+
+
+class VoiceUserError(Exception):
+    """Error de negocio del asistente de voz (mensaje para el usuario, no 500)."""
+
+    def __init__(self, message: str, detalle: dict[str, Any] | None = None):
+        self.message = message
+        self.detalle = detalle or {}
+        super().__init__(message)
+
+
+def _fold_texto(valor: str) -> str:
+    """Minúsculas sin acentos para comparar nombres de cliente/producto."""
+    s = (valor or "").strip().casefold()
+    descompuesto = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in descompuesto if not unicodedata.combining(c))
+
+
+def _respuesta_fallo(mensaje: str, detalle: dict[str, Any] | None = None) -> VoiceResult:
+    return False, mensaje, detalle or {}, (False, None)
 
 
 def _tasas_default(db: Session, empresa_id) -> tuple[float, float]:
@@ -52,7 +79,12 @@ def _tasas_default(db: Session, empresa_id) -> tuple[float, float]:
     return usd, eur
 
 
-def _buscar_cliente(db: Session, empresa_id, nombre: str, telefono: str | None) -> Cliente | None:
+def _candidatos_cliente(
+    db: Session,
+    empresa_id,
+    nombre: str,
+    telefono: str | None,
+) -> list[Cliente]:
     nombre = (nombre or "").strip()
     tel = re.sub(r"\D", "", telefono or "")
     q = db.query(Cliente).filter(Cliente.empresa_id == empresa_id)
@@ -67,14 +99,63 @@ def _buscar_cliente(db: Session, empresa_id, nombre: str, telefono: str | None) 
             ]
         )
     if not filtros:
-        return None
-    return q.filter(or_(*filtros)).order_by(Cliente.nombre.asc()).first()
+        return []
+    return q.filter(or_(*filtros)).order_by(Cliente.nombre.asc()).all()
 
 
-def _buscar_producto(db: Session, empresa_id, nombre: str) -> Producto | None:
+def _elegir_cliente_entre_candidatos(
+    candidatos: list[Cliente],
+    nombre_buscado: str,
+) -> tuple[Cliente | None, str | None]:
+    nombre = (nombre_buscado or "").strip()
+    if not candidatos:
+        if nombre:
+            return None, (
+                f"No encontré al cliente «{nombre}». "
+                "¿Deseas registrarlo? Di por ejemplo: registrar cliente {nombre}."
+            )
+        return None, "Indica el nombre o teléfono del cliente."
+
+    if len(candidatos) == 1:
+        return candidatos[0], None
+
+    buscado = _fold_texto(nombre)
+    exactos = [c for c in candidatos if _fold_texto(c.nombre or "") == buscado]
+    if len(exactos) == 1:
+        return exactos[0], None
+    if len(exactos) > 1:
+        ejemplos = ", ".join(c.nombre for c in exactos[:4])
+        return None, (
+            f"Hay varios clientes llamados «{nombre}» ({ejemplos}). "
+            "Sé más específico: apellido completo o teléfono."
+        )
+
+    if buscado:
+        contiene = [c for c in candidatos if buscado in _fold_texto(c.nombre or "")]
+        if len(contiene) == 1:
+            return contiene[0], None
+
+    ejemplos = ", ".join(c.nombre for c in candidatos[:4])
+    return None, (
+        f"Encontré varios clientes parecidos a «{nombre}» ({ejemplos}). "
+        "Indica el nombre completo o el teléfono."
+    )
+
+
+def _resolver_cliente(
+    db: Session,
+    empresa_id,
+    nombre: str,
+    telefono: str | None,
+) -> tuple[Cliente | None, str | None]:
+    candidatos = _candidatos_cliente(db, empresa_id, nombre, telefono)
+    return _elegir_cliente_entre_candidatos(candidatos, nombre)
+
+
+def _candidatos_producto(db: Session, empresa_id, nombre: str) -> list[Producto]:
     nombre = (nombre or "").strip()
     if not nombre:
-        return None
+        return []
     return (
         db.query(Producto)
         .filter(
@@ -83,8 +164,62 @@ def _buscar_producto(db: Session, empresa_id, nombre: str) -> Producto | None:
             Producto.nombre.ilike(f"%{nombre}%"),
         )
         .order_by(Producto.nombre.asc())
-        .first()
+        .all()
     )
+
+
+def _elegir_producto_entre_candidatos(
+    candidatos: list[Producto],
+    nombre_buscado: str,
+) -> tuple[Producto | None, str | None]:
+    nombre = (nombre_buscado or "").strip()
+    if not nombre:
+        return None, "Indica el nombre del producto."
+
+    if not candidatos:
+        return None, f"No encontré el producto «{nombre}». Revisa el catálogo o el nombre."
+
+    buscado = _fold_texto(nombre)
+    exactos = [p for p in candidatos if _fold_texto(p.nombre or "") == buscado]
+    if len(exactos) == 1:
+        return exactos[0], None
+    if len(exactos) > 1:
+        nombres = ", ".join(p.nombre for p in exactos[:4])
+        return None, f"Hay varios productos llamados «{nombre}» ({nombres}). Sé más específico."
+
+    prefijo = [p for p in candidatos if _fold_texto(p.nombre or "").startswith(buscado)]
+    if len(prefijo) == 1:
+        return prefijo[0], None
+
+    contiene = [p for p in candidatos if buscado in _fold_texto(p.nombre or "")]
+    if len(contiene) == 1:
+        return contiene[0], None
+
+    if len(candidatos) == 1:
+        return candidatos[0], None
+
+    nombres = ", ".join(p.nombre for p in candidatos[:4])
+    return None, (
+        f"Encontré varios productos parecidos a «{nombre}» ({nombres}). "
+        "Di el nombre completo del producto."
+    )
+
+
+def _resolver_producto(
+    db: Session,
+    empresa_id,
+    nombre: str,
+) -> tuple[Producto | None, str | None]:
+    candidatos = _candidatos_producto(db, empresa_id, nombre)
+    filtrados = [
+        p
+        for p in candidatos
+        if _fold_texto(nombre) in _fold_texto(p.nombre or "")
+        or _fold_texto(p.nombre or "").startswith(_fold_texto(nombre))
+        or _fold_texto(p.nombre or "") == _fold_texto(nombre)
+    ]
+    base = filtrados if filtrados else candidatos
+    return _elegir_producto_entre_candidatos(base, nombre)
 
 
 def _identificacion_desde_voz(ident: str | None, telefono: str | None) -> str:
@@ -134,7 +269,15 @@ def _registrar_cliente(
     telefono = str(args.get("telefono") or "").strip() or None
     direccion = str(args.get("direccion") or "").strip() or None
     if not nombre:
-        raise HTTPException(status_code=400, detail="Falta el nombre del cliente.")
+        return _respuesta_fallo(
+            "Falta el nombre del cliente.",
+            {"codigo": "cliente_incompleto", "campo": "nombre"},
+        )
+    if not telefono:
+        return _respuesta_fallo(
+            f"Nombre «{nombre}» anotado. ¿Cuál es el teléfono del cliente?",
+            {"codigo": "cliente_incompleto", "campo": "telefono", "nombre": nombre},
+        )
 
     ident = _identificacion_desde_voz(args.get("identificacion"), telefono)
     existente = db.query(Cliente).filter(Cliente.identificacion == ident).first()
@@ -187,16 +330,20 @@ def _crear_pedido(
 
     cliente_nombre = str(args.get("cliente_nombre") or "").strip()
     telefono = str(args.get("telefono") or "").strip() or None
-    cliente = _buscar_cliente(db, empresa_id, cliente_nombre, telefono)
-    if not cliente:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No encontré al cliente «{cliente_nombre}». Regístralo primero.",
+    cliente, err_cliente = _resolver_cliente(db, empresa_id, cliente_nombre, telefono)
+    if err_cliente or not cliente:
+        return _respuesta_fallo(
+            err_cliente or f"No encontré al cliente «{cliente_nombre}».",
+            {
+                "codigo": "cliente_no_encontrado",
+                "cliente_nombre": cliente_nombre,
+                "sugerencia": "registrar_cliente",
+            },
         )
 
     items_raw = args.get("productos") or []
     if not isinstance(items_raw, list) or not items_raw:
-        raise HTTPException(status_code=400, detail="Indica al menos un producto.")
+        return _respuesta_fallo("Indica al menos un producto en el pedido.")
 
     detalles: list[DetalleVentaCreate] = []
     resumen_lineas: list[str] = []
@@ -207,13 +354,32 @@ def _crear_pedido(
         cantidad = int(item.get("cantidad") or 1)
         if cantidad < 1:
             cantidad = 1
-        producto = _buscar_producto(db, empresa_id, pnombre)
-        if not producto:
-            raise HTTPException(status_code=400, detail=f"Producto no encontrado: {pnombre}")
+        producto, err_producto = _resolver_producto(db, empresa_id, pnombre)
+        if err_producto or not producto:
+            return _respuesta_fallo(
+                err_producto or f"No encontré el producto «{pnombre}».",
+                {"codigo": "producto_no_encontrado", "producto_nombre": pnombre},
+            )
+        disponible = stock_disponible(db, producto)
+        if cantidad > disponible:
+            return _respuesta_fallo(
+                f"No hay suficiente stock de {producto.nombre} "
+                f"(pediste {cantidad}, disponible {disponible}).",
+                {
+                    "codigo": "stock_insuficiente",
+                    "producto_id": str(producto.id),
+                    "producto_nombre": producto.nombre,
+                    "cantidad_pedida": cantidad,
+                    "stock_disponible": disponible,
+                },
+            )
         detalles.append(
             DetalleVentaCreate(producto_id=str(producto.id), cantidad=cantidad, tipo_precio="detal")
         )
         resumen_lineas.append(f"• {producto.nombre} x{cantidad}")
+
+    if not detalles:
+        return _respuesta_fallo("No pude procesar los productos del pedido. Repite los nombres.")
 
     metodo = str(args.get("metodo_pago") or "efectivo").lower()
     if metodo not in ("efectivo", "transferencia", "pago_movil"):
@@ -314,9 +480,12 @@ def _registrar_cobro(
     if monto <= 0:
         raise HTTPException(status_code=400, detail="Monto de cobro inválido.")
 
-    cliente = _buscar_cliente(db, empresa_id, nombre, telefono)
-    if not cliente:
-        raise HTTPException(status_code=400, detail=f"No encontré al cliente «{nombre}».")
+    cliente, err_cliente = _resolver_cliente(db, empresa_id, nombre, telefono)
+    if err_cliente or not cliente:
+        return _respuesta_fallo(
+            err_cliente or f"No encontré al cliente «{nombre}».",
+            {"codigo": "cliente_no_encontrado", "cliente_nombre": nombre},
+        )
 
     venta = _venta_pendiente_cliente(db, empresa_id, cliente.id)
     if not venta:
