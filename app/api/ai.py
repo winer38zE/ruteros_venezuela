@@ -14,8 +14,10 @@ from app.services.ai_llm import AiLlmError, interpretar_texto_voz
 from app.services.ai_transcription import AiTranscriptionError, transcribir_audio
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
 from app.services.ai_voice_session import (
+    historial_mensajes_para_llm,
     limpiar as limpiar_sesion_voz,
     preparar_ejecucion,
+    registrar_intercambio,
     texto_contexto_para_llm,
 )
 
@@ -79,10 +81,12 @@ async def audio_comando(
 
     uid = str(usuario.id)
     contexto = texto_contexto_para_llm(uid)
+    historial = historial_mensajes_para_llm(uid)
     try:
         herramienta, args, mensaje_libre = interpretar_texto_voz(
             transcripcion,
             contexto_sistema_extra=contexto,
+            historial=historial,
         )
     except AiLlmError as exc:
         return AiAudioComandoResponse(
@@ -102,11 +106,22 @@ async def audio_comando(
     )
 
     if not listo:
+        msg_usuario = (
+            mensaje_pendiente or mensaje_libre or "Necesito un dato más para continuar."
+        )
+        intent_guard = herramienta or "registrar_cliente"
+        registrar_intercambio(
+            uid,
+            intent=intent_guard,
+            partial=args or {},
+            transcripcion_usuario=transcripcion,
+            respuesta_asistente=msg_usuario,
+        )
         return AiAudioComandoResponse(
             transcripcion=transcripcion,
             herramienta=herramienta or "ninguna",
             exito=False,
-            mensaje=mensaje_pendiente or mensaje_libre or "Necesito un dato más para continuar.",
+            mensaje=msg_usuario,
             detalle={
                 "codigo": "flujo_pendiente",
                 "parcial": args,
@@ -115,11 +130,19 @@ async def audio_comando(
         )
 
     if not herramienta:
+        msg = mensaje_libre or "No pude identificar una acción."
+        registrar_intercambio(
+            uid,
+            intent="general",
+            partial={},
+            transcripcion_usuario=transcripcion,
+            respuesta_asistente=msg,
+        )
         return AiAudioComandoResponse(
             transcripcion=transcripcion,
             herramienta="ninguna",
             exito=False,
-            mensaje=mensaje_libre or "No pude identificar una acción.",
+            mensaje=msg,
             detalle={},
         )
 
@@ -171,6 +194,13 @@ async def audio_comando(
         )
 
     if exito:
+        registrar_intercambio(
+            uid,
+            intent=herramienta,
+            partial={},
+            transcripcion_usuario=transcripcion,
+            respuesta_asistente=mensaje,
+        )
         limpiar_sesion_voz(uid)
 
     mensaje_final = mensaje

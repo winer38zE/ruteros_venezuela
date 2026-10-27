@@ -148,6 +148,7 @@ def interpretar_texto_voz(
     texto: str,
     *,
     contexto_sistema_extra: str | None = None,
+    historial: list[dict[str, str]] | None = None,
 ) -> tuple[str | None, dict[str, Any], str | None]:
     """
     Function calling con el SDK oficial.
@@ -157,16 +158,22 @@ def interpretar_texto_voz(
     if contexto_sistema_extra and contexto_sistema_extra.strip():
         system = f"{SYSTEM_PROMPT}\n\n{contexto_sistema_extra.strip()}"
 
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
+    if historial:
+        for item in historial[-8:]:
+            role = (item.get("role") or "").strip()
+            content = (item.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": texto})
+
     client = _llm_client()
     try:
         completion = client.chat.completions.create(
             model=AI_LLM_MODEL,
             temperature=AI_LLM_TEMPERATURE,
             max_tokens=AI_LLM_MAX_TOKENS,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": texto},
-            ],
+            messages=messages,
             tools=HERRAMIENTAS_OPENAI,
             tool_choice="auto",
         )

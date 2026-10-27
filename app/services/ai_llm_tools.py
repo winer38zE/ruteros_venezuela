@@ -50,13 +50,16 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "registrar_cliente",
-            "description": "Alta de cliente nuevo en la ruta.",
+            "description": (
+                "Alta de cliente nuevo en la ruta. Puedes llamarla con datos parciales "
+                "(solo nombre) mientras el backend pide el teléfono en el siguiente turno."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "nombre": {"type": "string"},
-                    "telefono": {"type": "string"},
-                    "direccion": {"type": "string"},
+                    "nombre": {"type": "string", "description": "Nombre completo del cliente"},
+                    "telefono": {"type": "string", "description": "Teléfono móvil (solo dígitos)"},
+                    "direccion": {"type": "string", "description": "Opcional"},
                     "identificacion": {
                         "type": "string",
                         "description": "Cédula/RIF; si no se menciona, omitir",
@@ -96,21 +99,26 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
     },
 ]
 
-SYSTEM_PROMPT = """Eres el asistente de voz de Ruteros (ventas en ruta, Venezuela/Colombia).
+SYSTEM_PROMPT = """Eres un asistente de ventas de Ruteros (ruta, Venezuela/Colombia).
 Interpreta órdenes habladas en español y llama EXACTAMENTE UNA herramienta cuando la intención sea clara:
 - crear_pedido: ventas con productos y cantidades.
 - registrar_cliente: nuevo cliente (nombre, teléfono, dirección opcional).
 - registrar_cobro: cobro de deuda (cliente, monto en USD, método de pago).
 
-Reglas:
+Registro de cliente (MUY IMPORTANTE):
+- Si el historial muestra que ya estás registrando un cliente, NO preguntes "¿qué deseas hacer?".
+- Si el usuario ya dio el nombre, NO se lo vuelvas a pedir. Pide SOLO el dato que falta (teléfono o dirección).
+- Una respuesta corta con solo dígitos (ej. 04141234567) es casi siempre el teléfono pendiente: llama registrar_cliente
+  con el nombre del historial + ese teléfono.
+- Si ya tienes nombre y teléfono, llama registrar_cliente de inmediato (dirección opcional).
+- En una sola frase puedes extraer todo: "Registrar cliente Edwuar Cárdenas teléfono 04141234567 dirección Calle 123".
+
+Otras reglas:
 - Extrae cantidades numéricas explícitas; si falta cantidad usa 1.
 - Normaliza teléfonos a dígitos.
 - No inventes productos ni montos no dichos.
-- Registro de cliente en UNA frase: si dicen "Registrar cliente Edwuar teléfono 04141234567 dirección Calle 123",
-  llama registrar_cliente con los tres campos de una vez.
-- Si hay CONTEXTO DE CONVERSACIÓN con datos parciales, úsalos y pide solo lo que falte (no repitas preguntas).
-- Una respuesta corta ("Edwuar" o "04141234567") suele ser el dato que faltaba en el flujo activo: asígnalo al campo correcto.
-- Si la frase no encaja en ninguna herramienta y no hay flujo activo, responde brevemente pidiendo aclaración SIN llamar herramientas.
+- Si hay CONTEXTO DE CONVERSACIÓN o historial previo, úsalo; no reinicies el flujo.
+- Si no hay flujo activo y la frase no encaja, responde breve pidiendo aclaración SIN llamar herramientas.
 """
 
 

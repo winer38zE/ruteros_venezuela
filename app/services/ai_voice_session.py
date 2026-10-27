@@ -10,9 +10,12 @@ from typing import Any
 
 _TTL_SEGUNDOS = 900
 _MAX_TURNOS = 8
+_MAX_MENSAJES_HISTORIAL = 8  # ~4 intercambios user/assistant
 
 _LOCK = threading.Lock()
 _SESIONES: dict[str, "_SesionVoz"] = {}
+# Alias legible para depuración (misma referencia que _SESIONES).
+conversation_history: dict[str, "_SesionVoz"] = _SESIONES
 
 
 @dataclass
@@ -20,6 +23,7 @@ class _SesionVoz:
     intent: str
     partial: dict[str, Any] = field(default_factory=dict)
     turnos: list[str] = field(default_factory=list)
+    messages: list[dict[str, str]] = field(default_factory=list)
     updated_at: float = field(default_factory=time.time)
 
 
@@ -51,27 +55,96 @@ def obtener(usuario_id: str) -> _SesionVoz | None:
         return ses
 
 
-def guardar(
+def _append_mensaje(messages: list[dict[str, str]], role: str, content: str) -> list[dict[str, str]]:
+    texto = (content or "").strip()
+    if not texto:
+        return messages
+    out = list(messages)
+    if out and out[-1].get("role") == role and out[-1].get("content") == texto:
+        return out
+    out.append({"role": role, "content": texto})
+    return out[-_MAX_MENSAJES_HISTORIAL:]
+
+
+def historial_mensajes_para_llm(usuario_id: str) -> list[dict[str, str]]:
+    ses = obtener(usuario_id)
+    if ses is None:
+        return []
+    return list(ses.messages[-_MAX_MENSAJES_HISTORIAL:])
+
+
+def registrar_intercambio(
     usuario_id: str,
+    *,
     intent: str,
     partial: dict[str, Any],
-    transcripcion: str,
+    transcripcion_usuario: str,
+    respuesta_asistente: str | None = None,
 ) -> None:
+    """Persiste turno user (+ assistant opcional) para el próximo request HTTP."""
     uid = str(usuario_id)
     with _LOCK:
         _limpiar_vencidas()
         prev = _SESIONES.get(uid)
         turnos = list(prev.turnos) if prev else []
-        t = (transcripcion or "").strip()
+        messages = list(prev.messages) if prev else []
+        t = (transcripcion_usuario or "").strip()
         if t and (not turnos or turnos[-1] != t):
             turnos.append(t)
         turnos = turnos[-_MAX_TURNOS:]
+        messages = _append_mensaje(messages, "user", t)
+        if respuesta_asistente:
+            messages = _append_mensaje(messages, "assistant", respuesta_asistente)
         _SESIONES[uid] = _SesionVoz(
             intent=intent,
             partial=dict(partial),
             turnos=turnos,
+            messages=messages,
             updated_at=_ahora(),
         )
+
+
+def actualizar_parcial_sesion(
+    usuario_id: str,
+    intent: str,
+    partial: dict[str, Any],
+    transcripcion: str | None = None,
+) -> None:
+    """Actualiza intent/datos parciales sin duplicar mensajes del chat (eso va en ai.py)."""
+    uid = str(usuario_id)
+    with _LOCK:
+        _limpiar_vencidas()
+        prev = _SESIONES.get(uid)
+        turnos = list(prev.turnos) if prev else []
+        messages = list(prev.messages) if prev else []
+        if transcripcion:
+            t = transcripcion.strip()
+            if t and (not turnos or turnos[-1] != t):
+                turnos.append(t)
+            turnos = turnos[-_MAX_TURNOS:]
+        _SESIONES[uid] = _SesionVoz(
+            intent=intent,
+            partial=dict(partial),
+            turnos=turnos,
+            messages=messages,
+            updated_at=_ahora(),
+        )
+
+
+def guardar(
+    usuario_id: str,
+    intent: str,
+    partial: dict[str, Any],
+    transcripcion: str,
+    respuesta_asistente: str | None = None,
+) -> None:
+    registrar_intercambio(
+        usuario_id,
+        intent=intent,
+        partial=partial,
+        transcripcion_usuario=transcripcion,
+        respuesta_asistente=respuesta_asistente,
+    )
 
 
 def fusionar_args(base: dict[str, Any], nuevos: dict[str, Any]) -> dict[str, Any]:
@@ -142,12 +215,6 @@ def enriquecer_args_desde_turno(
     out = fusionar_args(partial_previo or {}, args)
     texto = (transcripcion or "").strip()
     if intent == "registrar_cliente":
-        if not out.get("telefono") and _parece_telefono(texto):
-            digitos = re.sub(r"\D", "", texto)
-            out["telefono"] = digitos[-11:] if len(digitos) > 11 else digitos
-        if not out.get("nombre") and _parece_nombre_propio(texto):
-            out["nombre"] = texto.strip()
-        # "Registrar cliente Edwuar, teléfono 0414..."
         m_tel = re.search(
             r"(?:tel[eé]fono|celular|móvil|movil)\s*[:\s]*([+\d\s\-()]{8,})",
             texto,
@@ -155,6 +222,11 @@ def enriquecer_args_desde_turno(
         )
         if m_tel and not out.get("telefono"):
             out["telefono"] = re.sub(r"\D", "", m_tel.group(1))
+        if not out.get("telefono") and _parece_telefono(texto):
+            digitos = re.sub(r"\D", "", texto)
+            out["telefono"] = digitos[-11:] if len(digitos) > 11 else digitos
+        if not out.get("nombre") and _parece_nombre_propio(texto):
+            out["nombre"] = texto.strip()
         m_nom = re.search(
             r"(?:registrar\s+)?cliente\s+(?:llamado\s+)?"
             r"([A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*){0,3})"
@@ -229,6 +301,27 @@ def texto_contexto_para_llm(usuario_id: str) -> str:
     return "\n".join(bloques)
 
 
+def _continuar_registrar_cliente(
+    uid: str,
+    ses: _SesionVoz | None,
+    args: dict[str, Any],
+    transcripcion: str,
+) -> tuple[str, dict[str, Any], str | None, bool]:
+    base = ses.partial if ses else {}
+    merged = enriquecer_args_desde_turno(
+        "registrar_cliente",
+        transcripcion,
+        fusionar_args(base, args),
+    )
+    faltan = campos_faltantes_registrar_cliente(merged)
+    if faltan:
+        msg = mensaje_pendiente_registrar_cliente(merged)
+        actualizar_parcial_sesion(uid, "registrar_cliente", merged, transcripcion)
+        return "registrar_cliente", merged, msg, False
+    limpiar(uid)
+    return "registrar_cliente", merged, None, True
+
+
 def preparar_ejecucion(
     usuario_id: str,
     herramienta: str | None,
@@ -242,41 +335,24 @@ def preparar_ejecucion(
     """
     uid = str(usuario_id)
     ses = obtener(uid)
-    intent = herramienta or (ses.intent if ses else None) or inferir_intent_desde_texto(transcripcion)
 
-    if intent == "registrar_cliente":
-        base = ses.partial if ses else {}
-        merged = enriquecer_args_desde_turno(
-            "registrar_cliente",
-            transcripcion,
-            fusionar_args(base, args),
-            partial_previo=None,
-        )
-        faltan = campos_faltantes_registrar_cliente(merged)
-        if faltan:
-            guardar(uid, "registrar_cliente", merged, transcripcion)
-            return "registrar_cliente", merged, mensaje_pendiente_registrar_cliente(merged), False
-        limpiar(uid)
-        return "registrar_cliente", merged, None, True
+    # Sesión activa de registro: no depender de que Groq mantenga el hilo.
+    if ses and ses.intent == "registrar_cliente":
+        return _continuar_registrar_cliente(uid, ses, args, transcripcion)
+
+    intent = herramienta or inferir_intent_desde_texto(transcripcion)
+
+    if intent == "registrar_cliente" or herramienta == "registrar_cliente":
+        return _continuar_registrar_cliente(uid, ses, args, transcripcion)
 
     if herramienta:
         limpiar(uid)
         return herramienta, args, mensaje_libre, True
 
     if intent and inferir_intent_desde_texto(transcripcion):
-        guardar(uid, intent, {}, transcripcion)
         if intent == "registrar_cliente":
-            return None, {}, "¿Cuál es el nombre del cliente?", False
-
-    if ses and not herramienta:
-        guardar(uid, ses.intent, ses.partial, transcripcion)
-        if ses.intent == "registrar_cliente":
-            merged = enriquecer_args_desde_turno(
-                "registrar_cliente", transcripcion, dict(ses.partial)
-            )
-            faltan = campos_faltantes_registrar_cliente(merged)
-            guardar(uid, "registrar_cliente", merged, transcripcion)
-            if faltan:
-                return None, merged, mensaje_pendiente_registrar_cliente(merged), False
+            return _continuar_registrar_cliente(uid, ses, args, transcripcion)
+        actualizar_parcial_sesion(uid, intent, {}, transcripcion)
+        return None, {}, mensaje_libre, False
 
     return herramienta, args, mensaje_libre, bool(herramienta)
