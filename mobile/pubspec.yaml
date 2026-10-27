@@ -29,6 +29,7 @@ dependencies:
   flutter_local_notifications: ^17.2.4
   timezone: ^0.9.4
   record: ^6.2.0
+  record_linux: ^1.2.1
   permission_handler: ^11.3.1
   path: ^1.9.0
 
