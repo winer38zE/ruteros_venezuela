@@ -165,6 +165,9 @@ def crear_producto(
 
     db.commit()
     db.refresh(nuevo_producto)
+    from app.services.ai_product_context import invalidar_cache_inventario
+
+    invalidar_cache_inventario(empresa_actual.id)
     return _to_response(db, nuevo_producto)
 
 
