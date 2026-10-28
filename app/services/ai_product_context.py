@@ -59,9 +59,8 @@ class ContextoProductos:
             "Si el usuario pide vender o incluir en un pedido un producto que NO está en esta lista "
             "(ni es claramente el mismo artículo), responde SIN llamar herramientas: "
             "«Producto no encontrado en el inventario».\n"
-            "Alta de producto por voz: si piden registrar o agregar un producto nuevo, pide el nombre "
-            "(si falta), precio en USD y cantidad en stock; al tenerlos, indica que debe confirmarlo "
-            "en la app móvil (aún no se guarda automáticamente por voz)."
+            "Alta de producto por voz: usa registrar_producto_inventario cuando tengas nombre, "
+            "precio en USD y stock inicial."
         )
 
 

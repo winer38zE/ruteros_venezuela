@@ -18,7 +18,11 @@ from app.core.config import (
     AI_WHISPER_BASE_URL,
     AI_WHISPER_MODEL,
 )
-from app.services.ai_llm_tools import HERRAMIENTAS_OPENAI, SYSTEM_PROMPT
+from app.services.ai_llm_tools import (
+    MENSAJE_CONFUSION_VOZ,
+    SYSTEM_PROMPT,
+    herramientas_openai_para_rol,
+)
 from app.services.ai_product_context import (
     ContextoProductos,
     MENSAJE_INVENTARIO_VACIO,
@@ -160,6 +164,20 @@ def _normalizar_argumentos_herramienta(nombre: str, args: dict[str, Any]) -> dic
             out["monto_usd"] = out.pop("monto")
         if not out.get("cliente_nombre") and out.get("nombre_cliente"):
             out["cliente_nombre"] = out.pop("nombre_cliente")
+    if nombre == "registrar_producto_inventario":
+        if out.get("precio_venta") is None and out.get("precio") is not None:
+            out["precio_venta"] = out.pop("precio")
+        if out.get("stock_inicial") is None and out.get("stock") is not None:
+            out["stock_inicial"] = out.pop("stock")
+    if nombre == "registrar_gasto":
+        if out.get("monto") is None and out.get("monto_usd") is not None:
+            out["monto"] = out.pop("monto_usd")
+    if nombre == "crear_factura_proveedor":
+        if out.get("proveedor_nombre") is None and out.get("nombre_proveedor"):
+            out["proveedor_nombre"] = out.pop("nombre_proveedor")
+    if nombre == "calcular_nomina":
+        if out.get("nombre_empleado") is None and out.get("empleado"):
+            out["nombre_empleado"] = out.pop("empleado")
     return out
 
 
@@ -168,6 +186,7 @@ def interpretar_texto_voz(
     *,
     contexto_sistema_extra: str | None = None,
     historial: list[dict[str, str]] | None = None,
+    rol_usuario: Any = None,
 ) -> tuple[str | None, dict[str, Any], str | None]:
     """
     Function calling con el SDK oficial.
@@ -186,6 +205,8 @@ def interpretar_texto_voz(
                 messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": texto})
 
+    tools = herramientas_openai_para_rol(rol_usuario)
+
     client = _llm_client()
     try:
         completion = client.chat.completions.create(
@@ -193,7 +214,7 @@ def interpretar_texto_voz(
             temperature=AI_LLM_TEMPERATURE,
             max_tokens=AI_LLM_MAX_TOKENS,
             messages=messages,
-            tools=HERRAMIENTAS_OPENAI,
+            tools=tools,
             tool_choice="auto",
         )
     except Exception as exc:
@@ -217,4 +238,11 @@ def interpretar_texto_voz(
         return name, _normalizar_argumentos_herramienta(name, args), None
 
     contenido = (message.content or "").strip()
-    return None, {}, contenido or "No entendí el comando. Intenta de nuevo."
+    if not contenido:
+        return None, {}, MENSAJE_CONFUSION_VOZ
+    if len(contenido) < 120 and any(
+        frag in contenido.lower()
+        for frag in ("no entend", "aclara", "no estoy seguro", "¿qué deseas")
+    ):
+        return None, {}, MENSAJE_CONFUSION_VOZ
+    return None, {}, contenido or MENSAJE_CONFUSION_VOZ

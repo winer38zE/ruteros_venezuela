@@ -97,31 +97,256 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "registrar_producto_inventario",
+            "description": "Alta de producto nuevo en inventario con precio y stock inicial.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string"},
+                    "precio_venta": {"type": "number", "exclusiveMinimum": 0},
+                    "stock_inicial": {"type": "number", "minimum": 0},
+                    "categoria": {"type": "string", "description": "Opcional"},
+                },
+                "required": ["nombre", "precio_venta", "stock_inicial"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_inventario",
+            "description": "Consulta stock disponible; opcionalmente filtra por nombre de producto.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre_producto": {
+                        "type": "string",
+                        "description": "Opcional; si falta, resume el catálogo",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "registrar_gasto",
+            "description": "Registra un gasto operativo (salida de caja).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "monto": {"type": "number", "exclusiveMinimum": 0},
+                    "descripcion": {"type": "string"},
+                    "categoria_gasto": {
+                        "type": "string",
+                        "description": "Ej. combustible, moto, servicios, general",
+                    },
+                    "metodo_pago": {
+                        "type": "string",
+                        "enum": ["efectivo", "transferencia", "pago_movil", "tarjeta", "otro"],
+                    },
+                },
+                "required": ["monto", "descripcion", "categoria_gasto", "metodo_pago"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "registrar_proveedor",
+            "description": "Alta de proveedor en el módulo de compras.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string"},
+                    "telefono": {"type": "string"},
+                    "direccion": {"type": "string", "description": "Opcional"},
+                    "condicion_pago": {
+                        "type": "string",
+                        "description": "Ej. contado, crédito 30 días",
+                    },
+                },
+                "required": ["nombre"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "crear_factura_proveedor",
+            "description": "Registra deuda/factura pendiente con un proveedor.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "proveedor_nombre": {"type": "string"},
+                    "monto": {"type": "number", "exclusiveMinimum": 0},
+                    "fecha_vencimiento": {
+                        "type": "string",
+                        "description": "Fecha ISO YYYY-MM-DD",
+                    },
+                },
+                "required": ["proveedor_nombre", "monto"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calcular_nomina",
+            "description": "Calcula nómina de un empleado (salario, comisiones, totales).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre_empleado": {"type": "string"},
+                    "monto": {
+                        "type": "number",
+                        "description": "Opcional: salario base manual en moneda local",
+                    },
+                    "tipo_pago": {
+                        "type": "string",
+                        "enum": ["salario_basico", "comision", "mixto"],
+                        "description": "Default mixto",
+                    },
+                },
+                "required": ["nombre_empleado"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_ventas_del_dia",
+            "description": "Total vendido hoy (USD) y cantidad de ventas.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
-SYSTEM_PROMPT = """Eres un asistente de ventas de Ruteros (ruta, Venezuela/Colombia).
-Interpreta órdenes habladas en español y llama EXACTAMENTE UNA herramienta cuando la intención sea clara:
-- crear_pedido: ventas con productos y cantidades.
-- registrar_cliente: nuevo cliente (nombre, teléfono, dirección opcional).
-- registrar_cobro: cobro de deuda (cliente, monto en USD, método de pago).
+HERRAMIENTAS_VOZ_TODAS: frozenset[str] = frozenset(
+    t["function"]["name"] for t in HERRAMIENTAS_OPENAI
+)
+
+HERRAMIENTAS_VOZ_RUTA: frozenset[str] = frozenset(
+    {
+        "crear_pedido",
+        "registrar_cliente",
+        "registrar_cobro",
+        "consultar_inventario",
+    }
+)
+
+MENSAJE_CONFUSION_VOZ = (
+    "No entendí bien. ¿Quieres que registre un gasto, un cliente o consultes el inventario?"
+)
+
+_ACCION_POR_HERRAMIENTA: dict[str, str] = {
+    "registrar_producto_inventario": "registrar productos en inventario",
+    "registrar_gasto": "registrar gastos",
+    "registrar_proveedor": "crear proveedores",
+    "crear_factura_proveedor": "registrar facturas de proveedor",
+    "calcular_nomina": "calcular nómina",
+    "consultar_ventas_del_dia": "consultar ventas del día",
+    "crear_pedido": "crear pedidos",
+    "registrar_cliente": "registrar clientes",
+    "registrar_cobro": "registrar cobros",
+    "consultar_inventario": "consultar inventario",
+}
+
+
+def _normalizar_rol(rol: Any) -> Any:
+    from app.models.core import RolUsuario
+
+    if isinstance(rol, RolUsuario):
+        return rol
+    if rol is None:
+        return None
+    texto = str(rol).strip().upper()
+    for miembro in RolUsuario:
+        if miembro.value.upper() == texto or miembro.name == texto:
+            return miembro
+    return None
+
+
+def herramientas_permitidas_para_rol(rol: Any) -> frozenset[str]:
+    from app.models.core import RolUsuario
+
+    r = _normalizar_rol(rol)
+    if r in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
+        return HERRAMIENTAS_VOZ_TODAS
+    if r in (RolUsuario.VENDEDOR, RolUsuario.COBRADOR):
+        return HERRAMIENTAS_VOZ_RUTA
+    return HERRAMIENTAS_VOZ_RUTA
+
+
+def herramientas_openai_para_rol(rol: Any) -> list[dict[str, Any]]:
+    permitidas = herramientas_permitidas_para_rol(rol)
+    return [t for t in HERRAMIENTAS_OPENAI if t["function"]["name"] in permitidas]
+
+
+def etiqueta_rol_voz(rol: Any) -> str:
+    from app.models.core import RolUsuario
+
+    r = _normalizar_rol(rol)
+    if r == RolUsuario.VENDEDOR:
+        return "vendedor"
+    if r == RolUsuario.COBRADOR:
+        return "cobrador"
+    if r == RolUsuario.ADMINISTRADOR:
+        return "administrador"
+    if r == RolUsuario.DUENO:
+        return "dueño"
+    return "usuario"
+
+
+def mensaje_permiso_denegado(rol: Any, herramienta: str) -> str | None:
+    if herramienta not in HERRAMIENTAS_VOZ_TODAS:
+        return None
+    if herramienta in herramientas_permitidas_para_rol(rol):
+        return None
+    accion = _ACCION_POR_HERRAMIENTA.get(herramienta, "realizar esa acción")
+    return (
+        f"Lo siento, tu rol de {etiqueta_rol_voz(rol)} no tiene permisos para {accion}. "
+        "Contacta al administrador."
+    )
+
+
+SYSTEM_PROMPT = f"""Eres el asistente de voz de Ruteros (ruta, Venezuela/Colombia).
+Interpreta órdenes en español y llama EXACTAMENTE UNA herramienta cuando la intención sea clara.
+
+Herramientas disponibles (usa la que corresponda):
+- crear_pedido: venta/pedido al contado con productos y cantidades.
+- registrar_cliente: alta de cliente (nombre, teléfono, dirección opcional).
+- registrar_cobro: abono sobre deuda (cliente, monto USD, método de pago).
+- registrar_producto_inventario: nuevo producto (nombre, precio_venta USD, stock_inicial, categoría opcional).
+- consultar_inventario: stock disponible; opcional nombre_producto ("¿cuánto stock de sábanas?").
+- registrar_gasto: gasto operativo (monto, descripción, categoría, método de pago).
+- registrar_proveedor: nuevo proveedor (nombre, teléfono, dirección, condición de pago).
+- crear_factura_proveedor: deuda/factura con proveedor (nombre, monto USD, fecha vencimiento opcional).
+- calcular_nomina: cálculo de pago de empleado (nombre_empleado, tipo_pago, monto opcional).
+- consultar_ventas_del_dia: total vendido hoy.
+
+Ejemplos:
+- "Registra un gasto de 50 dólares en combustible" → registrar_gasto.
+- "¿Cuánto stock queda de sábanas?" → consultar_inventario.
+- "Crea un proveedor que se llama Distribuidora XYZ" → registrar_proveedor.
+- "¿Cuánto vendí hoy?" → consultar_ventas_del_dia.
 
 Registro de cliente (MUY IMPORTANTE):
-- Si el historial muestra que ya estás registrando un cliente, NO preguntes "¿qué deseas hacer?".
-- Si el usuario ya dio el nombre, NO se lo vuelvas a pedir. Pide SOLO el dato que falta (teléfono o dirección).
-- Una respuesta corta con solo dígitos (ej. 04141234567) es casi siempre el teléfono pendiente: llama registrar_cliente
-  con el nombre del historial + ese teléfono.
-- Si ya tienes nombre y teléfono, llama registrar_cliente de inmediato (dirección opcional).
-- En una sola frase puedes extraer todo: "Registrar cliente Edwuar Cárdenas teléfono 04141234567 dirección Calle 123".
+- Si el historial muestra registro de cliente en curso, pide SOLO el dato faltante.
+- Dígitos solos (04141234567) suelen ser teléfono pendiente con el nombre del historial.
 
-Otras reglas:
-- Extrae cantidades numéricas explícitas; si falta cantidad usa 1.
+Reglas generales:
+- Extrae cantidades explícitas; si falta cantidad en pedido usa 1.
 - Normaliza teléfonos a dígitos.
-- No inventes productos ni montos no dichos.
-- Respeta el bloque INVENTARIO DEL NEGOCIO cuando aparezca en el system context.
-- Solo usa productos del inventario en crear_pedido; si no está, responde «Producto no encontrado en el inventario».
-- Registrar producto nuevo por voz: pide precio USD y stock; no hay herramienta — indica confirmar en la app.
-- Si hay CONTEXTO DE CONVERSACIÓN o historial previo, úsalo; no reinicies el flujo.
-- Si no hay flujo activo y la frase no encaja, responde breve pidiendo aclaración SIN llamar herramientas.
+- No inventes montos, productos ni nombres no dichos.
+- Respeta INVENTARIO DEL NEGOCIO: en crear_pedido solo productos listados.
+- Si hay CONTEXTO DE CONVERSACIÓN o historial, úsalo.
+- Si la intención es ambigua o no hay herramienta clara, NO inventes: responde exactamente:
+  «{MENSAJE_CONFUSION_VOZ}» SIN llamar herramientas.
 """
 
 

@@ -9,7 +9,19 @@ from pydantic import BaseModel, Field
 class AiAudioComandoResponse(BaseModel):
     transcripcion: str
     herramienta: Optional[
-        Literal["crear_pedido", "registrar_cliente", "registrar_cobro", "ninguna"]
+        Literal[
+            "crear_pedido",
+            "registrar_cliente",
+            "registrar_cobro",
+            "registrar_producto_inventario",
+            "consultar_inventario",
+            "registrar_gasto",
+            "registrar_proveedor",
+            "crear_factura_proveedor",
+            "calcular_nomina",
+            "consultar_ventas_del_dia",
+            "ninguna",
+        ]
     ] = None
     exito: bool
     mensaje: str
