@@ -18,6 +18,11 @@ from app.services.ai_llm import AiLlmError, interpretar_texto_voz
 from app.services.ai_product_context import MENSAJE_INVENTARIO_VACIO, obtener_contexto_productos
 from app.services.ai_transcription import AiTranscriptionError, transcribir_audio
 from app.services.ai_tts import sintetizar_voz_base64
+from app.services.ai_llm_tools import (
+    HERRAMIENTAS_VOZ_TODAS,
+    MENSAJE_CONFUSION_VOZ,
+    mensaje_permiso_denegado,
+)
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
 from app.services.ai_voice_session import (
     historial_mensajes_para_llm,
@@ -39,8 +44,10 @@ _MENSAJE_AUDIO_NO_ENTENDIDO = (
     "No entendí el audio. Mantén pulsado el micrófono y di tu pedido, cobro o «registrar cliente …»."
 )
 
-_HERRAMIENTAS_VALIDAS = frozenset(
-    {"crear_pedido", "registrar_cliente", "registrar_cobro", "ninguna"}
+_HERRAMIENTAS_VALIDAS = HERRAMIENTAS_VOZ_TODAS | frozenset({"ninguna"})
+
+_WHISPER_PALABRAS_CLAVE = (
+    "Ventas, inventario, productos, sábanas, cobros, gastos, proveedores, nómina, facturas."
 )
 
 
@@ -175,7 +182,10 @@ async def _procesar_audio_comando(
             detalle={"codigo": "inventario_vacio"},
         )
 
-    whisper_prompt = inventario.prompt_whisper()
+    whisper_extra = inventario.prompt_whisper()
+    whisper_prompt = _WHISPER_PALABRAS_CLAVE
+    if whisper_extra:
+        whisper_prompt = f"{_WHISPER_PALABRAS_CLAVE} {whisper_extra}"
     try:
         transcripcion = transcribir_audio(
             contenido,
@@ -227,6 +237,7 @@ async def _procesar_audio_comando(
             transcripcion,
             contexto_sistema_extra=contexto or None,
             historial=historial,
+            rol_usuario=usuario.rol,
         )
     except AiLlmError as exc:
         return _respuesta_voz(
@@ -283,7 +294,7 @@ async def _procesar_audio_comando(
         )
 
     if not herramienta:
-        msg = mensaje_libre or "No pude identificar una acción."
+        msg = mensaje_libre or MENSAJE_CONFUSION_VOZ
         registrar_intercambio(
             uid,
             intent="general",
@@ -296,36 +307,26 @@ async def _procesar_audio_comando(
             herramienta="ninguna",
             exito=False,
             mensaje=msg,
-            detalle={},
+            detalle={"codigo": "intencion_ambigua"},
         )
 
-    if herramienta == "registrar_producto":
-        msg = (
-            mensaje_libre
-            or "Para guardar el producto, completa precio y stock en la app móvil por ahora."
-        )
-        registrar_intercambio(
-            uid,
-            intent="general",
-            partial={},
-            transcripcion_usuario=transcripcion,
-            respuesta_asistente=msg,
-        )
+    if herramienta not in HERRAMIENTAS_VOZ_TODAS:
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta="ninguna",
             exito=False,
-            mensaje=msg,
-            detalle={"codigo": "registrar_producto_manual"},
+            mensaje=MENSAJE_CONFUSION_VOZ,
+            detalle={"args": _sanitizar_json(args), "codigo": "herramienta_desconocida"},
         )
 
-    if herramienta not in ("crear_pedido", "registrar_cliente", "registrar_cobro"):
+    denegado = mensaje_permiso_denegado(usuario.rol, herramienta)
+    if denegado:
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta="ninguna",
             exito=False,
-            mensaje=f"Herramienta no soportada: {herramienta}",
-            detalle={"args": _sanitizar_json(args)},
+            mensaje=denegado,
+            detalle={"codigo": "permiso_denegado", "herramienta": herramienta},
         )
 
     try:

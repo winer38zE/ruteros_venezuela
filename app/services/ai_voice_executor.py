@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
@@ -14,19 +14,28 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.tenant import obtener_empresa_tenant
 from app.models.core import (
+    CategoriaMovimientoFinanciero,
     Cliente,
     Cobro,
     EstadoVenta,
     FrecuenciaPago,
+    MetodoPagoSalida,
+    MonedaGasto,
     MonedaPago,
     Producto,
+    Proveedor,
     RolUsuario,
     TipoCliente,
+    TipoMovimientoFinanciero,
     TipoTasaUsd,
     TipoVisitaRuta,
     Usuario,
     Venta,
 )
+from app.services.ai_llm_tools import mensaje_permiso_denegado
+from app.services.ai_product_context import invalidar_cache_inventario
+from app.services.finanzas import registrar_movimiento
+from app.services.nomina_pago import calcular_nomina as calcular_nomina_servicio
 from app.schemas.core import DetalleVentaCreate
 from app.services.buro_credito import (
     actualizar_historial_comportamiento,
@@ -250,12 +259,33 @@ def ejecutar_herramienta_voz(
 ) -> tuple[bool, str, dict[str, Any], tuple[bool, str | None]]:
     empresa = obtener_empresa_tenant(db, usuario)
 
+    denegado = mensaje_permiso_denegado(usuario.rol, herramienta)
+    if denegado:
+        return _respuesta_fallo(
+            denegado,
+            {"codigo": "permiso_denegado", "herramienta": herramienta},
+        )
+
     if herramienta == "registrar_cliente":
         return _registrar_cliente(db, usuario, empresa.id, args)
     if herramienta == "crear_pedido":
         return _crear_pedido(db, usuario, empresa.id, args)
     if herramienta == "registrar_cobro":
         return _registrar_cobro(db, usuario, empresa.id, args)
+    if herramienta == "registrar_producto_inventario":
+        return _registrar_producto_inventario(db, usuario, empresa.id, args)
+    if herramienta == "consultar_inventario":
+        return _consultar_inventario(db, empresa.id, args)
+    if herramienta == "registrar_gasto":
+        return _registrar_gasto(db, usuario, empresa.id, args)
+    if herramienta == "registrar_proveedor":
+        return _registrar_proveedor(db, usuario, empresa.id, args)
+    if herramienta == "crear_factura_proveedor":
+        return _crear_factura_proveedor(db, empresa.id, args)
+    if herramienta == "calcular_nomina":
+        return _calcular_nomina_voz(db, empresa.id, args)
+    if herramienta == "consultar_ventas_del_dia":
+        return _consultar_ventas_del_dia(db, usuario, empresa.id)
     raise HTTPException(status_code=400, detail=f"Herramienta desconocida: {herramienta}")
 
 
@@ -551,3 +581,365 @@ def _registrar_cobro(
         "monto_usd": monto,
     }
     return True, f"Cobro de ${monto:.2f} USD registrado.", detalle, wa
+
+
+def _candidatos_proveedor(db: Session, empresa_id, nombre: str) -> list[Proveedor]:
+    nombre = (nombre or "").strip()
+    if not nombre:
+        return []
+    return (
+        db.query(Proveedor)
+        .filter(
+            Proveedor.empresa_id == empresa_id,
+            Proveedor.activo.is_(True),
+            Proveedor.nombre.ilike(f"%{nombre}%"),
+        )
+        .order_by(Proveedor.nombre.asc())
+        .all()
+    )
+
+
+def _resolver_proveedor(
+    db: Session,
+    empresa_id,
+    nombre: str,
+) -> tuple[Proveedor | None, str | None]:
+    candidatos = _candidatos_proveedor(db, empresa_id, nombre)
+    if not candidatos:
+        return None, f"No encontré al proveedor «{nombre}»."
+    buscado = _fold_texto(nombre)
+    exactos = [p for p in candidatos if _fold_texto(p.nombre or "") == buscado]
+    if len(exactos) == 1:
+        return exactos[0], None
+    if len(candidatos) == 1:
+        return candidatos[0], None
+    nombres = ", ".join(p.nombre for p in candidatos[:4])
+    return None, f"Hay varios proveedores parecidos ({nombres}). Sé más específico."
+
+
+def _candidatos_empleado(db: Session, empresa_id, nombre: str) -> list[Usuario]:
+    nombre = (nombre or "").strip()
+    if not nombre:
+        return []
+    return (
+        db.query(Usuario)
+        .filter(
+            Usuario.empresa_id == empresa_id,
+            Usuario.activo.is_(True),
+            Usuario.nombre.ilike(f"%{nombre}%"),
+        )
+        .order_by(Usuario.nombre.asc())
+        .all()
+    )
+
+
+def _resolver_empleado(
+    db: Session,
+    empresa_id,
+    nombre: str,
+) -> tuple[Usuario | None, str | None]:
+    candidatos = _candidatos_empleado(db, empresa_id, nombre)
+    if not candidatos:
+        return None, f"No encontré al empleado «{nombre}»."
+    buscado = _fold_texto(nombre)
+    exactos = [u for u in candidatos if _fold_texto(u.nombre or "") == buscado]
+    if len(exactos) == 1:
+        return exactos[0], None
+    if len(candidatos) == 1:
+        return candidatos[0], None
+    nombres = ", ".join(u.nombre for u in candidatos[:4])
+    return None, f"Hay varios empleados parecidos ({nombres}). Di el nombre completo."
+
+
+def _map_categoria_gasto(categoria: str) -> CategoriaMovimientoFinanciero:
+    c = _fold_texto(categoria or "")
+    if any(k in c for k in ("combust", "gasol", "moto", "motor")):
+        return CategoriaMovimientoFinanciero.GASTO_MOTO
+    if "servic" in c:
+        return CategoriaMovimientoFinanciero.SERVICIOS_OPERATIVOS
+    return CategoriaMovimientoFinanciero.OPERACION_GENERAL
+
+
+def _map_metodo_salida(metodo: str) -> MetodoPagoSalida:
+    m = (metodo or "efectivo").lower().replace(" ", "_")
+    try:
+        return MetodoPagoSalida(m)
+    except ValueError:
+        return MetodoPagoSalida.EFECTIVO
+
+
+def _registrar_producto_inventario(
+    db: Session,
+    usuario: Usuario,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    nombre = str(args.get("nombre") or "").strip()
+    precio = float(args.get("precio_venta") or 0)
+    stock = float(args.get("stock_inicial") or 0)
+    categoria = str(args.get("categoria") or "").strip() or None
+    if not nombre:
+        return _respuesta_fallo("Indica el nombre del producto.")
+    if precio <= 0:
+        return _respuesta_fallo("Indica el precio de venta en dólares.")
+    if stock < 0:
+        return _respuesta_fallo("El stock inicial no puede ser negativo.")
+
+    dup = (
+        db.query(Producto)
+        .filter(Producto.empresa_id == empresa_id, Producto.nombre.ilike(nombre))
+        .first()
+    )
+    if dup:
+        return _respuesta_fallo(f"Ya existe un producto llamado «{dup.nombre}».")
+
+    producto = Producto(
+        nombre=nombre,
+        categoria=categoria,
+        precio_usd=precio,
+        costo_usd=0,
+        stock=int(stock),
+        stock_minimo=0,
+        empresa_id=empresa_id,
+        activo=True,
+    )
+    db.add(producto)
+    db.commit()
+    db.refresh(producto)
+    invalidar_cache_inventario(empresa_id)
+    detalle = {
+        "producto_id": str(producto.id),
+        "nombre": producto.nombre,
+        "stock": int(producto.stock or 0),
+        "precio_usd": float(producto.precio_usd),
+    }
+    return (
+        True,
+        f"Producto «{producto.nombre}» registrado con {int(stock)} unidades a ${precio:.2f} USD.",
+        detalle,
+        (False, None),
+    )
+
+
+def _consultar_inventario(
+    db: Session,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    filtro_nombre = str(args.get("nombre_producto") or "").strip()
+    q = db.query(Producto).filter(
+        Producto.empresa_id == empresa_id,
+        Producto.activo.is_(True),
+    )
+    if filtro_nombre:
+        producto, err = _resolver_producto(db, empresa_id, filtro_nombre)
+        if err or not producto:
+            return _respuesta_fallo(err or "Producto no encontrado.")
+        disp = stock_disponible(db, producto)
+        detalle = {
+            "producto_id": str(producto.id),
+            "nombre": producto.nombre,
+            "stock_disponible": disp,
+        }
+        return (
+            True,
+            f"Quedan {disp} unidades de «{producto.nombre}».",
+            detalle,
+            (False, None),
+        )
+
+    productos = q.order_by(Producto.nombre.asc()).limit(8).all()
+    total = q.count()
+    if total == 0:
+        return _respuesta_fallo("No hay productos activos en inventario.")
+    lineas = []
+    detalle_items: list[dict[str, Any]] = []
+    for p in productos:
+        disp = stock_disponible(db, p)
+        lineas.append(f"{p.nombre}: {disp}")
+        detalle_items.append({"nombre": p.nombre, "stock_disponible": disp})
+    extra = f" (mostrando {len(productos)} de {total})" if total > len(productos) else ""
+    msg = "Inventario" + extra + ": " + "; ".join(lineas) + "."
+    return True, msg, {"items": detalle_items, "total_productos": total}, (False, None)
+
+
+def _registrar_gasto(
+    db: Session,
+    usuario: Usuario,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    monto = float(args.get("monto") or 0)
+    descripcion = str(args.get("descripcion") or "").strip()
+    categoria = str(args.get("categoria_gasto") or "general").strip()
+    metodo = str(args.get("metodo_pago") or "efectivo")
+    if monto <= 0:
+        return _respuesta_fallo("Indica un monto válido para el gasto.")
+    if not descripcion:
+        return _respuesta_fallo("Indica una descripción del gasto.")
+
+    mov = registrar_movimiento(
+        db,
+        empresa_id,
+        usuario.id,
+        {
+            "tipo": TipoMovimientoFinanciero.SALIDA.value,
+            "categoria": _map_categoria_gasto(categoria).value,
+            "monto": monto,
+            "moneda": MonedaGasto.USD.value,
+            "metodo_pago": _map_metodo_salida(metodo).value,
+            "descripcion": descripcion,
+            "aprobado": usuario.rol in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR),
+        },
+    )
+    db.commit()
+    db.refresh(mov)
+    detalle = {"movimiento_id": str(mov.id), "monto_usd": float(mov.monto_usd)}
+    return (
+        True,
+        f"Gasto registrado: ${monto:.2f} USD — {descripcion}.",
+        detalle,
+        (False, None),
+    )
+
+
+def _registrar_proveedor(
+    db: Session,
+    usuario: Usuario,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    nombre = str(args.get("nombre") or "").strip()
+    telefono = str(args.get("telefono") or "").strip() or None
+    direccion = str(args.get("direccion") or "").strip() or None
+    condicion = str(args.get("condicion_pago") or "").strip()
+    if not nombre:
+        return _respuesta_fallo("Indica el nombre del proveedor.")
+
+    notas_partes: list[str] = []
+    if direccion:
+        notas_partes.append(f"Dirección: {direccion}")
+    if condicion:
+        notas_partes.append(f"Condición de pago: {condicion}")
+    notas = "\n".join(notas_partes) if notas_partes else None
+
+    existente = (
+        db.query(Proveedor)
+        .filter(Proveedor.empresa_id == empresa_id, Proveedor.nombre.ilike(nombre))
+        .first()
+    )
+    if existente and existente.activo:
+        return _respuesta_fallo(f"Ya existe el proveedor «{existente.nombre}».")
+
+    prov = Proveedor(
+        empresa_id=empresa_id,
+        nombre=nombre,
+        telefono=telefono,
+        notas=notas,
+    )
+    db.add(prov)
+    db.commit()
+    db.refresh(prov)
+    detalle = {"proveedor_id": str(prov.id), "nombre": prov.nombre}
+    return True, f"Proveedor «{prov.nombre}» registrado.", detalle, (False, None)
+
+
+def _crear_factura_proveedor(
+    db: Session,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    nombre = str(args.get("proveedor_nombre") or "").strip()
+    monto = float(args.get("monto") or 0)
+    vencimiento = str(args.get("fecha_vencimiento") or "").strip() or None
+    if monto <= 0:
+        return _respuesta_fallo("Indica el monto de la factura en dólares.")
+    prov, err = _resolver_proveedor(db, empresa_id, nombre)
+    if err or not prov:
+        return _respuesta_fallo(err or "Proveedor no encontrado.")
+
+    prov.saldo_deuda_usd = Decimal(str(prov.saldo_deuda_usd or 0)) + Decimal(str(monto))
+    nota = f"Factura por voz ${monto:.2f} USD"
+    if vencimiento:
+        nota += f", vence {vencimiento[:10]}"
+    if prov.notas:
+        prov.notas = f"{prov.notas}\n{nota}"
+    else:
+        prov.notas = nota
+    db.commit()
+    db.refresh(prov)
+    detalle = {
+        "proveedor_id": str(prov.id),
+        "monto_usd": monto,
+        "saldo_deuda_usd": float(prov.saldo_deuda_usd or 0),
+        "fecha_vencimiento": vencimiento,
+    }
+    msg = (
+        f"Factura de ${monto:.2f} USD registrada para «{prov.nombre}». "
+        f"Saldo deuda: ${float(prov.saldo_deuda_usd):.2f} USD."
+    )
+    return True, msg, detalle, (False, None)
+
+
+def _calcular_nomina_voz(
+    db: Session,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    nombre = str(args.get("nombre_empleado") or "").strip()
+    tipo_pago = str(args.get("tipo_pago") or "mixto").lower().strip()
+    monto_manual = args.get("monto")
+    emp, err = _resolver_empleado(db, empresa_id, nombre)
+    if err or not emp:
+        return _respuesta_fallo(err or "Empleado no encontrado.")
+    try:
+        resultado = calcular_nomina_servicio(
+            db,
+            empresa_id,
+            usuario_id=str(emp.id),
+            tipo_pago=tipo_pago,
+            salario_base=float(monto_manual) if monto_manual is not None else None,
+        )
+    except ValueError as exc:
+        return _respuesta_fallo(str(exc))
+
+    total_usd = float(resultado.get("total_pagar_usd") or 0)
+    total_local = float(resultado.get("total_pagar_local") or 0)
+    moneda = str(resultado.get("moneda_principal") or "USD")
+    msg = (
+        f"Nómina de «{emp.nombre}»: ${total_usd:.2f} USD "
+        f"({total_local:.2f} {moneda})."
+    )
+    detalle = {
+        "usuario_id": str(emp.id),
+        "total_pagar_usd": total_usd,
+        "total_pagar_local": total_local,
+        "calculo": resultado,
+    }
+    return True, msg, detalle, (False, None)
+
+
+def _consultar_ventas_del_dia(
+    db: Session,
+    usuario: Usuario,
+    empresa_id,
+) -> VoiceResult:
+    hoy = date.today()
+    inicio = datetime.combine(hoy, time.min)
+    fin = datetime.combine(hoy, time.max)
+    q = db.query(Venta).filter(
+        Venta.empresa_id == empresa_id,
+        Venta.fecha >= inicio,
+        Venta.fecha <= fin,
+    )
+    if usuario.rol == RolUsuario.VENDEDOR:
+        q = q.filter(Venta.vendedor_id == usuario.id)
+    ventas = q.all()
+    total = sum(float(v.total_usd or 0) for v in ventas)
+    n = len(ventas)
+    if usuario.rol == RolUsuario.VENDEDOR:
+        msg = f"Hoy vendiste ${total:.2f} USD en {n} venta(s)."
+    else:
+        msg = f"Hoy se vendió ${total:.2f} USD en {n} venta(s) en la empresa."
+    detalle = {"total_usd": total, "num_ventas": n, "fecha": hoy.isoformat()}
+    return True, msg, detalle, (False, None)
