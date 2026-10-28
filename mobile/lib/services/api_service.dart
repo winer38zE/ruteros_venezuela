@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
@@ -239,6 +240,7 @@ class ApiService {
     required String fileField,
     required List<int> bytes,
     required String filename,
+    MediaType? fileContentType,
     Duration timeout = const Duration(seconds: 60),
   }) async {
     try {
@@ -246,7 +248,14 @@ class ApiService {
       request.headers.addAll(_headers);
       request.headers.remove('Content-Type');
       request.fields.addAll(fields);
-      request.files.add(http.MultipartFile.fromBytes(fileField, bytes, filename: filename));
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          fileField,
+          bytes,
+          filename: filename,
+          contentType: fileContentType,
+        ),
+      );
       final streamed = await _client.send(request).timeout(timeout);
       final res = await http.Response.fromStream(streamed);
       return _decode(res);
@@ -351,41 +360,52 @@ class ApiService {
     if (kDebugMode && res.statusCode >= 400) {
       debugPrint('API ${res.statusCode} ${res.request?.url}: ${res.body}');
     }
-    if (res.statusCode >= 500) {
-      try {
-        final data = jsonDecode(res.body);
-        if (data is Map && data['detail'] != null) {
-          return data['detail'].toString();
-        }
-      } catch (_) {}
-      return 'No se pudo guardar. Intenta de nuevo.';
-    }
+    final parsed = _parseErrorBody(res.body);
+    if (parsed != null) return parsed;
+
     if (res.statusCode == 401) {
-      try {
-        final data = jsonDecode(res.body);
-        if (data is Map && data['detail'] != null) {
-          return data['detail'].toString();
-        }
-      } catch (_) {}
       return 'Sesión inválida. Vuelve a iniciar sesión.';
     }
-    if (res.statusCode == 502 || res.statusCode == 503 || res.statusCode == 504) {
+    if (res.statusCode == 502 ||
+        res.statusCode == 503 ||
+        res.statusCode == 504) {
       return 'Servidor no disponible, reintenta';
     }
-    try {
-      final data = jsonDecode(res.body);
-      if (data is Map) {
-        if (data['detail'] != null) {
-          return data['detail'].toString();
-        }
-        if (data['message'] != null) {
-          return data['message'].toString();
-        }
-      }
-    } catch (_) {}
+    if (res.statusCode >= 500) {
+      return 'Error del servidor (${res.statusCode}). Intenta de nuevo.';
+    }
     if (res.statusCode == 404) {
       return 'Not Found';
     }
     return 'Error ${res.statusCode}';
+  }
+
+  /// Extrae mensaje legible de respuestas FastAPI o del asistente de voz.
+  static String? _parseErrorBody(String body) {
+    if (body.isEmpty) return null;
+    try {
+      final data = jsonDecode(body);
+      if (data is! Map) return null;
+      final mensaje = data['mensaje'];
+      if (mensaje != null && mensaje.toString().trim().isNotEmpty) {
+        return mensaje.toString();
+      }
+      final message = data['message'];
+      if (message != null && message.toString().trim().isNotEmpty) {
+        return message.toString();
+      }
+      final detail = data['detail'];
+      if (detail == null) return null;
+      if (detail is String && detail.trim().isNotEmpty) return detail;
+      if (detail is List && detail.isNotEmpty) {
+        final first = detail.first;
+        if (first is Map && first['msg'] != null) {
+          return first['msg'].toString();
+        }
+      }
+      return detail.toString();
+    } catch (_) {
+      return null;
+    }
   }
 }

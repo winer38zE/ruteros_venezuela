@@ -145,6 +145,7 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
   Future<void> _stopAndSend() async {
     if (!_holding && _phase != AiVoiceUiPhase.listening) return;
     _holding = false;
+    final api = mounted ? context.read<AppState>().api : null;
     String? path;
     try {
       path = await _recorder.stop();
@@ -165,12 +166,13 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       return;
     }
 
+    if (api == null) return;
+
     setState(() {
       _phase = AiVoiceUiPhase.processing;
       _statusText = 'Procesando con IA…';
     });
 
-    final api = context.read<AppState>().api;
     final service = AiVoiceService(api);
     try {
       final result = await service.enviarAudio(File(filePath));

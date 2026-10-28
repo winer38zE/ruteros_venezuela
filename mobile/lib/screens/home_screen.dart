@@ -18,7 +18,6 @@ import 'registrar_usuario_screen.dart';
 import 'usuarios_screen.dart';
 import 'clientes_screen.dart';
 import 'tasas_screen.dart';
-import 'nomina_screen.dart';
 import 'pago_nomina_screen.dart';
 import 'panel_cobranza_screen.dart';
 import 'cartera_critica_screen.dart';
@@ -29,7 +28,7 @@ import '../widgets/unauthenticated_entry.dart';
 import 'cuenta_bancaria_empleado_screen.dart';
 import 'datos_bancarios_screen.dart';
 import 'admin_paises_reglas_screen.dart';
-import '../widgets/voice_assistant_fab.dart';
+import '../widgets/ai_voice_button_widget.dart';
 
 class _QuickAction {
   const _QuickAction({
@@ -378,7 +377,7 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       extendBody: true,
-      floatingActionButton: VoiceAssistantFab(liftAboveBottomNav: modules.isNotEmpty),
+      floatingActionButton: AIVoiceButtonWidget(liftAboveBottomNav: modules.isNotEmpty),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: FuturisticBackground(
         child: SafeArea(

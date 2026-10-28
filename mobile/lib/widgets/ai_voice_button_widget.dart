@@ -23,9 +23,10 @@ class AIVoiceButtonWidget extends StatelessWidget {
       tooltip: 'Asistente de voz',
       child: const Icon(Icons.mic_rounded, size: 28),
     );
-    if (!liftAboveBottomNav) return fab;
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    final lift = liftAboveBottomNav ? kAiVoiceFabOffsetAboveBottomNav : 16.0;
     return Padding(
-      padding: const EdgeInsets.only(bottom: kAiVoiceFabOffsetAboveBottomNav),
+      padding: EdgeInsets.only(bottom: lift + bottomInset),
       child: fab,
     );
   }

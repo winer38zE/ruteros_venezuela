@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:http_parser/http_parser.dart';
 
 import '../config/api_config.dart';
 import 'api_service.dart';
@@ -65,6 +66,7 @@ class AiVoiceService {
       fileField: 'audio',
       bytes: bytes,
       filename: name.isNotEmpty ? name : 'comando.m4a',
+      fileContentType: MediaType('audio', 'mp4'),
       timeout: const Duration(seconds: 120),
     );
     if (data is! Map<String, dynamic>) {
