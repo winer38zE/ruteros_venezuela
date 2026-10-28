@@ -5,6 +5,7 @@ import json
 import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -178,14 +179,56 @@ def _parece_telefono(texto: str) -> bool:
     return len(digitos) >= 8
 
 
-def _parece_nombre_propio(texto: str) -> bool:
-    t = (texto or "").strip()
-    if not t or _parece_telefono(t):
-        return False
-    if len(t) > 80:
+# Alucinaciones frecuentes de Whisper con silencio, ruido o manos cerca del micrófono.
+_PALABRAS_NO_NOMBRE = frozenset(
+    {
+        "aplauso",
+        "aplausos",
+        "aplause",
+        "gracias",
+        "hola",
+        "adios",
+        "adiós",
+        "chao",
+        "sí",
+        "si",
+        "no",
+        "ok",
+        "okay",
+        "vale",
+        "listo",
+        "bueno",
+        "eh",
+        "ah",
+        "um",
+        "mmm",
+        "music",
+        "música",
+        "musica",
+        "risa",
+        "risas",
+        "subtitulos",
+        "subtítulos",
+        "subtitles",
+        "thanks",
+        "thank",
+        "you",
+    }
+)
+
+
+def _normalizar_token_nombre(texto: str) -> str:
+    s = (texto or "").strip().casefold()
+    descompuesto = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in descompuesto if not unicodedata.combining(c))
+
+
+def _es_nombre_cliente_valido(nombre: str) -> bool:
+    t = (nombre or "").strip()
+    if not t or _parece_telefono(t) or len(t) > 80:
         return False
     palabras = t.split()
-    if len(palabras) > 6:
+    if not palabras or len(palabras) > 6:
         return False
     baja = t.lower()
     if any(
@@ -202,7 +245,115 @@ def _parece_nombre_propio(texto: str) -> bool:
         )
     ):
         return False
+    tokens = [_normalizar_token_nombre(p) for p in palabras if p.strip()]
+    return all(len(tok) >= 2 and tok not in _PALABRAS_NO_NOMBRE for tok in tokens)
+
+
+def _parece_nombre_propio(texto: str) -> bool:
+    return _es_nombre_cliente_valido(texto)
+
+
+def _es_ruido_transcripcion(texto: str) -> bool:
+    t = (texto or "").strip()
+    if not t:
+        return True
+    if _parece_telefono(t):
+        return False
+    palabras = t.split()
+    if len(palabras) == 1:
+        tok = _normalizar_token_nombre(palabras[0])
+        return tok in _PALABRAS_NO_NOMBRE
+    return False
+
+
+def _transcripcion_parece_eco_asistente(texto: str) -> bool:
+    """Micrófono capturando la propia respuesta TTS del asistente."""
+    baja = (texto or "").lower()
+    if not baja:
+        return False
+    marcadores = (
+        "anotado",
+        "cuál es el teléfono",
+        "cual es el telefono",
+        "teléfono del cliente",
+        "telefono del cliente",
+        "nombre del cliente",
+        "mantén pulsado",
+        "manten pulsado",
+    )
+    return sum(1 for m in marcadores if m in baja) >= 2 or (
+        "anotado" in baja and ("teléfono" in baja or "telefono" in baja)
+    )
+
+
+def transcripcion_debe_rechazarse(texto: str) -> bool:
+    """Ruido/eco sin intención clara de negocio."""
+    if _transcripcion_parece_eco_asistente(texto):
+        return True
+    if not _es_ruido_transcripcion(texto):
+        return False
+    baja = (texto or "").lower()
+    if "registrar" in baja and "cliente" in baja:
+        return False
+    if inferir_intent_desde_texto(texto) in ("crear_pedido", "registrar_cobro"):
+        return False
     return True
+
+
+def _sanitizar_args_llm(args: dict[str, Any] | None) -> dict[str, Any]:
+    out = dict(args or {})
+    nombre = str(out.get("nombre") or "").strip()
+    if nombre and not _es_nombre_cliente_valido(nombre):
+        out.pop("nombre", None)
+    return out
+
+
+def intent_memoria_pendiente(herramienta: str | None, transcripcion: str) -> str:
+    h = (herramienta or "").strip()
+    if h in ("crear_pedido", "registrar_cliente", "registrar_cobro"):
+        return h
+    inf = inferir_intent_desde_texto(transcripcion)
+    return inf or "general"
+
+
+def parcial_memoria(intent: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    base = _sanitizar_args_llm(args)
+    if intent == "registrar_cliente":
+        return _depurar_nombre_registrar_cliente(base)
+    return base
+
+
+def _debe_abandonar_registro_cliente(transcripcion: str, herramienta: str | None) -> bool:
+    if herramienta in ("crear_pedido", "registrar_cobro"):
+        return True
+    otro = inferir_intent_desde_texto(transcripcion)
+    if otro in ("crear_pedido", "registrar_cobro"):
+        return True
+    baja = (transcripcion or "").lower()
+    if any(
+        x in baja
+        for x in (
+            "cancelar",
+            "cancela",
+            "olvida",
+            "olvidar",
+            "no quiero",
+            "dejalo",
+            "déjalo",
+            "otra cosa",
+            "nuevo pedido",
+        )
+    ):
+        return True
+    return False
+
+
+def _depurar_nombre_registrar_cliente(merged: dict[str, Any]) -> dict[str, Any]:
+    out = dict(merged)
+    nombre = str(out.get("nombre") or "").strip()
+    if nombre and not _es_nombre_cliente_valido(nombre):
+        out.pop("nombre", None)
+    return out
 
 
 def enriquecer_args_desde_turno(
@@ -225,8 +376,13 @@ def enriquecer_args_desde_turno(
         if not out.get("telefono") and _parece_telefono(texto):
             digitos = re.sub(r"\D", "", texto)
             out["telefono"] = digitos[-11:] if len(digitos) > 11 else digitos
-        if not out.get("nombre") and _parece_nombre_propio(texto):
+        esperando_solo_telefono = bool(str(out.get("nombre") or "").strip()) and not str(
+            out.get("telefono") or ""
+        ).strip()
+        if not out.get("nombre") and _es_nombre_cliente_valido(texto):
             out["nombre"] = texto.strip()
+        elif esperando_solo_telefono and _es_ruido_transcripcion(texto):
+            pass
         m_nom = re.search(
             r"(?:registrar\s+)?cliente\s+(?:llamado\s+)?"
             r"([A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*){0,3})"
@@ -236,9 +392,9 @@ def enriquecer_args_desde_turno(
         )
         if m_nom and not out.get("nombre"):
             candidato = m_nom.group(1).strip().strip(",")
-            if _parece_nombre_propio(candidato):
+            if _es_nombre_cliente_valido(candidato):
                 out["nombre"] = candidato
-        if not out.get("nombre"):
+        if not out.get("nombre") and not _transcripcion_parece_eco_asistente(texto):
             m_nom2 = re.search(
                 r"(?:nombre|cliente)\s+(?:es\s+)?"
                 r"([A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*){0,3})"
@@ -248,7 +404,7 @@ def enriquecer_args_desde_turno(
             )
             if m_nom2:
                 candidato = m_nom2.group(1).strip().strip(",")
-                if _parece_nombre_propio(candidato):
+                if _es_nombre_cliente_valido(candidato):
                     out["nombre"] = candidato
         m_dir = re.search(
             r"(?:direcci[oó]n|vive en|ubicado en)\s+(?:es\s+)?(.{5,120})",
@@ -269,11 +425,20 @@ def campos_faltantes_registrar_cliente(args: dict[str, Any]) -> list[str]:
     return faltan
 
 
-def mensaje_pendiente_registrar_cliente(args: dict[str, Any]) -> str:
+def mensaje_pendiente_registrar_cliente(
+    args: dict[str, Any],
+    *,
+    telefono_no_entendido: bool = False,
+) -> str:
     nombre = str(args.get("nombre") or "").strip()
     if not nombre:
         return "¿Cuál es el nombre del cliente?"
     if not str(args.get("telefono") or "").strip():
+        if telefono_no_entendido:
+            return (
+                f"Tengo el nombre «{nombre}». "
+                "No escuché bien el teléfono: di solo los números, por ejemplo 04141234567."
+            )
         return f"Nombre «{nombre}» anotado. ¿Cuál es el teléfono del cliente?"
     return "Listo para registrar. Procesando…"
 
@@ -307,15 +472,34 @@ def _continuar_registrar_cliente(
     args: dict[str, Any],
     transcripcion: str,
 ) -> tuple[str, dict[str, Any], str | None, bool]:
+    if _transcripcion_parece_eco_asistente(transcripcion):
+        limpiar(uid)
+        return (
+            None,
+            {},
+            "Se grabó la voz del asistente o un ruido. Espera a que termine de hablar y dicta tu orden.",
+            False,
+        )
+
     base = ses.partial if ses else {}
     merged = enriquecer_args_desde_turno(
         "registrar_cliente",
         transcripcion,
-        fusionar_args(base, args),
+        fusionar_args(base, _sanitizar_args_llm(args)),
     )
+    merged = _depurar_nombre_registrar_cliente(merged)
     faltan = campos_faltantes_registrar_cliente(merged)
     if faltan:
-        msg = mensaje_pendiente_registrar_cliente(merged)
+        telefono_ruido = (
+            "nombre" not in faltan
+            and "telefono" in faltan
+            and _es_ruido_transcripcion(transcripcion)
+            and not _parece_telefono(transcripcion)
+        )
+        msg = mensaje_pendiente_registrar_cliente(
+            merged,
+            telefono_no_entendido=telefono_ruido,
+        )
         actualizar_parcial_sesion(uid, "registrar_cliente", merged, transcripcion)
         return "registrar_cliente", merged, msg, False
     limpiar(uid)
@@ -338,11 +522,22 @@ def preparar_ejecucion(
 
     # Sesión activa de registro: no depender de que Groq mantenga el hilo.
     if ses and ses.intent == "registrar_cliente":
-        return _continuar_registrar_cliente(uid, ses, args, transcripcion)
+        if _debe_abandonar_registro_cliente(transcripcion, herramienta):
+            limpiar(uid)
+        else:
+            return _continuar_registrar_cliente(uid, ses, args, transcripcion)
 
     intent = herramienta or inferir_intent_desde_texto(transcripcion)
 
     if intent == "registrar_cliente" or herramienta == "registrar_cliente":
+        if not ses and transcripcion_debe_rechazarse(transcripcion):
+            limpiar(uid)
+            return (
+                None,
+                {},
+                "No entendí el audio. Mantén pulsado el micrófono y di tu pedido, cobro o «registrar cliente …».",
+                False,
+            )
         return _continuar_registrar_cliente(uid, ses, args, transcripcion)
 
     if herramienta:

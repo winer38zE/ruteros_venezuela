@@ -57,6 +57,13 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       lowerBound: 0.9,
       upperBound: 1.1,
     )..repeat(reverse: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reiniciarSesionServidor());
+  }
+
+  Future<void> _reiniciarSesionServidor() async {
+    if (!mounted) return;
+    final api = context.read<AppState>().api;
+    await AiVoiceService(api).reiniciarSesion();
   }
 
   @override
@@ -114,6 +121,7 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       return;
     }
     try {
+      await _responsePlayer.stop();
       if (await _recorder.isRecording()) {
         await _recorder.stop();
       }
