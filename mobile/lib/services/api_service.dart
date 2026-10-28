@@ -187,6 +187,32 @@ class ApiService {
     }
   }
 
+  /// POST JSON a URL absoluta (p. ej. `/api/ai/...` fuera de `/api/v1`).
+  Future<dynamic> postAbsolute(
+    String absoluteUrl,
+    Map<String, dynamic> body, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    try {
+      final res = await _client
+          .post(
+            Uri.parse(absoluteUrl),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(timeout);
+      return _decode(res);
+    } on SocketException {
+      throw ApiException(0, 'Sin conexión. Verifica internet y el servidor.');
+    } on TimeoutException {
+      throw ApiException(0, 'Tiempo de espera agotado. Revisa tu conexión.');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(0, 'Error de red: $e');
+    }
+  }
+
   Future<dynamic> post(
     String path,
     Map<String, dynamic> body, {

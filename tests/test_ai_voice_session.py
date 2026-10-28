@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from app.services.ai_voice_session import (
+    transcripcion_debe_rechazarse,
+    _transcripcion_parece_eco_asistente,
     campos_faltantes_registrar_cliente,
     enriquecer_args_desde_turno,
     fusionar_args,
@@ -11,6 +13,7 @@ from app.services.ai_voice_session import (
     mensaje_pendiente_registrar_cliente,
     preparar_ejecucion,
     registrar_intercambio,
+    _es_nombre_cliente_valido,
 )
 
 
@@ -90,6 +93,54 @@ def test_solo_telefono_con_sesion_activa_no_pierde_nombre():
     assert listo is True
     assert args["nombre"] == "Edwuar Cárdenas"
     assert "04141234567" in str(args["telefono"])
+    limpiar(uid)
+
+
+def test_eco_tts_no_se_toma_como_nombre():
+    eco = "Nombre aplauso anotado cuál es el teléfono del cliente"
+    assert _transcripcion_parece_eco_asistente(eco)
+    assert transcripcion_debe_rechazarse(eco)
+    merged = enriquecer_args_desde_turno("registrar_cliente", eco, {})
+    assert not merged.get("nombre")
+
+
+def test_aplauso_no_se_toma_como_nombre():
+    assert not _es_nombre_cliente_valido("aplauso")
+    merged = enriquecer_args_desde_turno("registrar_cliente", "aplauso", {})
+    assert not merged.get("nombre")
+
+
+def test_ruido_con_nombre_pendiente_pide_telefono_claro():
+    uid = "usr-test-aplauso"
+    limpiar(uid)
+    registrar_intercambio(
+        uid,
+        intent="registrar_cliente",
+        partial={"nombre": "María"},
+        transcripcion_usuario="Registrar cliente María",
+        respuesta_asistente="¿Teléfono?",
+    )
+    _, args, msg, listo = preparar_ejecucion(uid, None, {}, "aplauso", None)
+    assert listo is False
+    assert args.get("nombre") == "María"
+    assert "teléfono" in msg.lower()
+    assert "aplauso" not in msg.lower()
+    limpiar(uid)
+
+
+def test_sesion_registro_cede_a_pedido():
+    uid = "usr-test-pedido"
+    limpiar(uid)
+    preparar_ejecucion(uid, None, {}, "Registrar cliente Pedro", None)
+    h, args, msg, listo = preparar_ejecucion(
+        uid,
+        "crear_pedido",
+        {"cliente_nombre": "Ana", "productos": [{"nombre": "arroz", "cantidad": 1}]},
+        "Pedido para Ana arroz uno",
+        None,
+    )
+    assert listo is True
+    assert h == "crear_pedido"
     limpiar(uid)
 
 

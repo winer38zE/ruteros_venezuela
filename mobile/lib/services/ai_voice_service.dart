@@ -56,6 +56,17 @@ class AiVoiceService {
 
   final ApiService _api;
 
+  /// Olvida turnos pendientes en el servidor (al abrir el modal de voz).
+  Future<void> reiniciarSesion() async {
+    try {
+      await _api.postAbsolute('${ApiConfig.serverOrigin}/api/ai/reiniciar-sesion', const {});
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('AI voz reiniciar sesión: $e');
+      }
+    }
+  }
+
   Future<AiVoiceCommandResult> enviarAudio(File file) async {
     final bytes = await file.readAsBytes();
     final name = file.path.split(Platform.pathSeparator).last;

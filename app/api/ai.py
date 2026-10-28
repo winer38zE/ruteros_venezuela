@@ -21,15 +21,23 @@ from app.services.ai_tts import sintetizar_voz_base64
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
 from app.services.ai_voice_session import (
     historial_mensajes_para_llm,
+    intent_memoria_pendiente,
     limpiar as limpiar_sesion_voz,
+    obtener as obtener_sesion_voz,
+    parcial_memoria,
     preparar_ejecucion,
     registrar_intercambio,
     texto_contexto_para_llm,
+    transcripcion_debe_rechazarse,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_MENSAJE_AUDIO_NO_ENTENDIDO = (
+    "No entendí el audio. Mantén pulsado el micrófono y di tu pedido, cobro o «registrar cliente …»."
+)
 
 _HERRAMIENTAS_VALIDAS = frozenset(
     {"crear_pedido", "registrar_cliente", "registrar_cobro", "ninguna"}
@@ -99,6 +107,15 @@ _MIME_PERMITIDOS = {
     "audio/ogg",
     "application/octet-stream",
 }
+
+
+@router.post("/reiniciar-sesion")
+async def reiniciar_sesion_voz(
+    usuario: Usuario = Depends(require_ruta_o_superior),
+):
+    """Olvida turnos pendientes (p. ej. al abrir de nuevo el modal de voz)."""
+    limpiar_sesion_voz(str(usuario.id))
+    return {"ok": True}
 
 
 @router.post("/audio-comando", response_model=AiAudioComandoResponse)
@@ -176,6 +193,24 @@ async def _procesar_audio_comando(
         )
 
     uid = str(usuario.id)
+
+    if transcripcion_debe_rechazarse(transcripcion):
+        ses_prev = obtener_sesion_voz(uid)
+        en_registro_con_nombre = bool(
+            ses_prev
+            and ses_prev.intent == "registrar_cliente"
+            and str((ses_prev.partial or {}).get("nombre") or "").strip()
+        )
+        if not en_registro_con_nombre:
+            limpiar_sesion_voz(uid)
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta="ninguna",
+                exito=False,
+                mensaje=_MENSAJE_AUDIO_NO_ENTENDIDO,
+                detalle={"codigo": "audio_no_entendido"},
+            )
+
     partes_contexto = []
     if inventario.consulta_ok:
         bloque_inv = inventario.bloque_inventario_llm()
@@ -214,17 +249,27 @@ async def _procesar_audio_comando(
         msg_usuario = (
             mensaje_pendiente or mensaje_libre or "Necesito un dato más para continuar."
         )
-        intent_guard = (herramienta or "registrar_cliente").strip()
+        intent_guard = intent_memoria_pendiente(herramienta, transcripcion)
         herramienta_resp = _normalizar_herramienta(herramienta)
-        if herramienta_resp == "ninguna":
-            herramienta_resp = "registrar_cliente"
-        registrar_intercambio(
-            uid,
-            intent=intent_guard,
-            partial=args or {},
-            transcripcion_usuario=transcripcion,
-            respuesta_asistente=msg_usuario,
-        )
+        if intent_guard == "registrar_cliente":
+            parcial = parcial_memoria(intent_guard, args)
+            registrar_intercambio(
+                uid,
+                intent=intent_guard,
+                partial=parcial,
+                transcripcion_usuario=transcripcion,
+                respuesta_asistente=msg_usuario,
+            )
+        elif intent_guard in ("crear_pedido", "registrar_cobro"):
+            registrar_intercambio(
+                uid,
+                intent=intent_guard,
+                partial={},
+                transcripcion_usuario=transcripcion,
+                respuesta_asistente=msg_usuario,
+            )
+        else:
+            limpiar_sesion_voz(uid)
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta=herramienta_resp,
@@ -232,7 +277,7 @@ async def _procesar_audio_comando(
             mensaje=msg_usuario,
             detalle={
                 "codigo": "flujo_pendiente",
-                "parcial": _sanitizar_json(args or {}),
+                "parcial": _sanitizar_json(parcial_memoria(intent_guard, args)),
                 "intent": intent_guard,
             },
         )
