@@ -63,6 +63,8 @@ def test_audio_comando_flujo_ok(client, usuario_voz):
                 "app.api.ai.ejecutar_herramienta_voz",
                 return_value=(True, "Cliente Juan registrado.", {"cliente_id": "c1"}, (False, None)),
             ),
+            patch("app.api.ai.requiere_confirmacion", return_value=False),
+            patch("app.api.ai.registrar_orden_voz"),
             patch("app.api.ai.sintetizar_voz_base64", return_value=None),
         ):
             res = client.post(

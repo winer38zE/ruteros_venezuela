@@ -196,32 +196,53 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "calcular_nomina",
-            "description": "Calcula nómina de un empleado (salario, comisiones, totales).",
+            "name": "consultar_ventas_del_dia",
+            "description": "Total vendido hoy (USD) y cantidad de ventas.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_clientes_deuda",
+            "description": (
+                "Lista clientes con saldo pendiente de cobro (cartera). "
+                "Opcional nombre_cliente para filtrar."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "nombre_empleado": {"type": "string"},
-                    "monto": {
-                        "type": "number",
-                        "description": "Opcional: salario base manual en moneda local",
-                    },
-                    "tipo_pago": {
+                    "nombre_cliente": {
                         "type": "string",
-                        "enum": ["salario_basico", "comision", "mixto"],
-                        "description": "Default mixto",
+                        "description": "Opcional; filtra por nombre",
                     },
                 },
-                "required": ["nombre_empleado"],
+                "required": [],
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "consultar_ventas_del_dia",
-            "description": "Total vendido hoy (USD) y cantidad de ventas.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "name": "solicitar_reporte",
+            "description": (
+                "Solicita un reporte operativo (n8n lo envía al dueño por WhatsApp o correo). "
+                "No indiques destino ni número."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo": {
+                        "type": "string",
+                        "enum": ["ventas_hoy", "cobros_hoy", "inventario_bajo"],
+                    },
+                    "canal": {
+                        "type": "string",
+                        "enum": ["whatsapp", "correo"],
+                    },
+                },
+                "required": ["tipo", "canal"],
+            },
         },
     },
 ]
@@ -230,31 +251,58 @@ HERRAMIENTAS_VOZ_TODAS: frozenset[str] = frozenset(
     t["function"]["name"] for t in HERRAMIENTAS_OPENAI
 )
 
-HERRAMIENTAS_VOZ_RUTA: frozenset[str] = frozenset(
+MENSAJE_PERMISO_ROL = "Eso no está disponible para tu rol."
+
+MENSAJE_CONFUSION_VOZ = (
+    "No entendí bien. ¿Quieres registrar un cliente, una venta, un cobro o consultar inventario?"
+)
+
+_HERRAMIENTAS_OPERATIVAS = frozenset(
+    t["function"]["name"]
+    for t in HERRAMIENTAS_OPENAI
+    if t["function"]["name"] != "solicitar_reporte"
+)
+
+HERRAMIENTAS_VOZ_DUENO: frozenset[str] = _HERRAMIENTAS_OPERATIVAS | frozenset({"solicitar_reporte"})
+
+HERRAMIENTAS_VOZ_VENDEDOR: frozenset[str] = frozenset(
     {
         "crear_pedido",
         "registrar_cliente",
-        "registrar_cobro",
-        "consultar_inventario",
+        "consultar_ventas_del_dia",
     }
 )
 
-MENSAJE_CONFUSION_VOZ = (
-    "No entendí bien. ¿Quieres que registre un gasto, un cliente o consultes el inventario?"
+HERRAMIENTAS_VOZ_COBRADOR: frozenset[str] = frozenset(
+    {
+        "registrar_cobro",
+        "consultar_clientes_deuda",
+    }
 )
 
-_ACCION_POR_HERRAMIENTA: dict[str, str] = {
-    "registrar_producto_inventario": "registrar productos en inventario",
-    "registrar_gasto": "registrar gastos",
-    "registrar_proveedor": "crear proveedores",
-    "crear_factura_proveedor": "registrar facturas de proveedor",
-    "calcular_nomina": "calcular nómina",
-    "consultar_ventas_del_dia": "consultar ventas del día",
-    "crear_pedido": "crear pedidos",
-    "registrar_cliente": "registrar clientes",
-    "registrar_cobro": "registrar cobros",
-    "consultar_inventario": "consultar inventario",
-}
+HERRAMIENTAS_VOZ_ADMINISTRADOR: frozenset[str] = frozenset(
+    {
+        "registrar_producto_inventario",
+        "consultar_inventario",
+        "consultar_ventas_del_dia",
+    }
+)
+
+_MAPA_HERRAMIENTAS_POR_ROL: dict[Any, frozenset[str]] = {}
+
+
+def _mapa_herramientas_por_rol() -> dict[Any, frozenset[str]]:
+    from app.models.core import RolUsuario
+
+    global _MAPA_HERRAMIENTAS_POR_ROL
+    if not _MAPA_HERRAMIENTAS_POR_ROL:
+        _MAPA_HERRAMIENTAS_POR_ROL = {
+            RolUsuario.DUENO: HERRAMIENTAS_VOZ_DUENO,
+            RolUsuario.VENDEDOR: HERRAMIENTAS_VOZ_VENDEDOR,
+            RolUsuario.COBRADOR: HERRAMIENTAS_VOZ_COBRADOR,
+            RolUsuario.ADMINISTRADOR: HERRAMIENTAS_VOZ_ADMINISTRADOR,
+        }
+    return _MAPA_HERRAMIENTAS_POR_ROL
 
 
 def _normalizar_rol(rol: Any) -> Any:
@@ -272,14 +320,10 @@ def _normalizar_rol(rol: Any) -> Any:
 
 
 def herramientas_permitidas_para_rol(rol: Any) -> frozenset[str]:
-    from app.models.core import RolUsuario
-
     r = _normalizar_rol(rol)
-    if r in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
-        return HERRAMIENTAS_VOZ_TODAS
-    if r in (RolUsuario.VENDEDOR, RolUsuario.COBRADOR):
-        return HERRAMIENTAS_VOZ_RUTA
-    return HERRAMIENTAS_VOZ_RUTA
+    if r is None:
+        return frozenset()
+    return _mapa_herramientas_por_rol().get(r, frozenset())
 
 
 def herramientas_openai_para_rol(rol: Any) -> list[dict[str, Any]]:
@@ -307,11 +351,7 @@ def mensaje_permiso_denegado(rol: Any, herramienta: str) -> str | None:
         return None
     if herramienta in herramientas_permitidas_para_rol(rol):
         return None
-    accion = _ACCION_POR_HERRAMIENTA.get(herramienta, "realizar esa acción")
-    return (
-        f"Lo siento, tu rol de {etiqueta_rol_voz(rol)} no tiene permisos para {accion}. "
-        "Contacta al administrador."
-    )
+    return MENSAJE_PERMISO_ROL
 
 
 SYSTEM_PROMPT = f"""Eres el asistente de voz de Ruteros (ruta, Venezuela/Colombia).
@@ -326,8 +366,9 @@ Herramientas disponibles (usa la que corresponda):
 - registrar_gasto: gasto operativo (monto, descripción, categoría, método de pago).
 - registrar_proveedor: nuevo proveedor (nombre, teléfono, dirección, condición de pago).
 - crear_factura_proveedor: deuda/factura con proveedor (nombre, monto USD, fecha vencimiento opcional).
-- calcular_nomina: cálculo de pago de empleado (nombre_empleado, tipo_pago, monto opcional).
 - consultar_ventas_del_dia: total vendido hoy.
+- consultar_clientes_deuda: clientes con saldo pendiente (cobradores).
+- solicitar_reporte: reporte ventas_hoy, cobros_hoy o inventario_bajo por whatsapp o correo (solo dueño).
 
 Ejemplos:
 - "Registra un gasto de 50 dólares en combustible" → registrar_gasto.
@@ -347,6 +388,8 @@ Reglas generales:
 - Si hay CONTEXTO DE CONVERSACIÓN o historial, úsalo.
 - Si la intención es ambigua o no hay herramienta clara, NO inventes: responde exactamente:
   «{MENSAJE_CONFUSION_VOZ}» SIN llamar herramientas.
+- Las acciones sensibles se confirman en un segundo audio (sí/no); no pidas confirmación en texto libre.
+- Nómina no se gestiona por voz.
 """
 
 

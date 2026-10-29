@@ -18,8 +18,9 @@ class AiAudioComandoResponse(BaseModel):
             "registrar_gasto",
             "registrar_proveedor",
             "crear_factura_proveedor",
-            "calcular_nomina",
             "consultar_ventas_del_dia",
+            "consultar_clientes_deuda",
+            "solicitar_reporte",
             "ninguna",
         ]
     ] = None

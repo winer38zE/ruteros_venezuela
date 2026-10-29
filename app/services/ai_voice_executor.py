@@ -35,7 +35,7 @@ from app.models.core import (
 from app.services.ai_llm_tools import mensaje_permiso_denegado
 from app.services.ai_product_context import invalidar_cache_inventario
 from app.services.finanzas import registrar_movimiento
-from app.services.nomina_pago import calcular_nomina as calcular_nomina_servicio
+from app.services.ai_voice_n8n import solicitar_reporte_n8n
 from app.schemas.core import DetalleVentaCreate
 from app.services.buro_credito import (
     actualizar_historial_comportamiento,
@@ -88,11 +88,24 @@ def _tasas_default(db: Session, empresa_id) -> tuple[float, float]:
     return usd, eur
 
 
+def _ids_clientes_con_deuda(db: Session, empresa_id) -> set:
+    estados = (EstadoVenta.PENDIENTE, EstadoVenta.PARCIAL, EstadoVenta.POR_VERIFICAR)
+    filas = (
+        db.query(Venta.cliente_id)
+        .filter(Venta.empresa_id == empresa_id, Venta.estado.in_(estados))
+        .distinct()
+        .all()
+    )
+    return {f[0] for f in filas if f[0] is not None}
+
+
 def _candidatos_cliente(
     db: Session,
     empresa_id,
     nombre: str,
     telefono: str | None,
+    *,
+    solo_con_deuda: bool = False,
 ) -> list[Cliente]:
     nombre = (nombre or "").strip()
     tel = re.sub(r"\D", "", telefono or "")
@@ -109,7 +122,11 @@ def _candidatos_cliente(
         )
     if not filtros:
         return []
-    return q.filter(or_(*filtros)).order_by(Cliente.nombre.asc()).all()
+    candidatos = q.filter(or_(*filtros)).order_by(Cliente.nombre.asc()).all()
+    if solo_con_deuda:
+        con_deuda = _ids_clientes_con_deuda(db, empresa_id)
+        candidatos = [c for c in candidatos if c.id in con_deuda]
+    return candidatos
 
 
 def _elegir_cliente_entre_candidatos(
@@ -156,8 +173,17 @@ def _resolver_cliente(
     empresa_id,
     nombre: str,
     telefono: str | None,
+    *,
+    usuario: Usuario | None = None,
 ) -> tuple[Cliente | None, str | None]:
-    candidatos = _candidatos_cliente(db, empresa_id, nombre, telefono)
+    solo_deuda = bool(usuario and usuario.rol == RolUsuario.COBRADOR)
+    candidatos = _candidatos_cliente(
+        db,
+        empresa_id,
+        nombre,
+        telefono,
+        solo_con_deuda=solo_deuda,
+    )
     return _elegir_cliente_entre_candidatos(candidatos, nombre)
 
 
@@ -282,8 +308,10 @@ def ejecutar_herramienta_voz(
         return _registrar_proveedor(db, usuario, empresa.id, args)
     if herramienta == "crear_factura_proveedor":
         return _crear_factura_proveedor(db, empresa.id, args)
-    if herramienta == "calcular_nomina":
-        return _calcular_nomina_voz(db, empresa.id, args)
+    if herramienta == "consultar_clientes_deuda":
+        return _consultar_clientes_deuda(db, usuario, empresa.id, args)
+    if herramienta == "solicitar_reporte":
+        return _solicitar_reporte_voz(db, usuario, empresa.id, args)
     if herramienta == "consultar_ventas_del_dia":
         return _consultar_ventas_del_dia(db, usuario, empresa.id)
     raise HTTPException(status_code=400, detail=f"Herramienta desconocida: {herramienta}")
@@ -355,12 +383,14 @@ def _crear_pedido(
     empresa_id,
     args: dict[str, Any],
 ) -> tuple[bool, str, dict[str, Any], tuple[bool, str | None]]:
-    if usuario.rol not in (RolUsuario.VENDEDOR, RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
+    if usuario.rol not in (RolUsuario.VENDEDOR, RolUsuario.DUENO):
         raise HTTPException(status_code=403, detail="Solo vendedores pueden crear pedidos por voz.")
 
     cliente_nombre = str(args.get("cliente_nombre") or "").strip()
     telefono = str(args.get("telefono") or "").strip() or None
-    cliente, err_cliente = _resolver_cliente(db, empresa_id, cliente_nombre, telefono)
+    cliente, err_cliente = _resolver_cliente(
+        db, empresa_id, cliente_nombre, telefono, usuario=usuario
+    )
     if err_cliente or not cliente:
         return _respuesta_fallo(
             err_cliente or f"No encontré al cliente «{cliente_nombre}».",
@@ -501,7 +531,7 @@ def _registrar_cobro(
     empresa_id,
     args: dict[str, Any],
 ) -> tuple[bool, str, dict[str, Any], tuple[bool, str | None]]:
-    if usuario.rol not in (RolUsuario.COBRADOR, RolUsuario.DUENO, RolUsuario.ADMINISTRADOR):
+    if usuario.rol not in (RolUsuario.COBRADOR, RolUsuario.DUENO):
         raise HTTPException(status_code=403, detail="Solo cobradores pueden registrar cobros por voz.")
 
     nombre = str(args.get("cliente_nombre") or "").strip()
@@ -510,7 +540,9 @@ def _registrar_cobro(
     if monto <= 0:
         raise HTTPException(status_code=400, detail="Monto de cobro inválido.")
 
-    cliente, err_cliente = _resolver_cliente(db, empresa_id, nombre, telefono)
+    cliente, err_cliente = _resolver_cliente(
+        db, empresa_id, nombre, telefono, usuario=usuario
+    )
     if err_cliente or not cliente:
         return _respuesta_fallo(
             err_cliente or f"No encontré al cliente «{nombre}».",
@@ -881,42 +913,161 @@ def _crear_factura_proveedor(
     return True, msg, detalle, (False, None)
 
 
-def _calcular_nomina_voz(
+def estimar_total_pedido_voz(
     db: Session,
     empresa_id,
     args: dict[str, Any],
-) -> VoiceResult:
-    nombre = str(args.get("nombre_empleado") or "").strip()
-    tipo_pago = str(args.get("tipo_pago") or "mixto").lower().strip()
-    monto_manual = args.get("monto")
-    emp, err = _resolver_empleado(db, empresa_id, nombre)
-    if err or not emp:
-        return _respuesta_fallo(err or "Empleado no encontrado.")
-    try:
-        resultado = calcular_nomina_servicio(
-            db,
-            empresa_id,
-            usuario_id=str(emp.id),
-            tipo_pago=tipo_pago,
-            salario_base=float(monto_manual) if monto_manual is not None else None,
-        )
-    except ValueError as exc:
-        return _respuesta_fallo(str(exc))
+    usuario: Usuario,
+) -> float | None:
+    """Estima total USD para mensaje de confirmación (sin persistir)."""
+    from app.models.core import TipoCliente
 
-    total_usd = float(resultado.get("total_pagar_usd") or 0)
-    total_local = float(resultado.get("total_pagar_local") or 0)
-    moneda = str(resultado.get("moneda_principal") or "USD")
-    msg = (
-        f"Nómina de «{emp.nombre}»: ${total_usd:.2f} USD "
-        f"({total_local:.2f} {moneda})."
+    cliente_nombre = str(args.get("cliente_nombre") or "").strip()
+    telefono = str(args.get("telefono") or "").strip() or None
+    cliente, err = _resolver_cliente(
+        db, empresa_id, cliente_nombre, telefono, usuario=usuario
     )
+    if err or not cliente:
+        return None
+    items_raw = args.get("productos") or []
+    detalles: list[DetalleVentaCreate] = []
+    for item in items_raw:
+        if not isinstance(item, dict):
+            continue
+        pnombre = str(item.get("nombre") or "").strip()
+        cantidad = int(item.get("cantidad") or 1)
+        producto, err_producto = _resolver_producto(db, empresa_id, pnombre)
+        if err_producto or not producto:
+            return None
+        detalles.append(
+            DetalleVentaCreate(producto_id=str(producto.id), cantidad=cantidad, tipo_precio="detal")
+        )
+    if not detalles:
+        return None
+    tipo_cliente = cliente.tipo_cliente or TipoCliente.DETAL
+    return float(calcular_total_detalles(db, empresa_id, detalles, tipo_cliente))
+
+
+def _saldo_pendiente_venta(venta: Venta) -> Decimal:
+    cobrado = sum(Decimal(str(c.monto_usd)) for c in (venta.cobros or []))
+    return Decimal(str(venta.total_usd or 0)) - cobrado
+
+
+def _consultar_clientes_deuda(
+    db: Session,
+    usuario: Usuario,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    if usuario.rol not in (RolUsuario.COBRADOR, RolUsuario.DUENO):
+        raise HTTPException(status_code=403, detail="Consulta de cartera no disponible.")
+
+    filtro = str(args.get("nombre_cliente") or "").strip()
+    estados = (EstadoVenta.PENDIENTE, EstadoVenta.PARCIAL, EstadoVenta.POR_VERIFICAR)
+    q = (
+        db.query(Venta)
+        .options(joinedload(Venta.cliente), joinedload(Venta.cobros))
+        .filter(Venta.empresa_id == empresa_id, Venta.estado.in_(estados))
+    )
+    ventas = q.all()
+    por_cliente: dict[str, tuple[str, Decimal]] = {}
+    for v in ventas:
+        if not v.cliente:
+            continue
+        saldo = _saldo_pendiente_venta(v)
+        if saldo <= Decimal("0.01"):
+            continue
+        cid = str(v.cliente.id)
+        nombre = v.cliente.nombre or "Cliente"
+        prev = por_cliente.get(cid)
+        por_cliente[cid] = (nombre, (prev[1] if prev else Decimal("0")) + saldo)
+
+    filas = sorted(por_cliente.values(), key=lambda x: x[0].lower())
+    if filtro:
+        f = _fold_texto(filtro)
+        filas = [(n, s) for n, s in filas if f in _fold_texto(n)]
+
+    if not filas:
+        msg = "No hay clientes con deuda pendiente."
+        if filtro:
+            msg = f"No encontré clientes con deuda que coincidan con «{filtro}»."
+        return True, msg, {"clientes": []}, (False, None)
+
+    resumen = "; ".join(f"{n} (${float(s):.2f})" for n, s in filas[:8])
+    extra = f" y {len(filas) - 8} más" if len(filas) > 8 else ""
+    msg = f"Clientes con deuda: {resumen}{extra}."
     detalle = {
-        "usuario_id": str(emp.id),
-        "total_pagar_usd": total_usd,
-        "total_pagar_local": total_local,
-        "calculo": resultado,
+        "clientes": [{"nombre": n, "saldo_usd": float(s)} for n, s in filas[:20]],
+        "total_clientes": len(filas),
     }
     return True, msg, detalle, (False, None)
+
+
+def _contacto_dueno_reporte(
+    db: Session,
+    empresa_id,
+    canal: str,
+) -> tuple[str | None, str | None]:
+    dueno = (
+        db.query(Usuario)
+        .filter(
+            Usuario.empresa_id == empresa_id,
+            Usuario.rol == RolUsuario.DUENO,
+            Usuario.activo.is_(True),
+        )
+        .order_by(Usuario.fecha_creacion.asc())
+        .first()
+    )
+    if not dueno:
+        return None, "No hay un dueño activo registrado en la empresa."
+    if canal == "whatsapp":
+        tel = (dueno.telefono or "").strip()
+        if not tel:
+            return None, "El dueño no tiene teléfono registrado para WhatsApp."
+        return tel, None
+    if canal == "correo":
+        user = (dueno.username or "").strip()
+        if "@" in user:
+            return user, None
+        return None, "El dueño no tiene correo registrado."
+    return None, "Canal de reporte inválido."
+
+
+def _solicitar_reporte_voz(
+    db: Session,
+    usuario: Usuario,
+    empresa_id,
+    args: dict[str, Any],
+) -> VoiceResult:
+    if usuario.rol != RolUsuario.DUENO:
+        raise HTTPException(status_code=403, detail="Solo el dueño puede solicitar reportes.")
+
+    tipo = str(args.get("tipo") or "").strip().lower()
+    canal = str(args.get("canal") or "").strip().lower()
+    tipos_ok = ("ventas_hoy", "cobros_hoy", "inventario_bajo")
+    if tipo not in tipos_ok:
+        return _respuesta_fallo(f"Tipo de reporte inválido. Usa: {', '.join(tipos_ok)}.")
+    if canal not in ("whatsapp", "correo"):
+        return _respuesta_fallo("Canal inválido. Di whatsapp o correo.")
+
+    destino, err = _contacto_dueno_reporte(db, empresa_id, canal)
+    if err or not destino:
+        return _respuesta_fallo(err or "No pude obtener el contacto del dueño.")
+
+    ok, det = solicitar_reporte_n8n(
+        empresa_id=str(empresa_id),
+        usuario_id=str(usuario.id),
+        tipo=tipo,
+        canal=canal,
+        destino=destino,
+    )
+    if not ok:
+        return _respuesta_fallo(
+            "No se pudo solicitar el reporte. Intenta más tarde.",
+            {"codigo": "n8n_fallido", "detalle": det},
+        )
+    msg = f"Reporte {tipo.replace('_', ' ')} solicitado por {canal}. Lo recibirás en breve."
+    return True, msg, {"tipo": tipo, "canal": canal}, (False, None)
 
 
 def _consultar_ventas_del_dia(
