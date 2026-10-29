@@ -33,7 +33,6 @@ from app.services.ai_perfil_empresa import (
 )
 from app.services.ai_voice_memoria import (
     bloque_memoria_llm,
-    prompt_whisper_memoria,
     registrar_aprendizaje_exito,
 )
 from app.services.ai_voice_confirmacion import (
@@ -73,9 +72,7 @@ _MENSAJE_AUDIO_NO_ENTENDIDO = (
 
 _HERRAMIENTAS_VALIDAS = HERRAMIENTAS_VOZ_TODAS | frozenset({"ninguna"})
 
-_WHISPER_PALABRAS_CLAVE = (
-    "Ventas, inventario, productos, sábanas, cobros, gastos, proveedores, facturas, reportes."
-)
+_WHISPER_PROMPT = "sí, no, confirmo, cancela, cancelar, venta, cobro, cliente, almohada"
 
 
 def _normalizar_herramienta(nombre: str | None) -> str:
@@ -211,18 +208,13 @@ async def _procesar_audio_comando(
             detalle={"codigo": "inventario_vacio"},
         )
 
-    whisper_extra = inventario.prompt_whisper()
-    mem_whisper = prompt_whisper_memoria(db, usuario.empresa_id, usuario.id)
-    whisper_prompt = _WHISPER_PALABRAS_CLAVE
-    extras_wh = [x for x in (whisper_extra, mem_whisper) if x]
-    if extras_wh:
-        whisper_prompt = f"{_WHISPER_PALABRAS_CLAVE} {' '.join(extras_wh)}"
     try:
         transcripcion = transcribir_audio(
             contenido,
             filename=filename,
             content_type=ctype if ctype != "application/octet-stream" else "audio/mp4",
-            prompt=whisper_prompt,
+            language="es",
+            prompt=_WHISPER_PROMPT,
         )
     except AiTranscriptionError as exc:
         return _respuesta_voz(

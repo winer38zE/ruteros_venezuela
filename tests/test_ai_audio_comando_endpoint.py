@@ -80,3 +80,43 @@ def test_audio_comando_flujo_ok(client, usuario_voz):
     assert body["exito"] is True
     assert "Juan" in body["mensaje"] or body["herramienta"] == "registrar_cliente"
     assert body["transcripcion"] == "registrar cliente Juan"
+
+
+def test_audio_comando_envia_idioma_es_y_prompt_corto(client, usuario_voz):
+    db = MagicMock()
+    ctx = ContextoProductos(nombres=("almohada",), total=1, consulta_ok=True)
+
+    def override_db():
+        yield db
+
+    from app.core.db import get_db
+    from app.core.deps import require_ruta_o_superior
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[require_ruta_o_superior] = lambda: usuario_voz
+
+    audio = b"\x00" * 512
+    try:
+        with (
+            patch("app.api.ai.AI_ENABLED", True),
+            patch("app.api.ai.obtener_contexto_productos", return_value=ctx),
+            patch("app.api.ai.transcribir_audio", return_value="hola") as transcribir,
+            patch(
+                "app.api.ai.interpretar_texto_voz",
+                return_value=("ninguna", {}, "No entendí."),
+            ),
+            patch("app.api.ai.registrar_orden_voz"),
+            patch("app.api.ai.sintetizar_voz_base64", return_value=None),
+        ):
+            res = client.post(
+                "/api/ai/audio-comando",
+                files={"audio": ("comando.m4a", BytesIO(audio), "audio/mp4")},
+                headers={"X-Usuario-Id": str(usuario_voz.id)},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert res.status_code == 200, res.text
+    kwargs = transcribir.call_args.kwargs
+    assert kwargs["language"] == "es"
+    assert kwargs["prompt"] == "sí, no, confirmo, cancela, cancelar, venta, cobro, cliente, almohada"
