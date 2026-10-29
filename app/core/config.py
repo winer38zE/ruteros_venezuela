@@ -49,7 +49,8 @@ AI_WHISPER_API_KEY = os.getenv(
     "AI_WHISPER_API_KEY",
     os.getenv("AI_LLM_API_KEY", os.getenv("GROQ_API_KEY", "")),
 ).strip()
-AI_WHISPER_MODEL = os.getenv("AI_WHISPER_MODEL", "whisper-large-v3")
+# gpt-transcribe reemplaza a whisper-1 (apagado el 26 de febrero de 2027).
+AI_WHISPER_MODEL = os.getenv("AI_WHISPER_MODEL", "gpt-transcribe")
 AI_ENABLED = bool(AI_LLM_API_KEY and AI_WHISPER_API_KEY)
 
 # TTS respuestas del asistente (OpenAI tts-1; fallback gTTS si no hay clave OpenAI).

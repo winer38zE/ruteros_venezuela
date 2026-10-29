@@ -114,6 +114,26 @@ def _whisper_client() -> OpenAI:
     return OpenAI(api_key=AI_WHISPER_API_KEY, base_url=AI_WHISPER_BASE_URL)
 
 
+def _argumentos_transcripcion(
+    *,
+    model: str,
+    buffer: Any,
+    language: str,
+    prompt: str | None,
+) -> dict[str, Any]:
+    """Arma el cuerpo de /audio/transcriptions. Solo languages, nunca language."""
+    codigo = (language or "es").strip().lower() or "es"
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "file": buffer,
+        "response_format": "json",
+        "extra_body": {"languages": [codigo]},
+    }
+    if prompt and prompt.strip():
+        kwargs["prompt"] = prompt.strip()
+    return kwargs
+
+
 def transcribir_audio(
     contenido: bytes,
     *,
@@ -122,7 +142,7 @@ def transcribir_audio(
     language: str = "es",
     prompt: str | None = None,
 ) -> str:
-    """Whisper vía SDK OpenAI (compatible Groq: whisper-large-v3)."""
+    """Transcribe un audio ya grabado. La API recibe languages, no language."""
     if not contenido:
         raise AiTranscriptionError("El archivo de audio está vacío.")
 
@@ -132,17 +152,15 @@ def transcribir_audio(
     buffer.name = filename
 
     try:
-        kwargs: dict[str, Any] = {
-            "model": AI_WHISPER_MODEL,
-            "file": buffer,
-            "language": language,
-            "response_format": "json",
-        }
-        if prompt and prompt.strip():
-            kwargs["prompt"] = prompt.strip()
+        kwargs = _argumentos_transcripcion(
+            model=AI_WHISPER_MODEL,
+            buffer=buffer,
+            language=language,
+            prompt=prompt,
+        )
         result = client.audio.transcriptions.create(**kwargs)
     except Exception as exc:
-        logger.exception("Error transcribiendo con Whisper")
+        logger.exception("Error transcribiendo audio (model=%s)", AI_WHISPER_MODEL)
         raise AiTranscriptionError(_mensaje_error_whisper(exc)) from exc
 
     texto = (getattr(result, "text", None) or "").strip()
