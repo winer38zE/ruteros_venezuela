@@ -1,11 +1,10 @@
-"""Sí/no de confirmación: variantes, puntuación y un solo reintento."""
+"""Sí/no de confirmación: variantes, puntuación y frases que no son sí ni no."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
 from app.models.core import RolUsuario, Usuario
 from app.services.ai_voice_confirmacion import (
-    MENSAJE_CANCELAR_TRAS_REINTENTO,
     MENSAJE_REPETIR_CONFIRMACION,
     _TTL_SEGUNDOS,
     evaluar_respuesta_confirmacion,
@@ -58,7 +57,7 @@ def test_pendiente_dura_dos_minutos_y_no_se_borra_al_hablar():
     limpiar_confirmacion(uid)
 
 
-def test_segunda_frase_ambigua_cancela_sin_releer_el_resumen():
+def test_frase_ambigua_pide_si_o_no_sin_releer_el_resumen():
     uid = "usr-confirm-loop"
     limpiar_confirmacion(uid)
     resumen = "Voy a registrar al cliente Ana con teléfono 04141234567. ¿Confirmas?"
@@ -78,16 +77,13 @@ def test_segunda_frase_ambigua_cancela_sin_releer_el_resumen():
         activo=True,
     )
     db = MagicMock()
-    with patch("app.api.ai.registrar_orden_voz"):
+    with patch("app.api.ai.registrar_orden_voz") as auditoria:
         primera = _procesar_confirmacion_pendiente(db, usuario, uid, "eh")
-    assert primera is not None
-    assert primera.mensaje == MENSAJE_REPETIR_CONFIRMACION
-    assert "Ana" not in primera.mensaje
-    assert obtener_pendiente_confirmacion(uid) is not None
-
-    with patch("app.api.ai.registrar_orden_voz"):
         segunda = _procesar_confirmacion_pendiente(db, usuario, uid, "mmm")
-    assert segunda is not None
-    assert segunda.mensaje == MENSAJE_CANCELAR_TRAS_REINTENTO
+    assert primera is not None and segunda is not None
+    assert primera.mensaje == MENSAJE_REPETIR_CONFIRMACION
+    assert segunda.mensaje == MENSAJE_REPETIR_CONFIRMACION
+    assert "Ana" not in primera.mensaje
     assert "04141234567" not in segunda.mensaje
-    assert obtener_pendiente_confirmacion(uid) is None
+    assert obtener_pendiente_confirmacion(uid) is not None
+    auditoria.assert_not_called()

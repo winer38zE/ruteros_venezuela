@@ -36,15 +36,12 @@ from app.services.ai_voice_memoria import (
     registrar_aprendizaje_exito,
 )
 from app.services.ai_voice_confirmacion import (
-    MENSAJE_CANCELAR_TRAS_REINTENTO,
     MENSAJE_REPETIR_CONFIRMACION,
-    anotar_reintento_confirmacion,
     construir_resumen_confirmacion,
     evaluar_respuesta_confirmacion,
     guardar_pendiente_confirmacion,
     limpiar_confirmacion,
     obtener_pendiente_confirmacion,
-    parece_nueva_intencion_negocio,
     requiere_confirmacion,
 )
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
@@ -524,38 +521,7 @@ def _procesar_confirmacion_pendiente(
         return None
 
     accion = evaluar_respuesta_confirmacion(transcripcion)
-    if accion == "ambiguo" and parece_nueva_intencion_negocio(transcripcion):
-        limpiar_confirmacion(uid)
-        registrar_orden_voz(
-            db,
-            usuario,
-            transcripcion=transcripcion,
-            herramienta=pend.herramienta,
-            parametros=pend.args,
-            resultado="cancelada",
-        )
-        return None
-
     if accion == "ambiguo":
-        if pend.reintentos >= 1:
-            limpiar_confirmacion(uid)
-            registrar_orden_voz(
-                db,
-                usuario,
-                transcripcion=transcripcion,
-                herramienta=pend.herramienta,
-                parametros=pend.args,
-                resultado="cancelada",
-            )
-            limpiar_sesion_voz(uid)
-            return _respuesta_voz(
-                transcripcion=transcripcion,
-                herramienta=pend.herramienta,
-                exito=False,
-                mensaje=MENSAJE_CANCELAR_TRAS_REINTENTO,
-                detalle={"codigo": "confirmacion_cancelada_reintento"},
-            )
-        anotar_reintento_confirmacion(uid)
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta=pend.herramienta,

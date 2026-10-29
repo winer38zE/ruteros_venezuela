@@ -156,7 +156,7 @@ def anotar_reintento_confirmacion(usuario_id: str) -> int:
         return p.reintentos
 
 
-MENSAJE_REPETIR_CONFIRMACION = "No te entendí. Di sí para confirmar o no para cancelar."
+MENSAJE_REPETIR_CONFIRMACION = "No te escuché bien. Di sí o no, o toca un botón"
 MENSAJE_CANCELAR_TRAS_REINTENTO = (
     "No entendí la respuesta. Cancelé la acción pendiente para no repetirla. "
     "Cuando quieras, dilo de nuevo."
