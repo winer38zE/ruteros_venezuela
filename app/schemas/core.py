@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict, BeforeValidator
-from typing import Annotated, Optional, List, Literal
+from typing import Annotated, Optional, List, Literal, Union
 from datetime import datetime, date
 
 RecordId = Annotated[str, BeforeValidator(lambda v: str(v))]
@@ -1099,6 +1099,12 @@ class NominaCalcularRequest(BaseModel):
     datos_extra: Optional[dict] = None
 
 
+class NominaDetalleTasasEmbedded(BaseModel):
+    """Tasas incluidas en el desglose sugerido (Venezuela)."""
+    USD_TO_VES: float
+    USD_TO_COP: float
+
+
 class NominaCalcularResponse(BaseModel):
     usuario_id: RecordId
     empleado_nombre: str
@@ -1120,7 +1126,9 @@ class NominaCalcularResponse(BaseModel):
     total_pagar_local: float
     tasa_cambio_aplicada: float
     tasas: dict[str, float | str] = Field(default_factory=dict)
-    detalles_pago: dict[str, float] = Field(default_factory=dict)
+    detalles_pago: dict[str, Union[float, NominaDetalleTasasEmbedded]] = Field(
+        default_factory=dict
+    )
     advertencia_detalle: Optional[str] = None
 
 

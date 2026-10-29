@@ -92,7 +92,7 @@ def test_login_ok_con_usuario_demo(monkeypatch):
 
     monkeypatch.setattr(
         "app.api.auth_router._autenticar_usuario_login",
-        lambda db, u, p: usuario,
+        lambda db, u, p: (usuario, 1, demo_hash),
     )
     monkeypatch.setattr(
         "app.api.auth_router._obtener_pais_activo",
@@ -123,7 +123,7 @@ def test_login_ok_con_usuario_demo(monkeypatch):
 def test_login_falla_con_clave_incorrecta(monkeypatch):
     monkeypatch.setattr(
         "app.api.auth_router._autenticar_usuario_login",
-        lambda db, u, p: None,
+        lambda db, u, p: (None, 0, ""),
     )
 
     request = MagicMock()

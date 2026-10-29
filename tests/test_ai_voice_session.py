@@ -144,6 +144,62 @@ def test_sesion_registro_cede_a_pedido():
     limpiar(uid)
 
 
+def test_turnos_crear_pedido_multiples_audios():
+    uid = "usr-test-pedido-mt"
+    limpiar(uid)
+    h, args, msg, listo = preparar_ejecucion(
+        uid, "crear_pedido", {}, "Quiero hacer una venta", None
+    )
+    assert listo is False
+    assert "cliente" in msg.lower()
+
+    h, args, msg, listo = preparar_ejecucion(
+        uid, None, {}, "Cliente Pedro", None
+    )
+    assert listo is False
+    assert args.get("cliente_nombre") == "Pedro"
+    assert "producto" in msg.lower()
+
+    h, args, msg, listo = preparar_ejecucion(
+        uid,
+        "crear_pedido",
+        {"productos": [{"nombre": "arroz", "cantidad": 2}]},
+        "2 arroz",
+        None,
+    )
+    assert listo is True
+    assert args["cliente_nombre"] == "Pedro"
+    assert args["productos"][0]["nombre"] == "arroz"
+    limpiar(uid)
+
+
+def test_turnos_registrar_cobro_multiples_audios():
+    uid = "usr-test-cobro-mt"
+    limpiar(uid)
+    h, args, msg, listo = preparar_ejecucion(
+        uid, "registrar_cobro", {}, "Registrar un cobro", None
+    )
+    assert listo is False
+    assert "cliente" in msg.lower()
+
+    h, args, msg, listo = preparar_ejecucion(uid, None, {}, "de Luis", None)
+    assert listo is False
+    assert args.get("cliente_nombre") == "Luis"
+    assert "dólar" in msg.lower() or "monto" in msg.lower()
+
+    h, args, msg, listo = preparar_ejecucion(
+        uid,
+        "registrar_cobro",
+        {"monto_usd": 50, "metodo_pago": "efectivo"},
+        "50 dólares en efectivo",
+        None,
+    )
+    assert listo is True
+    assert args["cliente_nombre"] == "Luis"
+    assert args["monto_usd"] == 50
+    limpiar(uid)
+
+
 def test_historial_mensajes_para_groq():
     uid = "usr-test-4"
     limpiar(uid)
