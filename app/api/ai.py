@@ -13,7 +13,7 @@ from app.core.config import AI_ENABLED
 from app.core.db import get_db
 from app.core.deps import require_ruta_o_superior
 from app.models.core import Usuario
-from app.schemas.ai import AiAudioComandoResponse
+from app.schemas.ai import AiAudioComandoResponse, AiConfirmacionRequest
 from app.services.ai_llm import AiLlmError, interpretar_texto_voz
 from app.services.ai_product_context import MENSAJE_INVENTARIO_VACIO, obtener_contexto_productos
 from app.services.ai_transcription import AiTranscriptionError, transcribir_audio
@@ -146,6 +146,45 @@ async def reiniciar_sesion_voz(
     limpiar_sesion_voz(uid)
     limpiar_confirmacion(uid)
     return {"ok": True}
+
+
+@router.post("/confirmacion", response_model=AiAudioComandoResponse)
+async def resolver_confirmacion_voz(
+    body: AiConfirmacionRequest,
+    usuario: Usuario = Depends(require_ruta_o_superior),
+    db=Depends(get_db),
+):
+    """Confirma o cancela la acción pendiente sin transcribir audio."""
+    if not AI_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Asistente de voz no configurado. Defina AI_LLM_API_KEY y "
+                "AI_WHISPER_API_KEY (o GROQ_API_KEY) en el servidor."
+            ),
+        )
+    uid = str(usuario.id)
+    pend = obtener_pendiente_confirmacion(uid)
+    if pend is None:
+        return _respuesta_voz(
+            transcripcion="",
+            herramienta="ninguna",
+            exito=False,
+            mensaje="No hay ninguna acción pendiente.",
+            detalle={"codigo": "sin_confirmacion"},
+        )
+    frase = "sí" if body.accion == "confirmar" else "no"
+    respuesta = _procesar_confirmacion_pendiente(db, usuario, uid, frase)
+    if respuesta is None:
+        return _respuesta_voz(
+            transcripcion="",
+            herramienta="ninguna",
+            exito=False,
+            mensaje="No hay ninguna acción pendiente.",
+            detalle={"codigo": "sin_confirmacion"},
+        )
+    respuesta.transcripcion = ""
+    return respuesta
 
 
 @router.post("/audio-comando", response_model=AiAudioComandoResponse)

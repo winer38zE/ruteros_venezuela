@@ -224,17 +224,7 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
     try {
       final result = await service.enviarAudio(File(filePath));
       if (!mounted) return;
-      final wa = result.whatsappEnviado ? ' WhatsApp enviado.' : '';
-      final codigo = result.detalle['codigo']?.toString();
-      setState(() {
-        _transcripcion = result.transcripcion;
-        _phase = result.exito ? AiVoiceUiPhase.success : AiVoiceUiPhase.error;
-        _statusText = result.exito ? '¡Listo!' : result.mensaje;
-        _resultado = result.exito ? '${result.mensaje}$wa' : result.mensaje;
-        _ultimoAudioBase64 = result.audioBase64;
-        _codigoDetalle = codigo?.isNotEmpty == true ? codigo : null;
-      });
-      unawaited(_reproducirRespuestaVoz(result.audioBase64));
+      _mostrarResultado(result);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -251,6 +241,46 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       try {
         await File(filePath).delete();
       } catch (_) {}
+    }
+  }
+
+  void _mostrarResultado(AiVoiceCommandResult result) {
+    final wa = result.whatsappEnviado ? ' WhatsApp enviado.' : '';
+    final codigo = result.detalle['codigo']?.toString();
+    setState(() {
+      _transcripcion = result.transcripcion;
+      _phase = result.exito ? AiVoiceUiPhase.success : AiVoiceUiPhase.error;
+      _statusText = result.exito ? '¡Listo!' : result.mensaje;
+      _resultado = result.exito ? '${result.mensaje}$wa' : result.mensaje;
+      _ultimoAudioBase64 = result.audioBase64;
+      _codigoDetalle = codigo?.isNotEmpty == true ? codigo : null;
+    });
+    unawaited(_reproducirRespuestaVoz(result.audioBase64));
+  }
+
+  Future<void> _resolverConfirmacion(String accion) async {
+    if (!mounted || _phase == AiVoiceUiPhase.processing) return;
+    final api = context.read<AppState>().api;
+    setState(() {
+      _phase = AiVoiceUiPhase.processing;
+      _statusText = accion == 'confirmar' ? 'Confirmando…' : 'Cancelando…';
+    });
+    try {
+      final result = await AiVoiceService(api).resolverConfirmacion(accion);
+      if (!mounted) return;
+      _mostrarResultado(result);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _phase = AiVoiceUiPhase.error;
+        _statusText = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _phase = AiVoiceUiPhase.error;
+        _statusText = 'Error de red: $e';
+      });
     }
   }
 
@@ -360,6 +390,30 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
                 onPressed: () => unawaited(_reproducirRespuestaVoz(_ultimoAudioBase64)),
                 icon: const Icon(Icons.volume_up_rounded, size: 20),
                 label: const Text('Repetir voz'),
+              ),
+            ],
+            if (_codigoDetalle == 'confirmacion_pendiente') ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _phase == AiVoiceUiPhase.processing
+                          ? null
+                          : () => unawaited(_resolverConfirmacion('confirmar')),
+                      child: const Text('Confirmar'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _phase == AiVoiceUiPhase.processing
+                          ? null
+                          : () => unawaited(_resolverConfirmacion('cancelar')),
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                ],
               ),
             ],
             const SizedBox(height: 24),

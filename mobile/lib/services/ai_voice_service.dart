@@ -67,6 +67,19 @@ class AiVoiceService {
     }
   }
 
+  /// Resuelve la confirmación pendiente en el servidor, sin grabar audio.
+  Future<AiVoiceCommandResult> resolverConfirmacion(String accion) async {
+    final data = await _api.postAbsolute(
+      '${ApiConfig.serverOrigin}/api/ai/confirmacion',
+      {'accion': accion},
+      timeout: const Duration(seconds: 120),
+    );
+    if (data is! Map<String, dynamic>) {
+      throw ApiException(0, 'Respuesta inválida del asistente de voz.');
+    }
+    return AiVoiceCommandResult.fromJson(data);
+  }
+
   Future<AiVoiceCommandResult> enviarAudio(File file) async {
     final bytes = await file.readAsBytes();
     final name = file.path.split(Platform.pathSeparator).last;
