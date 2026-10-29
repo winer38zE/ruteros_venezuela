@@ -44,9 +44,12 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
   String? _transcripcion;
   String? _resultado;
   String? _ultimoAudioBase64;
+  String? _codigoDetalle;
   bool _holding = false;
+  bool _bloqueoMicPorTts = false;
   String? _path;
   late AnimationController _pulse;
+  StreamSubscription<PlayerState>? _playerSub;
 
   @override
   void initState() {
@@ -57,17 +60,44 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       lowerBound: 0.9,
       upperBound: 1.1,
     )..repeat(reverse: true);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reiniciarSesionServidor());
+    _playerSub = _responsePlayer.onPlayerStateChanged.listen((state) {
+      final hablando = state == PlayerState.playing;
+      if (!mounted) return;
+      if (_bloqueoMicPorTts == hablando) return;
+      setState(() {
+        _bloqueoMicPorTts = hablando;
+        if (hablando) {
+          _statusText = 'Escuchando respuesta… no hables hasta que termine.';
+        } else if (_phase == AiVoiceUiPhase.idle || _phase == AiVoiceUiPhase.success) {
+          _statusText = 'Mantén pulsado el micrófono y dicta tu orden';
+        }
+      });
+    });
   }
 
   Future<void> _reiniciarSesionServidor() async {
     if (!mounted) return;
     final api = context.read<AppState>().api;
     await AiVoiceService(api).reiniciarSesion();
+    if (!mounted) return;
+    setState(() {
+      _transcripcion = null;
+      _resultado = null;
+      _codigoDetalle = null;
+      _ultimoAudioBase64 = null;
+      _phase = AiVoiceUiPhase.idle;
+      _statusText = 'Conversación nueva. Dicta tu orden.';
+    });
+  }
+
+  Future<void> _cerrarModal() async {
+    await _reiniciarSesionServidor();
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   void dispose() {
+    unawaited(_playerSub?.cancel());
     _pulse.dispose();
     _recorder.dispose();
     unawaited(_responsePlayer.dispose());
@@ -112,6 +142,14 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
 
   Future<void> _startRecording() async {
     if (_phase == AiVoiceUiPhase.processing || _holding) return;
+    if (_bloqueoMicPorTts) {
+      if (!mounted) return;
+      setState(() {
+        _phase = AiVoiceUiPhase.error;
+        _statusText = 'Espera a que el asistente termine de hablar antes de grabar.';
+      });
+      return;
+    }
     if (!await _ensureMicPermission()) {
       if (!mounted) return;
       setState(() {
@@ -186,12 +224,14 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       final result = await service.enviarAudio(File(filePath));
       if (!mounted) return;
       final wa = result.whatsappEnviado ? ' WhatsApp enviado.' : '';
+      final codigo = result.detalle['codigo']?.toString();
       setState(() {
         _transcripcion = result.transcripcion;
         _phase = result.exito ? AiVoiceUiPhase.success : AiVoiceUiPhase.error;
         _statusText = result.exito ? '¡Listo!' : result.mensaje;
         _resultado = result.exito ? '${result.mensaje}$wa' : result.mensaje;
         _ultimoAudioBase64 = result.audioBase64;
+        _codigoDetalle = codigo?.isNotEmpty == true ? codigo : null;
       });
       unawaited(_reproducirRespuestaVoz(result.audioBase64));
     } on ApiException catch (e) {
@@ -252,7 +292,8 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
                   ),
                 ),
                 IconButton(
-                  onPressed: () => Navigator.pop(context),
+                  tooltip: 'Cerrar y olvidar conversación',
+                  onPressed: () => unawaited(_cerrarModal()),
                   icon: const Icon(Icons.close_rounded),
                 ),
               ],
@@ -299,6 +340,19 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ],
+            if (_codigoDetalle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Código: $_codigoDetalle',
+                style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+              ),
+            ],
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () => unawaited(_reiniciarSesionServidor()),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Nueva conversación'),
+            ),
             if (_ultimoAudioBase64 != null && _ultimoAudioBase64!.isNotEmpty) ...[
               const SizedBox(height: 8),
               TextButton.icon(
