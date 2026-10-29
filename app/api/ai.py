@@ -26,6 +26,11 @@ from app.services.ai_llm_tools import (
 import app.services.ai_voice_models  # noqa: F401 — registra ordenes_voz en ORM
 
 from app.services.ai_voice_audit import registrar_orden_voz
+from app.services.ai_perfil_empresa import (
+    actualizar_memoria_cliente_confirmada,
+    bloque_memoria_cliente_llm,
+    bloque_perfil_llm,
+)
 from app.services.ai_voice_memoria import (
     bloque_memoria_llm,
     prompt_whisper_memoria,
@@ -312,6 +317,12 @@ async def _procesar_audio_comando(
     bloque_mem = bloque_memoria_llm(db, usuario.empresa_id, usuario.id)
     if bloque_mem:
         partes_contexto.append(bloque_mem)
+    bloque_perfil = bloque_perfil_llm(db, usuario.empresa_id)
+    if bloque_perfil:
+        partes_contexto.append(bloque_perfil)
+    bloque_cli = bloque_memoria_cliente_llm(db, usuario, transcripcion)
+    if bloque_cli:
+        partes_contexto.append(bloque_cli)
     ctx_sesion = texto_contexto_para_llm(uid)
     if ctx_sesion:
         partes_contexto.append(ctx_sesion)
@@ -709,6 +720,7 @@ def _ejecutar_y_responder(
         registrar_aprendizaje_exito(
             db, usuario.empresa_id, usuario.id, herramienta, args
         )
+        actualizar_memoria_cliente_confirmada(db, usuario, herramienta, args)
         registrar_intercambio(
             uid,
             intent=herramienta,
