@@ -317,9 +317,13 @@ def intent_memoria_pendiente(herramienta: str | None, transcripcion: str) -> str
 
 
 def parcial_memoria(intent: str, args: dict[str, Any] | None) -> dict[str, Any]:
-    base = _sanitizar_args_llm(args)
+    base = dict(args or {})
     if intent == "registrar_cliente":
-        return _depurar_nombre_registrar_cliente(base)
+        return _depurar_nombre_registrar_cliente(_sanitizar_args_llm(base))
+    if intent == "crear_pedido":
+        return _sanitizar_args_pedido(base)
+    if intent == "registrar_cobro":
+        return _sanitizar_args_cobro(base)
     return base
 
 
@@ -506,6 +510,213 @@ def _continuar_registrar_cliente(
     return "registrar_cliente", merged, None, True
 
 
+def _sanitizar_args_pedido(args: dict[str, Any] | None) -> dict[str, Any]:
+    out = dict(args or {})
+    cn = str(out.get("cliente_nombre") or out.get("nombre_cliente") or "").strip()
+    if cn:
+        out["cliente_nombre"] = cn
+        out.pop("nombre_cliente", None)
+    productos = out.get("productos")
+    if isinstance(productos, list):
+        limpios = []
+        for item in productos:
+            if not isinstance(item, dict):
+                continue
+            nombre = str(item.get("nombre") or "").strip()
+            if not nombre:
+                continue
+            cant = int(item.get("cantidad") or 1)
+            limpios.append({"nombre": nombre, "cantidad": max(1, cant)})
+        if limpios:
+            out["productos"] = limpios
+    return out
+
+
+def _extraer_productos_desde_texto(texto: str) -> list[dict[str, Any]]:
+    t = (texto or "").strip()
+    if not t:
+        return []
+    found: list[dict[str, Any]] = []
+    for m in re.finditer(
+        r"(\d+)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*){0,3})",
+        t,
+        re.I,
+    ):
+        found.append({"nombre": m.group(2).strip(), "cantidad": int(m.group(1))})
+    return found
+
+
+def enriquecer_pedido_desde_turno(
+    transcripcion: str,
+    args: dict[str, Any],
+    partial_previo: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out = fusionar_args(partial_previo or {}, _sanitizar_args_pedido(args))
+    texto = (transcripcion or "").strip()
+    if not out.get("cliente_nombre"):
+        m_cli = re.search(
+            r"(?:\bpara\s+|\bcliente\s+|\ba\s+)"
+            r"([A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*){0,3})"
+            r"(?=\s|$|,|\.)",
+            texto,
+            re.I,
+        )
+        if m_cli:
+            out["cliente_nombre"] = m_cli.group(1).strip().strip(",")
+    extra_prod = _extraer_productos_desde_texto(texto)
+    if extra_prod:
+        base = list(out.get("productos") or [])
+        out["productos"] = base + extra_prod
+    if not out.get("metodo_pago"):
+        baja = texto.lower()
+        for met in ("efectivo", "transferencia", "pago_movil", "pago móvil"):
+            if met.replace("_", " ") in baja or met in baja:
+                out["metodo_pago"] = met.replace(" ", "_")
+                break
+    return out
+
+
+def campos_faltantes_crear_pedido(args: dict[str, Any]) -> list[str]:
+    faltan: list[str] = []
+    if not str(args.get("cliente_nombre") or "").strip():
+        faltan.append("cliente_nombre")
+    productos = args.get("productos") or []
+    if not isinstance(productos, list) or not productos:
+        faltan.append("productos")
+    return faltan
+
+
+def mensaje_pendiente_crear_pedido(args: dict[str, Any]) -> str:
+    faltan = campos_faltantes_crear_pedido(args)
+    if "cliente_nombre" in faltan:
+        return "¿A qué cliente le vendes? Di el nombre."
+    if "productos" in faltan:
+        cliente = str(args.get("cliente_nombre") or "").strip()
+        pref = f"Para «{cliente}», " if cliente else ""
+        return f"{pref}¿qué productos y cantidades? Por ejemplo: 3 camisas."
+    return "Listo para registrar la venta. Procesando…"
+
+
+def _continuar_crear_pedido(
+    uid: str,
+    ses: _SesionVoz | None,
+    args: dict[str, Any],
+    transcripcion: str,
+) -> tuple[str, dict[str, Any], str | None, bool]:
+    base = ses.partial if ses else {}
+    merged = enriquecer_pedido_desde_turno(transcripcion, args, base)
+    faltan = campos_faltantes_crear_pedido(merged)
+    if faltan:
+        msg = mensaje_pendiente_crear_pedido(merged)
+        actualizar_parcial_sesion(uid, "crear_pedido", merged, transcripcion)
+        return "crear_pedido", merged, msg, False
+    limpiar(uid)
+    return "crear_pedido", merged, None, True
+
+
+def _sanitizar_args_cobro(args: dict[str, Any] | None) -> dict[str, Any]:
+    out = dict(args or {})
+    cn = str(out.get("cliente_nombre") or out.get("nombre_cliente") or "").strip()
+    if cn:
+        out["cliente_nombre"] = cn
+    if out.get("monto_usd") is None and out.get("monto") is not None:
+        out["monto_usd"] = out.pop("monto")
+    return out
+
+
+def enriquecer_cobro_desde_turno(
+    transcripcion: str,
+    args: dict[str, Any],
+    partial_previo: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out = fusionar_args(partial_previo or {}, _sanitizar_args_cobro(args))
+    texto = (transcripcion or "").strip()
+    if not out.get("cliente_nombre"):
+        m_cli = re.search(
+            r"(?:de|a|cliente)\s+"
+            r"([A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúñÑ][\w'.-]*){0,3})",
+            texto,
+            re.I,
+        )
+        if m_cli:
+            out["cliente_nombre"] = m_cli.group(1).strip()
+    if out.get("monto_usd") is None:
+        m_monto = re.search(
+            r"(\d+(?:[.,]\d{1,2})?)\s*(?:d[oó]lares|usd|\$)?",
+            texto,
+            re.I,
+        )
+        if m_monto:
+            out["monto_usd"] = float(m_monto.group(1).replace(",", "."))
+    if not out.get("metodo_pago"):
+        baja = texto.lower()
+        for met in ("efectivo", "transferencia", "pago_movil", "pago móvil", "dolar"):
+            if met.replace("_", " ") in baja or met in baja:
+                out["metodo_pago"] = "pago_movil" if "movil" in met or "móvil" in met else met
+                break
+    return out
+
+
+def campos_faltantes_registrar_cobro(args: dict[str, Any]) -> list[str]:
+    faltan: list[str] = []
+    if not str(args.get("cliente_nombre") or "").strip():
+        faltan.append("cliente_nombre")
+    if args.get("monto_usd") is None:
+        faltan.append("monto_usd")
+    if not str(args.get("metodo_pago") or "").strip():
+        faltan.append("metodo_pago")
+    return faltan
+
+
+def mensaje_pendiente_registrar_cobro(args: dict[str, Any]) -> str:
+    faltan = campos_faltantes_registrar_cobro(args)
+    if "cliente_nombre" in faltan:
+        return "¿De qué cliente es el cobro? Di el nombre."
+    if "monto_usd" in faltan:
+        cliente = str(args.get("cliente_nombre") or "").strip()
+        return f"¿Cuántos dólares cobró{' a ' + cliente if cliente else ''}?"
+    if "metodo_pago" in faltan:
+        return "¿Fue en efectivo, transferencia o pago móvil?"
+    return "Listo para registrar el cobro. Procesando…"
+
+
+def _debe_abandonar_flujo_cobro(transcripcion: str, herramienta: str | None) -> bool:
+    if herramienta in ("crear_pedido", "registrar_cliente"):
+        return True
+    otro = inferir_intent_desde_texto(transcripcion)
+    if otro in ("crear_pedido", "registrar_cliente"):
+        return True
+    baja = (transcripcion or "").lower()
+    return any(x in baja for x in ("cancelar", "cancela", "olvida", "otra cosa"))
+
+
+def _debe_abandonar_flujo_pedido(transcripcion: str, herramienta: str | None) -> bool:
+    if herramienta in ("registrar_cobro", "registrar_cliente"):
+        return True
+    otro = inferir_intent_desde_texto(transcripcion)
+    if otro in ("registrar_cobro", "registrar_cliente"):
+        return True
+    baja = (transcripcion or "").lower()
+    return any(x in baja for x in ("cancelar", "cancela", "olvida", "otra cosa"))
+
+
+def _continuar_registrar_cobro(
+    uid: str,
+    ses: _SesionVoz | None,
+    args: dict[str, Any],
+    transcripcion: str,
+) -> tuple[str, dict[str, Any], str | None, bool]:
+    base = ses.partial if ses else {}
+    merged = enriquecer_cobro_desde_turno(transcripcion, args, base)
+    faltan = campos_faltantes_registrar_cobro(merged)
+    if faltan:
+        msg = mensaje_pendiente_registrar_cobro(merged)
+        actualizar_parcial_sesion(uid, "registrar_cobro", merged, transcripcion)
+        return "registrar_cobro", merged, msg, False
+    limpiar(uid)
+    return "registrar_cobro", merged, None, True
+
+
 def preparar_ejecucion(
     usuario_id: str,
     herramienta: str | None,
@@ -520,12 +731,23 @@ def preparar_ejecucion(
     uid = str(usuario_id)
     ses = obtener(uid)
 
-    # Sesión activa de registro: no depender de que Groq mantenga el hilo.
     if ses and ses.intent == "registrar_cliente":
         if _debe_abandonar_registro_cliente(transcripcion, herramienta):
             limpiar(uid)
         else:
             return _continuar_registrar_cliente(uid, ses, args, transcripcion)
+
+    if ses and ses.intent == "crear_pedido":
+        if _debe_abandonar_flujo_pedido(transcripcion, herramienta):
+            limpiar(uid)
+        else:
+            return _continuar_crear_pedido(uid, ses, args, transcripcion)
+
+    if ses and ses.intent == "registrar_cobro":
+        if _debe_abandonar_flujo_cobro(transcripcion, herramienta):
+            limpiar(uid)
+        else:
+            return _continuar_registrar_cobro(uid, ses, args, transcripcion)
 
     intent = herramienta or inferir_intent_desde_texto(transcripcion)
 
@@ -540,6 +762,12 @@ def preparar_ejecucion(
             )
         return _continuar_registrar_cliente(uid, ses, args, transcripcion)
 
+    if intent == "crear_pedido" or herramienta == "crear_pedido":
+        return _continuar_crear_pedido(uid, ses, args, transcripcion)
+
+    if intent == "registrar_cobro" or herramienta == "registrar_cobro":
+        return _continuar_registrar_cobro(uid, ses, args, transcripcion)
+
     if herramienta:
         limpiar(uid)
         return herramienta, args, mensaje_libre, True
@@ -547,6 +775,10 @@ def preparar_ejecucion(
     if intent and inferir_intent_desde_texto(transcripcion):
         if intent == "registrar_cliente":
             return _continuar_registrar_cliente(uid, ses, args, transcripcion)
+        if intent == "crear_pedido":
+            return _continuar_crear_pedido(uid, ses, args, transcripcion)
+        if intent == "registrar_cobro":
+            return _continuar_registrar_cobro(uid, ses, args, transcripcion)
         actualizar_parcial_sesion(uid, intent, {}, transcripcion)
         return None, {}, mensaje_libre, False
 

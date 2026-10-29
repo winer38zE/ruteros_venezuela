@@ -132,7 +132,7 @@ _MIME_PERMITIDOS = {
 async def reiniciar_sesion_voz(
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
-    """Olvida turnos pendientes (p. ej. al abrir de nuevo el modal de voz)."""
+    """Olvida turnos pendientes (cerrar modal o «Nueva conversación» en la app)."""
     uid = str(usuario.id)
     limpiar_sesion_voz(uid)
     limpiar_confirmacion(uid)
@@ -229,12 +229,16 @@ async def _procesar_audio_comando(
 
     if transcripcion_debe_rechazarse(transcripcion):
         ses_prev = obtener_sesion_voz(uid)
+        en_flujo_activo = bool(
+            ses_prev
+            and ses_prev.intent in ("registrar_cliente", "crear_pedido", "registrar_cobro")
+        )
         en_registro_con_nombre = bool(
             ses_prev
             and ses_prev.intent == "registrar_cliente"
             and str((ses_prev.partial or {}).get("nombre") or "").strip()
         )
-        if not en_registro_con_nombre:
+        if not en_flujo_activo and not en_registro_con_nombre:
             limpiar_sesion_voz(uid)
             return _respuesta_voz(
                 transcripcion=transcripcion,
@@ -295,10 +299,11 @@ async def _procesar_audio_comando(
                 respuesta_asistente=msg_usuario,
             )
         elif intent_guard in ("crear_pedido", "registrar_cobro"):
+            parcial = parcial_memoria(intent_guard, args)
             registrar_intercambio(
                 uid,
                 intent=intent_guard,
-                partial={},
+                partial=parcial,
                 transcripcion_usuario=transcripcion,
                 respuesta_asistente=msg_usuario,
             )
