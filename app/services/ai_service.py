@@ -121,13 +121,17 @@ def _argumentos_transcripcion(
     language: str,
     prompt: str | None,
 ) -> dict[str, Any]:
-    """Arma el cuerpo de /audio/transcriptions. Solo languages, nunca language."""
+    """Cuerpo de /audio/transcriptions para Groq whisper-large-v3-turbo.
+
+    Admitidos: model, file, language (ISO-639-1), prompt, response_format.
+    El vocabulario de clientes y productos va en prompt, nunca en languages.
+    """
     codigo = (language or "es").strip().lower() or "es"
     kwargs: dict[str, Any] = {
         "model": model,
         "file": buffer,
+        "language": codigo,
         "response_format": "json",
-        "extra_body": {"languages": [codigo]},
     }
     if prompt and prompt.strip():
         kwargs["prompt"] = prompt.strip()
@@ -142,7 +146,7 @@ def transcribir_audio(
     language: str = "es",
     prompt: str | None = None,
 ) -> str:
-    """Transcribe un audio ya grabado. La API recibe languages, no language."""
+    """Transcribe un audio ya grabado. Groq recibe language (ISO), no languages."""
     if not contenido:
         raise AiTranscriptionError("El archivo de audio está vacío.")
 
