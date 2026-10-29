@@ -21,6 +21,7 @@ from app.core.config import (
 from app.services.ai_llm_tools import (
     MENSAJE_CONFUSION_VOZ,
     SYSTEM_PROMPT,
+    mensaje_si_ambiguo,
     herramientas_openai_para_rol,
 )
 from app.services.ai_product_context import (
@@ -257,11 +258,12 @@ def interpretar_texto_voz(
         return name, _normalizar_argumentos_herramienta(name, args), None
 
     contenido = (message.content or "").strip()
+    opciones = mensaje_si_ambiguo(texto)
     if not contenido:
-        return None, {}, MENSAJE_CONFUSION_VOZ
+        return None, {}, opciones or MENSAJE_CONFUSION_VOZ
     if len(contenido) < 120 and any(
         frag in contenido.lower()
         for frag in ("no entend", "aclara", "no estoy seguro", "¿qué deseas")
     ):
-        return None, {}, MENSAJE_CONFUSION_VOZ
-    return None, {}, contenido or MENSAJE_CONFUSION_VOZ
+        return None, {}, opciones or MENSAJE_CONFUSION_VOZ
+    return None, {}, contenido or opciones or MENSAJE_CONFUSION_VOZ

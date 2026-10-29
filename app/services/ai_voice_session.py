@@ -162,16 +162,9 @@ def fusionar_args(base: dict[str, Any], nuevos: dict[str, Any]) -> dict[str, Any
 
 
 def inferir_intent_desde_texto(texto: str) -> str | None:
-    t = (texto or "").lower()
-    if "registrar" in t and "cliente" in t:
-        return "registrar_cliente"
-    if "nuevo cliente" in t or "cliente nuevo" in t:
-        return "registrar_cliente"
-    if any(x in t for x in ("pedido", "vender", "venta", "compró", "compro")):
-        return "crear_pedido"
-    if any(x in t for x in ("cobro", "cobrar", "abono", "pago de")):
-        return "registrar_cobro"
-    return None
+    from app.services.ai_llm_tools import intencion_de_flujo
+
+    return intencion_de_flujo(texto)
 
 
 def _parece_telefono(texto: str) -> bool:

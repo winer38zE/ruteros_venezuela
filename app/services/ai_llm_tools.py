@@ -380,6 +380,58 @@ def mensaje_permiso_denegado(rol: Any, herramienta: str) -> str | None:
     return MENSAJE_PERMISO_ROL
 
 
+_GUIA_INTENCIONES = (
+    ("registrar_cliente", "registrar un cliente", ("agrega un cliente", "agregar un cliente", "nuevo cliente", "cliente nuevo")),
+    ("crear_pedido", "registrar una venta", ("le vendi", "vendi", "compro", "pedido", "vender", "venta")),
+    ("registrar_cobro", "registrar un cobro", ("me pago", "cobre", "abono", "cobro", "cobrar", "pago de")),
+    ("consultar_inventario", "consultar el inventario", ("cuanto hay de", "me queda", "tengo en inventario")),
+    ("solicitar_reporte", "enviarte el reporte", ("enviame el reporte", "envia el reporte", "mandame el reporte")),
+)
+
+
+def _fold_intencion(texto: str) -> str:
+    import unicodedata
+
+    plano = unicodedata.normalize("NFKD", (texto or "").casefold())
+    return "".join(c for c in plano if not unicodedata.combining(c))
+
+
+def intenciones_detectadas(texto: str) -> list[tuple[str, str]]:
+    """Intenciones cuyas palabras clave aparecen en la frase, sin inventar datos."""
+    t = _fold_intencion(texto)
+    if "registrar" in t and "cliente" in t:
+        encontradas = [("registrar_cliente", "registrar un cliente")]
+    else:
+        encontradas = []
+    for herramienta, etiqueta, frases in _GUIA_INTENCIONES:
+        if any(frase in t for frase in frases) and herramienta not in {h for h, _ in encontradas}:
+            encontradas.append((herramienta, etiqueta))
+    return encontradas
+
+
+def intencion_de_flujo(texto: str) -> str | None:
+    """Una sola intención de alta (cliente, venta o cobro). Si hay dos, no elige."""
+    flujos = [
+        h
+        for h, _ in intenciones_detectadas(texto)
+        if h in ("registrar_cliente", "crear_pedido", "registrar_cobro")
+    ]
+    if len(flujos) == 1:
+        return flujos[0]
+    return None
+
+
+def mensaje_si_ambiguo(texto: str) -> str | None:
+    hits = intenciones_detectadas(texto)
+    if len(hits) >= 2:
+        return f"Puede ser {hits[0][1]} o {hits[1][1]}. ¿Cuál de las dos?"
+    if len(hits) == 1 and hits[0][0] == "consultar_inventario":
+        return "¿De qué producto quieres saber cuánto hay?"
+    if len(hits) == 1 and hits[0][0] == "solicitar_reporte":
+        return "¿Te envío el reporte de ventas, de cobros o de inventario?"
+    return None
+
+
 SYSTEM_PROMPT = f"""Eres el asistente de voz de Ruteros (ruta, Venezuela/Colombia).
 Interpreta órdenes en español y llama EXACTAMENTE UNA herramienta cuando la intención sea clara.
 
@@ -396,11 +448,20 @@ Herramientas disponibles (usa la que corresponda):
 - consultar_clientes_deuda: clientes con saldo pendiente (cobradores).
 - solicitar_reporte: reporte ventas_hoy, cobros_hoy o inventario_bajo por whatsapp o correo (solo dueño).
 
+Guía de intenciones (obedece estas palabras; no inventes la que no esté):
+- "vendí", "le vendí", "compró" → crear_pedido (registrar venta).
+- "cobré", "me pagó", "abonó" → registrar_cobro.
+- "cuánto hay de", "me queda", "tengo en inventario" → consultar_inventario.
+- "agrega un cliente", "nuevo cliente" → registrar_cliente.
+- "envíame el reporte" → solicitar_reporte.
+
 Ejemplos:
 - "Registra un gasto de 50 dólares en combustible" → registrar_gasto.
 - "¿Cuánto stock queda de sábanas?" → consultar_inventario.
 - "Crea un proveedor que se llama Distribuidora XYZ" → registrar_proveedor.
 - "¿Cuánto vendí hoy?" → consultar_ventas_del_dia.
+- "Le vendí 2 sábanas a Ana" → crear_pedido.
+- "Me pagó 10 dólares" → registrar_cobro.
 
 Registro de cliente (MUY IMPORTANTE):
 - Si el historial muestra registro de cliente en curso, pide SOLO el dato faltante.
@@ -412,7 +473,9 @@ Reglas generales:
 - No inventes montos, productos ni nombres no dichos.
 - Respeta INVENTARIO DEL NEGOCIO: en crear_pedido solo productos listados.
 - Si hay CONTEXTO DE CONVERSACIÓN o historial, úsalo.
-- Si la intención es ambigua o no hay herramienta clara, NO inventes: responde exactamente:
+- Si la frase encaja con dos intenciones, NO digas que no entiendes: ofrece esas dos opciones y espera la elección.
+- Si falta un dato (cliente, producto, monto, teléfono), pídelo. Nunca inventes montos, nombres ni productos.
+- Si no reconoces ninguna intención, responde exactamente:
   «{MENSAJE_CONFUSION_VOZ}» SIN llamar herramientas.
 - Las acciones sensibles se confirman en un segundo audio (sí/no); no pidas confirmación en texto libre.
 - Nómina no se gestiona por voz.
