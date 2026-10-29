@@ -672,12 +672,15 @@ def enriquecer_cobro_desde_turno(
         )
         if m_monto:
             out["monto_usd"] = float(m_monto.group(1).replace(",", "."))
+    from app.services.lenguaje_dinero import detectar_metodo, detectar_moneda
+
+    moneda = detectar_moneda(texto)
+    if moneda:
+        out["moneda"] = moneda
     if not out.get("metodo_pago"):
-        baja = texto.lower()
-        for met in ("efectivo", "transferencia", "pago_movil", "pago móvil", "dolar"):
-            if met.replace("_", " ") in baja or met in baja:
-                out["metodo_pago"] = "pago_movil" if "movil" in met or "móvil" in met else met
-                break
+        metodo = detectar_metodo(texto)
+        if metodo:
+            out["metodo_pago"] = metodo
     return out
 
 

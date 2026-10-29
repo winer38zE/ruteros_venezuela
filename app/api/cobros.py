@@ -273,20 +273,11 @@ def registrar_cobro(
     except HTTPException:
         raise
     except IntegrityError as exc:
+        db.rollback()
         logger.warning("IntegrityError registrando cobro venta=%s", cobro.venta_id, exc_info=exc)
         raise HTTPException(
             status_code=400,
             detail="No se pudo registrar el cobro. Verifica los datos o intenta de nuevo.",
-        ) from exc
-    except Exception as exc:
-        logger.exception(
-            "Error no controlado registrando cobro venta=%s monto=%s",
-            cobro.venta_id,
-            cobro.monto_usd,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail="No se pudo registrar el cobro. Verifica los datos e intenta de nuevo.",
         ) from exc
 
 
@@ -358,10 +349,7 @@ def _registrar_cobro_interno(
     db.flush()
     _asegurar_cobro_en_lista_venta(venta, nuevo_cobro)
     recien_verificados = _actualizar_estado_venta(db, venta, nuevo_cobro, usuario_header)
-    try:
-        aplicar_abono_a_cuotas(db, venta, monto)
-    except Exception:
-        logger.exception("No se pudo aplicar abono a cuotas venta=%s", venta.id)
+    aplicar_abono_a_cuotas(db, venta, monto)
 
     if venta.cliente:
         try:
@@ -476,7 +464,7 @@ def enviar_comprobante_cobro_whatsapp(
     cliente = venta.cliente.nombre if venta.cliente else "Cliente"
     caption = armar_caption_comprobante(
         cliente,
-        f"${float(cobro.monto_usd):.2f} USD",
+        f"{float(cobro.monto_usd):.2f} dólares",
         cobro.referencia_pago,
         metodo,
     )

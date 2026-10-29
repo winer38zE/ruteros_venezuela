@@ -68,13 +68,13 @@ double abonoAMontoUsd({
 String etiquetaMoneda(String codigo) {
   switch (codigo) {
     case 'usd':
-      return 'USD';
+      return 'dólares';
     case 'ves':
-      return 'VES (Bs)';
+      return 'bolívares';
     case 'cop':
-      return 'COP';
+      return 'pesos';
     default:
-      return codigo.toUpperCase();
+      return codigo;
   }
 }
 

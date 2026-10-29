@@ -33,6 +33,7 @@ from app.models.core import (
     Venta,
 )
 from app.services.ai_llm_tools import mensaje_permiso_denegado
+from app.services.lenguaje_dinero import frase_cobro, frase_metodo, frase_monto
 from app.services.ai_product_context import invalidar_cache_inventario
 from app.services.finanzas import registrar_movimiento
 from app.services.ai_voice_n8n import solicitar_reporte_n8n
@@ -489,7 +490,7 @@ def _crear_pedido(
     msg_wa = (
         f"*Ruteros* — Pedido confirmado para {cliente.nombre}\n"
         + "\n".join(resumen_lineas)
-        + f"\n\n*Total:* ${total:.2f} USD\nMétodo: {metodo.replace('_', ' ')}"
+        + f"\n\n*Total:* {total:.2f} dólares\nMétodo: {frase_metodo(metodo)}"
     )
     tel = telefono or cliente.telefono
     wa = _whatsapp_confirmar(tel, msg_wa)
@@ -499,16 +500,16 @@ def _crear_pedido(
         "total_usd": total,
         "productos": resumen_lineas,
     }
-    return True, f"Pedido registrado por ${total:.2f} USD.", detalle, wa
+    return True, f"Pedido registrado por {total:.2f} dólares.", detalle, wa
 
 
-def _map_moneda_pago(metodo: str) -> MonedaPago:
-    m = (metodo or "").lower()
-    if m in ("transferencia",):
+def _map_moneda_pago(metodo: str, moneda: str | None = None) -> MonedaPago:
+    m = (metodo or "").lower().replace(" ", "_")
+    if "transfer" in m:
         return MonedaPago.TRANSFERENCIA
-    if m in ("pago_movil", "pago movil"):
+    if "movil" in m:
         return MonedaPago.PAGO_MOVIL
-    if m in ("bolivar", "bs", "ves"):
+    if (moneda or "").lower() in ("bolivar", "bolivares", "ves", "bs"):
         return MonedaPago.BOLIVAR
     return MonedaPago.DOLAR
 
@@ -542,6 +543,16 @@ def _registrar_cobro(
     monto = float(args.get("monto_usd") or 0)
     if monto <= 0:
         raise HTTPException(status_code=400, detail="Monto de cobro inválido.")
+    moneda_dicha = str(args.get("moneda") or "dolar")
+    monto_dicho = monto
+    if moneda_dicha in ("bolivar", "bolivares", "ves", "bs"):
+        tasa_previa, _eur_previa = _tasas_default(db, empresa_id)
+        if tasa_previa <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="No hay tasa del día para pasar bolívares a dólares.",
+            )
+        monto = round(monto / tasa_previa, 2)
 
     cliente, err_cliente = _resolver_cliente(
         db, empresa_id, nombre, telefono, usuario=usuario
@@ -561,11 +572,11 @@ def _registrar_cobro(
     if Decimal(str(monto)) > saldo + Decimal("0.01"):
         raise HTTPException(
             status_code=400,
-            detail=f"El monto excede el saldo pendiente (${float(saldo):.2f}).",
+            detail=f"El monto excede el saldo pendiente ({frase_monto(float(saldo), 'dolar')}).",
         )
 
     metodo = str(args.get("metodo_pago") or "efectivo")
-    moneda = _map_moneda_pago(metodo)
+    moneda = _map_moneda_pago(metodo, moneda_dicha)
     es_electronico = moneda in (MonedaPago.TRANSFERENCIA, MonedaPago.PAGO_MOVIL)
     tasa_usd, tasa_eur = _tasas_default(db, empresa_id)
 
@@ -600,12 +611,13 @@ def _registrar_cobro(
     db.commit()
     db.refresh(cobro)
 
+    saldo_final = float(max(saldo - Decimal(str(monto)), Decimal("0")))
+    dicho = frase_cobro(monto_dicho, moneda_dicha, metodo)
     msg_wa = (
         f"*Ruteros* — Cobro registrado\n"
         f"Cliente: {cliente.nombre}\n"
-        f"Monto: ${monto:.2f} USD\n"
-        f"Método: {metodo}\n"
-        f"Saldo venta: ${float(max(saldo - Decimal(str(monto)), Decimal('0'))):.2f} USD"
+        f"Monto: {dicho}\n"
+        f"Saldo de la venta: {frase_monto(saldo_final, 'dolar')}"
     )
     tel = telefono or cliente.telefono
     wa = _whatsapp_confirmar(tel, msg_wa)
@@ -615,7 +627,7 @@ def _registrar_cobro(
         "cliente_id": str(cliente.id),
         "monto_usd": monto,
     }
-    return True, f"Cobro de ${monto:.2f} USD registrado.", detalle, wa
+    return True, f"Cobro de {dicho} registrado.", detalle, wa
 
 
 def _candidatos_proveedor(db: Session, empresa_id, nombre: str) -> list[Proveedor]:
@@ -750,7 +762,7 @@ def _registrar_producto_inventario(
     }
     return (
         True,
-        f"Producto «{producto.nombre}» registrado con {int(stock)} unidades a ${precio:.2f} USD.",
+        f"Producto «{producto.nombre}» registrado con {int(stock)} unidades a {precio:.2f} dólares.",
         detalle,
         (False, None),
     )
@@ -832,7 +844,7 @@ def _registrar_gasto(
     detalle = {"movimiento_id": str(mov.id), "monto_usd": float(mov.monto_usd)}
     return (
         True,
-        f"Gasto registrado: ${monto:.2f} USD — {descripcion}.",
+        f"Gasto registrado: {monto:.2f} dólares — {descripcion}.",
         detalle,
         (False, None),
     )
@@ -894,7 +906,7 @@ def _crear_factura_proveedor(
         return _respuesta_fallo(err or "Proveedor no encontrado.")
 
     prov.saldo_deuda_usd = Decimal(str(prov.saldo_deuda_usd or 0)) + Decimal(str(monto))
-    nota = f"Factura por voz ${monto:.2f} USD"
+    nota = f"Factura por voz {monto:.2f} dólares"
     if vencimiento:
         nota += f", vence {vencimiento[:10]}"
     if prov.notas:
@@ -910,8 +922,8 @@ def _crear_factura_proveedor(
         "fecha_vencimiento": vencimiento,
     }
     msg = (
-        f"Factura de ${monto:.2f} USD registrada para «{prov.nombre}». "
-        f"Saldo deuda: ${float(prov.saldo_deuda_usd):.2f} USD."
+        f"Factura de {monto:.2f} dólares registrada para «{prov.nombre}». "
+        f"Saldo deuda: {float(prov.saldo_deuda_usd):.2f} dólares."
     )
     return True, msg, detalle, (False, None)
 
@@ -1092,8 +1104,8 @@ def _consultar_ventas_del_dia(
     total = sum(float(v.total_usd or 0) for v in ventas)
     n = len(ventas)
     if usuario.rol == RolUsuario.VENDEDOR:
-        msg = f"Hoy vendiste ${total:.2f} USD en {n} venta(s)."
+        msg = f"Hoy vendiste {total:.2f} dólares en {n} venta(s)."
     else:
-        msg = f"Hoy se vendió ${total:.2f} USD en {n} venta(s) en la empresa."
+        msg = f"Hoy se vendió {total:.2f} dólares en {n} venta(s) en la empresa."
     detalle = {"total_usd": total, "num_ventas": n, "fecha": hoy.isoformat()}
     return True, msg, detalle, (False, None)

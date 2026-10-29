@@ -158,9 +158,9 @@ class CobrosService {
   final ApiClient _api;
 
   static const monedasAbono = [
-    ('usd', 'Dólares (USD)'),
-    ('ves', 'Bolívares (VES)'),
-    ('cop', 'Pesos (COP)'),
+    ('usd', 'Dólares'),
+    ('ves', 'Bolívares'),
+    ('cop', 'Pesos'),
   ];
 
   static const monedas = [

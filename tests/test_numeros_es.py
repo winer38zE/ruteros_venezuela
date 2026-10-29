@@ -19,6 +19,7 @@ def test_montos_y_cantidades_a_palabras():
         == "Voy a cobrar doce dolares con cincuenta centavos"
     )
     assert numeros_a_palabras("son 20 USD") == "son veinte dolares"
+    assert numeros_a_palabras("cobré 500 bolívares") == "cobré quinientos bolivares"
 
 
 def test_telefono_se_deletrea():

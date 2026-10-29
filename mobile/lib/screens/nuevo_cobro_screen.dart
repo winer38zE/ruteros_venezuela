@@ -70,7 +70,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
     final medio = _canalCobro == 'pago_movil' ? 'pago móvil' : 'transferencia';
     final ref = _referenciaCtrl.text.trim();
     final referencia = ref.isEmpty ? '' : ' - Referencia: $ref';
-    return 'Pago por $medio - Cliente: $nombre - Monto: ${_fmt.format(_montoUsdEquivalente)} USD$referencia';
+    return 'Pago por $medio - Cliente: $nombre - Monto: ${_fmt.format(_montoUsdEquivalente)} dólares$referencia';
   }
 
   double get _montoUsdEquivalente {
@@ -153,7 +153,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'El abono equivale a ${_fmt.format(montoUsd)} USD. '
+            'El abono equivale a ${_fmt.format(montoUsd)} dólares. '
             'Máximo saldo: ${_fmt.format(_venta!.saldoPendienteUsd)}',
           ),
         ),
@@ -180,7 +180,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
       final porVerificar = cobro.estadoVenta == 'por_verificar';
       final msg = porVerificar
           ? 'Cobro registrado. La venta quedó Pagada (Por Verificar).'
-          : 'Cobro registrado: ${_fmt.format(montoUsd)} USD '
+          : 'Cobro registrado: ${_fmt.format(montoUsd)} dólares '
               '(${_fmtNum.format(_montoIngresado)} ${etiquetaMoneda(_moneda)})';
       if (_canalCobro != 'efectivo') {
         final cobros = context.read<AppState>().cobros;
@@ -300,7 +300,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                           labelText: 'Monto en ${etiquetaMoneda(_moneda)}',
                           prefixIcon: const Icon(Icons.attach_money_rounded),
                           helperText: _venta != null
-                              ? 'Saldo pendiente: ${_fmt.format(_venta!.saldoPendienteUsd)} USD'
+                              ? 'Saldo pendiente: ${_fmt.format(_venta!.saldoPendienteUsd)} dólares'
                               : null,
                           filled: true,
                           fillColor: AppColors.bgElevated.withValues(alpha: 0.5),
@@ -325,7 +325,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                '≈ ${_fmt.format(_montoUsdEquivalente)} USD se restarán del saldo',
+                                '≈ ${_fmt.format(_montoUsdEquivalente)} dólares se restarán del saldo',
                                 style: const TextStyle(
                                   color: AppColors.emerald,
                                   fontWeight: FontWeight.w800,
@@ -334,8 +334,8 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                               ),
                               if (_moneda != 'usd')
                                 Text(
-                                  'Tasa BCV: ${_fmtNum.format(_tasa!.usdBcvBs)} Bs/USD · '
-                                  'COP/USD: ${_fmtNum.format(_tasa!.copUsd)}',
+                                  'Tasa BCV: ${_fmtNum.format(_tasa!.usdBcvBs)} bolívares por dólar · '
+                                  'pesos por dólar: ${_fmtNum.format(_tasa!.copUsd)}',
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                             ],
@@ -412,7 +412,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                               Text(
                                 'BCV: ${_fmtNum.format(_tasa!.usdBcvBs)} · '
                                 'Paralelo: ${_fmtNum.format(_tasa!.usdParaleloBs)} · '
-                                'COP/USD: ${_fmtNum.format(_tasa!.copUsd)}',
+                                'pesos por dólar: ${_fmtNum.format(_tasa!.copUsd)}',
                               ),
                             ],
                           ),

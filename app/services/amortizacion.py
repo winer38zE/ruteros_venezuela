@@ -34,6 +34,9 @@ ETIQUETA_PERIODO = {
 
 
 def _d(val) -> Decimal:
+    """None es 0: PocketBase omite el default de monto_pagado_usd y Decimal('None') revienta."""
+    if val is None or val == "":
+        return Decimal("0")
     return Decimal(str(val))
 
 
