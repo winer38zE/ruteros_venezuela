@@ -26,6 +26,11 @@ from app.services.ai_llm_tools import (
 import app.services.ai_voice_models  # noqa: F401 — registra ordenes_voz en ORM
 
 from app.services.ai_voice_audit import registrar_orden_voz
+from app.services.ai_voice_memoria import (
+    bloque_memoria_llm,
+    prompt_whisper_memoria,
+    registrar_aprendizaje_exito,
+)
 from app.services.ai_voice_confirmacion import (
     construir_resumen_confirmacion,
     evaluar_respuesta_confirmacion,
@@ -197,9 +202,11 @@ async def _procesar_audio_comando(
         )
 
     whisper_extra = inventario.prompt_whisper()
+    mem_whisper = prompt_whisper_memoria(db, usuario.empresa_id, usuario.id)
     whisper_prompt = _WHISPER_PALABRAS_CLAVE
-    if whisper_extra:
-        whisper_prompt = f"{_WHISPER_PALABRAS_CLAVE} {whisper_extra}"
+    extras_wh = [x for x in (whisper_extra, mem_whisper) if x]
+    if extras_wh:
+        whisper_prompt = f"{_WHISPER_PALABRAS_CLAVE} {' '.join(extras_wh)}"
     try:
         transcripcion = transcribir_audio(
             contenido,
@@ -253,6 +260,9 @@ async def _procesar_audio_comando(
         bloque_inv = inventario.bloque_inventario_llm()
         if bloque_inv:
             partes_contexto.append(bloque_inv)
+    bloque_mem = bloque_memoria_llm(db, usuario.empresa_id, usuario.id)
+    if bloque_mem:
+        partes_contexto.append(bloque_mem)
     ctx_sesion = texto_contexto_para_llm(uid)
     if ctx_sesion:
         partes_contexto.append(ctx_sesion)
@@ -601,6 +611,9 @@ def _ejecutar_y_responder(
     )
 
     if exito:
+        registrar_aprendizaje_exito(
+            db, usuario.empresa_id, usuario.id, herramienta, args
+        )
         registrar_intercambio(
             uid,
             intent=herramienta,
