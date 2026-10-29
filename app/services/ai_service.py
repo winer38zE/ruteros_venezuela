@@ -21,7 +21,13 @@ from app.core.config import (
 from app.services.ai_llm_tools import (
     MENSAJE_CONFUSION_VOZ,
     SYSTEM_PROMPT,
+    mensaje_si_ambiguo,
     herramientas_openai_para_rol,
+)
+from app.services.ai_audio_filtro import (
+    AudioSinVoz,
+    texto_desde_verbose,
+    validar_audio_grabado,
 )
 from app.services.ai_product_context import (
     ContextoProductos,
@@ -131,7 +137,7 @@ def _argumentos_transcripcion(
         "model": model,
         "file": buffer,
         "language": codigo,
-        "response_format": "json",
+        "response_format": "verbose_json",
     }
     if prompt and prompt.strip():
         kwargs["prompt"] = prompt.strip()
@@ -149,6 +155,10 @@ def transcribir_audio(
     """Transcribe un audio ya grabado. Groq recibe language (ISO), no languages."""
     if not contenido:
         raise AiTranscriptionError("El archivo de audio está vacío.")
+    try:
+        validar_audio_grabado(contenido, filename)
+    except AudioSinVoz as exc:
+        raise AiTranscriptionError(str(exc)) from exc
 
     _ = content_type  # reservado; el SDK infiere formato por extensión del nombre
     client = _whisper_client()
@@ -167,9 +177,7 @@ def transcribir_audio(
         logger.exception("Error transcribiendo audio (model=%s)", AI_WHISPER_MODEL)
         raise AiTranscriptionError(_mensaje_error_whisper(exc)) from exc
 
-    texto = (getattr(result, "text", None) or "").strip()
-    if not texto and isinstance(result, dict):
-        texto = (result.get("text") or "").strip()
+    texto = texto_desde_verbose(result)
     if not texto:
         raise AiTranscriptionError("No se detectó voz en el audio.")
     return texto
@@ -257,11 +265,12 @@ def interpretar_texto_voz(
         return name, _normalizar_argumentos_herramienta(name, args), None
 
     contenido = (message.content or "").strip()
+    opciones = mensaje_si_ambiguo(texto)
     if not contenido:
-        return None, {}, MENSAJE_CONFUSION_VOZ
+        return None, {}, opciones or MENSAJE_CONFUSION_VOZ
     if len(contenido) < 120 and any(
         frag in contenido.lower()
         for frag in ("no entend", "aclara", "no estoy seguro", "¿qué deseas")
     ):
-        return None, {}, MENSAJE_CONFUSION_VOZ
-    return None, {}, contenido or MENSAJE_CONFUSION_VOZ
+        return None, {}, opciones or MENSAJE_CONFUSION_VOZ
+    return None, {}, contenido or opciones or MENSAJE_CONFUSION_VOZ

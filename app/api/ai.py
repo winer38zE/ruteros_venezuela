@@ -13,7 +13,7 @@ from app.core.config import AI_ENABLED
 from app.core.db import get_db
 from app.core.deps import require_ruta_o_superior
 from app.models.core import Usuario
-from app.schemas.ai import AiAudioComandoResponse
+from app.schemas.ai import AiAudioComandoResponse, AiConfirmacionRequest
 from app.services.ai_llm import AiLlmError, interpretar_texto_voz
 from app.services.ai_product_context import MENSAJE_INVENTARIO_VACIO, obtener_contexto_productos
 from app.services.ai_transcription import AiTranscriptionError, transcribir_audio
@@ -26,22 +26,28 @@ from app.services.ai_llm_tools import (
 import app.services.ai_voice_models  # noqa: F401 — registra ordenes_voz en ORM
 
 from app.services.ai_voice_audit import registrar_orden_voz
+from app.services.ai_perfil_empresa import (
+    actualizar_memoria_cliente_confirmada,
+    bloque_memoria_cliente_llm,
+    bloque_perfil_llm,
+)
 from app.services.ai_voice_memoria import (
     bloque_memoria_llm,
-    prompt_whisper_memoria,
     registrar_aprendizaje_exito,
 )
 from app.services.ai_voice_confirmacion import (
+    MENSAJE_REPETIR_CONFIRMACION,
     construir_resumen_confirmacion,
     evaluar_respuesta_confirmacion,
     guardar_pendiente_confirmacion,
     limpiar_confirmacion,
     obtener_pendiente_confirmacion,
-    parece_nueva_intencion_negocio,
     requiere_confirmacion,
 )
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
+from app.services.ai_voice_parecido import pregunta_sugerencia, sugerencia_para_args
 from app.services.ai_voice_session import (
+    actualizar_parcial_sesion,
     historial_mensajes_para_llm,
     intent_memoria_pendiente,
     limpiar as limpiar_sesion_voz,
@@ -63,9 +69,7 @@ _MENSAJE_AUDIO_NO_ENTENDIDO = (
 
 _HERRAMIENTAS_VALIDAS = HERRAMIENTAS_VOZ_TODAS | frozenset({"ninguna"})
 
-_WHISPER_PALABRAS_CLAVE = (
-    "Ventas, inventario, productos, sábanas, cobros, gastos, proveedores, facturas, reportes."
-)
+_WHISPER_PROMPT = "sí, no, confirmo, cancela, cancelar, venta, cobro, cliente, almohada"
 
 
 def _normalizar_herramienta(nombre: str | None) -> str:
@@ -144,6 +148,45 @@ async def reiniciar_sesion_voz(
     return {"ok": True}
 
 
+@router.post("/confirmacion", response_model=AiAudioComandoResponse)
+async def resolver_confirmacion_voz(
+    body: AiConfirmacionRequest,
+    usuario: Usuario = Depends(require_ruta_o_superior),
+    db=Depends(get_db),
+):
+    """Confirma o cancela la acción pendiente sin transcribir audio."""
+    if not AI_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Asistente de voz no configurado. Defina AI_LLM_API_KEY y "
+                "AI_WHISPER_API_KEY (o GROQ_API_KEY) en el servidor."
+            ),
+        )
+    uid = str(usuario.id)
+    pend = obtener_pendiente_confirmacion(uid)
+    if pend is None:
+        return _respuesta_voz(
+            transcripcion="",
+            herramienta="ninguna",
+            exito=False,
+            mensaje="No hay ninguna acción pendiente.",
+            detalle={"codigo": "sin_confirmacion"},
+        )
+    frase = "sí" if body.accion == "confirmar" else "no"
+    respuesta = _procesar_confirmacion_pendiente(db, usuario, uid, frase)
+    if respuesta is None:
+        return _respuesta_voz(
+            transcripcion="",
+            herramienta="ninguna",
+            exito=False,
+            mensaje="No hay ninguna acción pendiente.",
+            detalle={"codigo": "sin_confirmacion"},
+        )
+    respuesta.transcripcion = ""
+    return respuesta
+
+
 @router.post("/audio-comando", response_model=AiAudioComandoResponse)
 async def audio_comando(
     audio: UploadFile = File(..., description="Grabación de voz del usuario"),
@@ -201,18 +244,13 @@ async def _procesar_audio_comando(
             detalle={"codigo": "inventario_vacio"},
         )
 
-    whisper_extra = inventario.prompt_whisper()
-    mem_whisper = prompt_whisper_memoria(db, usuario.empresa_id, usuario.id)
-    whisper_prompt = _WHISPER_PALABRAS_CLAVE
-    extras_wh = [x for x in (whisper_extra, mem_whisper) if x]
-    if extras_wh:
-        whisper_prompt = f"{_WHISPER_PALABRAS_CLAVE} {' '.join(extras_wh)}"
     try:
         transcripcion = transcribir_audio(
             contenido,
             filename=filename,
             content_type=ctype if ctype != "application/octet-stream" else "audio/mp4",
-            prompt=whisper_prompt,
+            language="es",
+            prompt=_WHISPER_PROMPT,
         )
     except AiTranscriptionError as exc:
         return _respuesta_voz(
@@ -233,6 +271,50 @@ async def _procesar_audio_comando(
     )
     if resp_confirm is not None:
         return resp_confirm
+
+    herramienta_forzada: str | None = None
+    args_forzados: dict[str, Any] | None = None
+    ses_prop = obtener_sesion_voz(uid)
+    propuesta_viva = (ses_prop.partial or {}).get("_propuesta") if ses_prop else None
+    if isinstance(propuesta_viva, dict) and propuesta_viva.get("valor"):
+        accion_prop = evaluar_respuesta_confirmacion(transcripcion)
+        if accion_prop == "confirmar":
+            args_forzados = dict(propuesta_viva.get("args") or {})
+            if propuesta_viva.get("campo") == "producto":
+                productos = [dict(p) for p in (args_forzados.get("productos") or []) if isinstance(p, dict)]
+                indice = int(propuesta_viva.get("indice") or 0)
+                if indice < len(productos):
+                    productos[indice]["nombre"] = propuesta_viva["valor"]
+                args_forzados["productos"] = productos
+            else:
+                args_forzados[str(propuesta_viva["campo"])] = propuesta_viva["valor"]
+            herramienta_forzada = str(propuesta_viva.get("herramienta") or "")
+            parcial_ok = dict(ses_prop.partial)
+            parcial_ok.pop("_propuesta", None)
+            parcial_ok.update(args_forzados)
+            actualizar_parcial_sesion(uid, herramienta_forzada, parcial_ok, transcripcion)
+        elif accion_prop == "rechazar":
+            parcial_no = dict(ses_prop.partial)
+            parcial_no.pop("_propuesta", None)
+            campo = str(propuesta_viva.get("campo") or "")
+            if campo in parcial_no:
+                parcial_no.pop(campo, None)
+            actualizar_parcial_sesion(uid, str(propuesta_viva.get("herramienta") or "general"), parcial_no, transcripcion)
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta=str(propuesta_viva.get("herramienta") or "ninguna"),
+                exito=False,
+                mensaje="De acuerdo. Dime el nombre completo, tal como está registrado.",
+                detalle={"codigo": "coincidencia_rechazada"},
+            )
+        else:
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta=str(propuesta_viva.get("herramienta") or "ninguna"),
+                exito=False,
+                mensaje=pregunta_sugerencia(propuesta_viva),
+                detalle={"codigo": "confirmar_coincidencia"},
+            )
 
     if transcripcion_debe_rechazarse(transcripcion):
         ses_prev = obtener_sesion_voz(uid)
@@ -263,27 +345,36 @@ async def _procesar_audio_comando(
     bloque_mem = bloque_memoria_llm(db, usuario.empresa_id, usuario.id)
     if bloque_mem:
         partes_contexto.append(bloque_mem)
+    bloque_perfil = bloque_perfil_llm(db, usuario.empresa_id)
+    if bloque_perfil:
+        partes_contexto.append(bloque_perfil)
+    bloque_cli = bloque_memoria_cliente_llm(db, usuario, transcripcion)
+    if bloque_cli:
+        partes_contexto.append(bloque_cli)
     ctx_sesion = texto_contexto_para_llm(uid)
     if ctx_sesion:
         partes_contexto.append(ctx_sesion)
     contexto = "\n\n".join(partes_contexto)
 
     historial = historial_mensajes_para_llm(uid)
-    try:
-        herramienta, args, mensaje_libre = interpretar_texto_voz(
-            transcripcion,
-            contexto_sistema_extra=contexto or None,
-            historial=historial,
-            rol_usuario=usuario.rol,
-        )
-    except AiLlmError as exc:
-        return _respuesta_voz(
-            transcripcion=transcripcion,
-            herramienta="ninguna",
-            exito=False,
-            mensaje=str(exc),
-            detalle={"codigo": "llm_fallido"},
-        )
+    if herramienta_forzada:
+        herramienta, args, mensaje_libre = herramienta_forzada, args_forzados or {}, None
+    else:
+        try:
+            herramienta, args, mensaje_libre = interpretar_texto_voz(
+                transcripcion,
+                contexto_sistema_extra=contexto or None,
+                historial=historial,
+                rol_usuario=usuario.rol,
+            )
+        except AiLlmError as exc:
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta="ninguna",
+                exito=False,
+                mensaje=str(exc),
+                detalle={"codigo": "llm_fallido"},
+            )
 
     herramienta, args, mensaje_pendiente, listo = preparar_ejecucion(
         uid,
@@ -330,6 +421,31 @@ async def _procesar_audio_comando(
                 "intent": intent_guard,
             },
         )
+
+    if listo:
+        try:
+            sugerencia = sugerencia_para_args(db, usuario, herramienta or "", args)
+        except Exception:
+            logger.exception("No se pudo comparar nombres parecidos")
+            sugerencia = None
+        if sugerencia:
+            parcial_sug = dict(args)
+            parcial_sug["_propuesta"] = sugerencia
+            pregunta = pregunta_sugerencia(sugerencia)
+            registrar_intercambio(
+                uid,
+                intent=herramienta or "general",
+                partial=parcial_sug,
+                transcripcion_usuario=transcripcion,
+                respuesta_asistente=pregunta,
+            )
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta=herramienta,
+                exito=False,
+                mensaje=pregunta,
+                detalle={"codigo": "confirmar_coincidencia", "sugerido": sugerencia["valor"]},
+            )
 
     if not herramienta:
         msg = mensaje_libre or MENSAJE_CONFUSION_VOZ
@@ -444,25 +560,12 @@ def _procesar_confirmacion_pendiente(
         return None
 
     accion = evaluar_respuesta_confirmacion(transcripcion)
-    if accion == "ambiguo" and parece_nueva_intencion_negocio(transcripcion):
-        limpiar_confirmacion(uid)
-        registrar_orden_voz(
-            db,
-            usuario,
-            transcripcion=transcripcion,
-            herramienta=pend.herramienta,
-            parametros=pend.args,
-            resultado="cancelada",
-        )
-        return None
-
     if accion == "ambiguo":
-        msg = f"{pend.resumen} Di sí para confirmar o no para cancelar."
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta=pend.herramienta,
             exito=False,
-            mensaje=msg,
+            mensaje=MENSAJE_REPETIR_CONFIRMACION,
             detalle={"codigo": "confirmacion_pendiente"},
         )
 
@@ -614,6 +717,7 @@ def _ejecutar_y_responder(
         registrar_aprendizaje_exito(
             db, usuario.empresa_id, usuario.id, herramienta, args
         )
+        actualizar_memoria_cliente_confirmada(db, usuario, herramienta, args)
         registrar_intercambio(
             uid,
             intent=herramienta,

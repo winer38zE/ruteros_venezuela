@@ -38,3 +38,36 @@ class MemoriaVoz(Base):
     apodos_productos = Column(JSON, nullable=True)
     vocabulario_whisper = Column(Text, nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PerfilEmpresa(Base):
+    """Una ficha de negocio por empresa. El dueño puede editar el borrador."""
+
+    __tablename__ = "perfil_empresa"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", name="uq_perfil_empresa"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    descripcion = Column(Text, nullable=True)
+    productos_servicios = Column(Text, nullable=True)
+    tono = Column(Text, nullable=True)
+    glosario = Column(Text, nullable=True)
+    reglas = Column(Text, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class MemoriaCliente(Base):
+    """Resumen corto de un cliente, armado solo con acciones confirmadas."""
+
+    __tablename__ = "memoria_cliente"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "cliente_id", name="uq_memoria_cliente_empresa"),
+    )
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    empresa_id = Column(GUID(), ForeignKey("empresas.id"), nullable=False, index=True)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=False, index=True)
+    resumen = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

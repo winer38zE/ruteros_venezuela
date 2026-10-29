@@ -33,6 +33,7 @@ class _PendienteConfirmacion:
     resumen: str
     transcripcion_origen: str
     created_at: float
+    reintentos: int = 0
 
 
 def requiere_confirmacion(herramienta: str | None) -> bool:
@@ -89,48 +90,77 @@ def guardar_pendiente_confirmacion(
 def _normalizar(texto: str) -> str:
     s = (texto or "").strip().casefold()
     descompuesto = unicodedata.normalize("NFKD", s)
-    return "".join(c for c in descompuesto if not unicodedata.combining(c))
+    sin_tilde = "".join(c for c in descompuesto if not unicodedata.combining(c))
+    sin_punt = re.sub(r"[^\w\s]", " ", sin_tilde, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", sin_punt).strip()
 
 
-def evaluar_respuesta_confirmacion(transcripcion: str) -> str:
-    """
-    Devuelve: confirmar | rechazar | ambiguo
-    """
-    t = _normalizar(transcripcion)
-    if not t:
-        return "ambiguo"
-    tokens = set(re.split(r"\s+", t))
-    negativas = {
+_PALABRAS_SI = frozenset(
+    {
+        "si",
+        "dale",
+        "confirmo",
+        "confirmado",
+        "confirmar",
+        "correcto",
+        "claro",
+        "ok",
+        "okay",
+        "listo",
+        "adelante",
+        "vale",
+        "exacto",
+        "afirmativo",
+    }
+)
+_PALABRAS_NO = frozenset(
+    {
         "no",
         "nop",
         "nope",
-        "cancelar",
         "cancela",
+        "cancelar",
+        "dejalo",
+        "olvidalo",
         "anula",
         "anular",
         "negativo",
     }
-    positivas = {
-        "si",
-        "sí",
-        "confirmo",
-        "confirmar",
-        "dale",
-        "ok",
-        "okay",
-        "vale",
-        "correcto",
-        "exacto",
-        "afirmativo",
-        "de acuerdo",
-    }
-    if tokens & negativas or t.startswith("no "):
+)
+
+
+def evaluar_respuesta_confirmacion(transcripcion: str) -> str:
+    """
+    Devuelve: confirmar | rechazar | ambiguo.
+    Ignora mayúsculas, tildes y puntuación. No usa el modelo.
+    """
+    t = _normalizar(transcripcion)
+    if not t:
+        return "ambiguo"
+    tokens = set(t.split())
+    if tokens & _PALABRAS_NO or t.startswith("no "):
         return "rechazar"
-    if tokens & positivas or "confirmo" in t or t in ("si", "sí"):
-        return "confirmar"
-    if re.fullmatch(r"s+i+", t):
+    if tokens & _PALABRAS_SI or re.fullmatch(r"s+i+", t):
         return "confirmar"
     return "ambiguo"
+
+
+def anotar_reintento_confirmacion(usuario_id: str) -> int:
+    """Suma un intento ambiguo sin borrar la acción ni reiniciar el vencimiento."""
+    uid = str(usuario_id)
+    with _LOCK:
+        p = _PENDIENTES.get(uid)
+        if p is None:
+            return 0
+        p.reintentos += 1
+        return p.reintentos
+
+
+MENSAJE_REPETIR_CONFIRMACION = "No te escuché bien. Di sí o no, o toca un botón"
+MENSAJE_CANCELAR_TRAS_REINTENTO = (
+    "No entendí la respuesta. Cancelé la acción pendiente para no repetirla. "
+    "Cuando quieras, dilo de nuevo."
+)
 
 
 def parece_nueva_intencion_negocio(transcripcion: str) -> bool:

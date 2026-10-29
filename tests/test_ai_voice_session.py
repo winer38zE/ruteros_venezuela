@@ -36,30 +36,36 @@ def test_turnos_registrar_cliente_multiples_audios():
     h, args, msg, listo = preparar_ejecucion(uid, None, {}, "Edwuar", None)
     assert listo is False
     assert args.get("nombre") == "Edwuar"
-    assert "teléfono" in msg.lower()
+    assert "apellido" in msg.lower()
 
-    h, args, msg, listo = preparar_ejecucion(uid, "registrar_cliente", {}, "04141234567", None)
-    assert listo is True
-    assert args["nombre"] == "Edwuar"
-    assert "04141234567" in str(args["telefono"])
+    h, args, msg, listo = preparar_ejecucion(uid, "registrar_cliente", {}, "Cárdenas", None)
+    assert listo is False
+    assert args.get("apellido") == "Cárdenas"
+    assert "teléfono" in msg.lower()
+    assert "dirección" not in msg.lower()
     limpiar(uid)
 
 
 def test_un_solo_comando_con_todos_los_campos():
     uid = "usr-test-2"
     limpiar(uid)
-    texto = "Registrar cliente Edwuar teléfono 04141234567 dirección Calle 123"
+    texto = (
+        "Registrar cliente Edwuar Cárdenas teléfono 04141234567 "
+        "whatsapp +584141234567 dirección Calle 123 cédula V12345678"
+    )
     merged = enriquecer_args_desde_turno("registrar_cliente", texto, {})
     assert campos_faltantes_registrar_cliente(merged) == []
-    assert merged["nombre"] == "Edwuar"
+    assert "Edwuar" in merged["nombre"]
     assert "04141234567" in merged["telefono"]
+    assert merged["whatsapp"].startswith("+58")
     assert "Calle" in merged["direccion"]
+    assert "V12345678" in merged["identificacion"]
 
 
 def test_mensaje_no_repite_nombre():
     msg = mensaje_pendiente_registrar_cliente({"nombre": "Edwuar"})
     assert "Edwuar" in msg
-    assert "teléfono" in msg.lower()
+    assert "apellido" in msg.lower()
     assert "nombre del cliente" not in msg.lower()
 
 
@@ -90,9 +96,10 @@ def test_solo_telefono_con_sesion_activa_no_pierde_nombre():
         "04141234567",
         "¿Qué deseas hacer?",
     )
-    assert listo is True
+    assert listo is False
     assert args["nombre"] == "Edwuar Cárdenas"
     assert "04141234567" in str(args["telefono"])
+    assert "whatsapp" in msg.lower()
     limpiar(uid)
 
 
@@ -123,7 +130,7 @@ def test_ruido_con_nombre_pendiente_pide_telefono_claro():
     _, args, msg, listo = preparar_ejecucion(uid, None, {}, "aplauso", None)
     assert listo is False
     assert args.get("nombre") == "María"
-    assert "teléfono" in msg.lower()
+    assert "apellido" in msg.lower()
     assert "aplauso" not in msg.lower()
     limpiar(uid)
 

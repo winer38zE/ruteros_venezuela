@@ -162,16 +162,9 @@ def fusionar_args(base: dict[str, Any], nuevos: dict[str, Any]) -> dict[str, Any
 
 
 def inferir_intent_desde_texto(texto: str) -> str | None:
-    t = (texto or "").lower()
-    if "registrar" in t and "cliente" in t:
-        return "registrar_cliente"
-    if "nuevo cliente" in t or "cliente nuevo" in t:
-        return "registrar_cliente"
-    if any(x in t for x in ("pedido", "vender", "venta", "compró", "compro")):
-        return "crear_pedido"
-    if any(x in t for x in ("cobro", "cobrar", "abono", "pago de")):
-        return "registrar_cobro"
-    return None
+    from app.services.ai_llm_tools import intencion_de_flujo
+
+    return intencion_de_flujo(texto)
 
 
 def _parece_telefono(texto: str) -> bool:
@@ -377,9 +370,35 @@ def enriquecer_args_desde_turno(
         )
         if m_tel and not out.get("telefono"):
             out["telefono"] = re.sub(r"\D", "", m_tel.group(1))
-        if not out.get("telefono") and _parece_telefono(texto):
+        if not out.get("telefono") and _parece_telefono(texto) and "whatsapp" not in texto.lower():
             digitos = re.sub(r"\D", "", texto)
             out["telefono"] = digitos[-11:] if len(digitos) > 11 else digitos
+        if not out.get("whatsapp"):
+            m_wa = re.search(
+                r"(?:whatsapp|wasap)\s*[:\s]*([+\d][\d\s\-()]{8,})",
+                texto,
+                re.I,
+            )
+            if m_wa:
+                out["whatsapp"] = re.sub(r"[^\d+]", "", m_wa.group(1))
+            elif out.get("telefono") and texto.strip().startswith("+"):
+                out["whatsapp"] = re.sub(r"[^\d+]", "", texto)
+        if not out.get("identificacion"):
+            m_ced = re.search(
+                r"(?:c[eé]dula|identificaci[oó]n|dni)\s*[:\s]*([A-Za-z0-9\-]{5,})",
+                texto,
+                re.I,
+            )
+            if m_ced:
+                out["identificacion"] = m_ced.group(1).strip()
+        from app.services.esquema_formulario import faltantes_cliente
+
+        if (
+            faltantes_cliente(out)[:1] == ["apellido"]
+            and _es_nombre_cliente_valido(texto)
+            and not _parece_telefono(texto)
+        ):
+            out["apellido"] = texto.strip().strip(".")
         esperando_solo_telefono = bool(str(out.get("nombre") or "").strip()) and not str(
             out.get("telefono") or ""
         ).strip()
@@ -421,12 +440,9 @@ def enriquecer_args_desde_turno(
 
 
 def campos_faltantes_registrar_cliente(args: dict[str, Any]) -> list[str]:
-    faltan: list[str] = []
-    if not str(args.get("nombre") or "").strip():
-        faltan.append("nombre")
-    if not str(args.get("telefono") or "").strip():
-        faltan.append("telefono")
-    return faltan
+    from app.services.esquema_formulario import faltantes_cliente
+
+    return faltantes_cliente(args)
 
 
 def mensaje_pendiente_registrar_cliente(
@@ -434,17 +450,21 @@ def mensaje_pendiente_registrar_cliente(
     *,
     telefono_no_entendido: bool = False,
 ) -> str:
+    from app.services.esquema_formulario import pregunta_del_campo
+
+    faltan = campos_faltantes_registrar_cliente(args)
+    if not faltan:
+        return "Listo para registrar. Procesando…"
+    clave = faltan[0]
     nombre = str(args.get("nombre") or "").strip()
-    if not nombre:
-        return "¿Cuál es el nombre del cliente?"
-    if not str(args.get("telefono") or "").strip():
-        if telefono_no_entendido:
-            return (
-                f"Tengo el nombre «{nombre}». "
-                "No escuché bien el teléfono: di solo los números, por ejemplo 04141234567."
-            )
-        return f"Nombre «{nombre}» anotado. ¿Cuál es el teléfono del cliente?"
-    return "Listo para registrar. Procesando…"
+    if clave == "telefono" and telefono_no_entendido:
+        return (
+            f"Tengo el nombre «{nombre}». "
+            "No escuché bien el teléfono: di solo los números, por ejemplo 04141234567."
+        )
+    if clave == "apellido" and nombre:
+        return f"Tengo «{nombre}». ¿Cuál es el apellido?"
+    return pregunta_del_campo("registrar_cliente", clave)
 
 
 def texto_contexto_para_llm(usuario_id: str) -> str:
@@ -577,12 +597,16 @@ def enriquecer_pedido_desde_turno(
 
 
 def campos_faltantes_crear_pedido(args: dict[str, Any]) -> list[str]:
+    from app.services.esquema_formulario import claves_obligatorias
+
     faltan: list[str] = []
-    if not str(args.get("cliente_nombre") or "").strip():
-        faltan.append("cliente_nombre")
-    productos = args.get("productos") or []
-    if not isinstance(productos, list) or not productos:
-        faltan.append("productos")
+    for clave in claves_obligatorias("crear_pedido"):
+        if clave == "cliente_nombre" and not str(args.get("cliente_nombre") or "").strip():
+            faltan.append(clave)
+        elif clave == "productos":
+            productos = args.get("productos") or []
+            if not isinstance(productos, list) or not productos:
+                faltan.append(clave)
     return faltan
 
 
@@ -658,13 +682,16 @@ def enriquecer_cobro_desde_turno(
 
 
 def campos_faltantes_registrar_cobro(args: dict[str, Any]) -> list[str]:
+    from app.services.esquema_formulario import claves_obligatorias
+
     faltan: list[str] = []
-    if not str(args.get("cliente_nombre") or "").strip():
-        faltan.append("cliente_nombre")
-    if args.get("monto_usd") is None:
-        faltan.append("monto_usd")
-    if not str(args.get("metodo_pago") or "").strip():
-        faltan.append("metodo_pago")
+    for clave in claves_obligatorias("registrar_cobro"):
+        if clave == "cliente_nombre" and not str(args.get("cliente_nombre") or "").strip():
+            faltan.append(clave)
+        elif clave == "monto_usd" and args.get("monto_usd") is None:
+            faltan.append(clave)
+        elif clave == "metodo_pago" and not str(args.get("metodo_pago") or "").strip():
+            faltan.append(clave)
     return faltan
 
 

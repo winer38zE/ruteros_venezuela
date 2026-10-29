@@ -6,6 +6,10 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class AiConfirmacionRequest(BaseModel):
+    accion: Literal["confirmar", "cancelar"]
+
+
 class AiAudioComandoResponse(BaseModel):
     transcripcion: str
     herramienta: Optional[

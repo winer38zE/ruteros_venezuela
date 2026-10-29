@@ -50,7 +50,7 @@ def test_whisper_groq_envia_language_es_y_vocabulario_en_prompt():
     assert kwargs["model"] == "whisper-large-v3-turbo"
     assert kwargs["language"] == "es"
     assert kwargs["prompt"] == vocabulario
-    assert kwargs["response_format"] == "json"
+    assert kwargs["response_format"] == "verbose_json"
     assert "languages" not in kwargs
     assert "extra_body" not in kwargs
     assert set(kwargs) <= _PARAMS_GROQ_WHISPER
@@ -84,7 +84,7 @@ def test_transcribir_audio_lee_texto_y_dict(monkeypatch):
     assert enviado["model"] == "whisper-large-v3-turbo"
     assert enviado["language"] == "es"
     assert enviado["prompt"] == "clientes: Ana. productos: toalla"
-    assert enviado["response_format"] == "json"
+    assert enviado["response_format"] == "verbose_json"
     assert "languages" not in enviado
     assert "extra_body" not in enviado
     assert set(enviado) <= _PARAMS_GROQ_WHISPER
