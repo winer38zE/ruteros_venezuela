@@ -55,9 +55,10 @@ def test_login_demo_todos_paises(monkeypatch, pais, username, rol):
         pais_id=PAISES[1].id,
     )
 
+    h = get_password_hash(clave)
     monkeypatch.setattr(
         "app.api.auth_router._autenticar_usuario_login",
-        lambda db, u, p: usuario if p == clave else None,
+        lambda db, u, p: (usuario, 1, h) if p == clave else (None, 1, h),
     )
     monkeypatch.setattr(
         "app.api.auth_router._obtener_pais_activo",
@@ -87,7 +88,7 @@ def test_login_demo_todos_paises(monkeypatch, pais, username, rol):
 def test_login_falla_401_solo_credenciales_invalidas(monkeypatch):
     monkeypatch.setattr(
         "app.api.auth_router._autenticar_usuario_login",
-        lambda db, u, p: None,
+        lambda db, u, p: (None, 0, ""),
     )
     request = MagicMock()
     request.client.host = "127.0.0.1"

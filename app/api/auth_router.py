@@ -299,21 +299,36 @@ def _elegir_usuario_tras_password(
     return validos[0]
 
 
+def _hash_muestra_candidatos(candidatos: list[Usuario]) -> str:
+    for candidato in candidatos:
+        if not candidato.activo:
+            continue
+        return hash_desde_modelo_usuario(candidato)
+    if candidatos:
+        return hash_desde_modelo_usuario(candidatos[0])
+    return ""
+
+
 def _autenticar_usuario_login(
     db: Session,
     username: str,
     password: str,
-) -> Usuario | None:
+) -> tuple[Usuario | None, int, str]:
+    """
+    Devuelve (usuario válido o None, cantidad de candidatos PB, hash leído del primero).
+    """
     clave = _normalizar_username(username).lower()
     if not clave:
-        return None
+        return None, 0, ""
     candidatos = _listar_usuarios_con_reintentos(db, clave)
     logger.debug(
         "Login PocketBase username=%r candidatos=%d (sin pais_id en filtro)",
         clave,
         len(candidatos),
     )
-    return _elegir_usuario_tras_password(candidatos, password)
+    hash_muestra = _hash_muestra_candidatos(candidatos)
+    usuario = _elegir_usuario_tras_password(candidatos, password)
+    return usuario, len(candidatos), hash_muestra
 
 
 def _log_login_401(
@@ -321,19 +336,27 @@ def _log_login_401(
     password: str,
     *,
     hash_guardado: str | None = None,
+    candidatos: int = 0,
 ) -> None:
     longitud_clave, sha_prefijo = huella_contraseña_log(password)
-    hash_str = hash_guardado or ""
+    hash_str = hash_guardado if hash_guardado is not None else ""
     logger.warning(
-        "Login 401: username=%r clave_longitud=%d clave_sha256_prefijo=%s "
+        "Login 401: username=%r candidatos_pb=%d clave_longitud=%d clave_sha256_prefijo=%s "
         "hash_campo=%r hash_longitud=%d hash_bcrypt_prefijo=%r",
         username,
+        candidatos,
         longitud_clave,
         sha_prefijo,
         nombre_campo_hash_lectura_login(),
         len(hash_str),
         prefijo_bcrypt(hash_str),
     )
+    if candidatos > 0 and not hash_str.strip():
+        logger.error(
+            "Login 401: el usuario existe en PocketBase pero %r está vacío. "
+            "Ejecuta: python scripts/reparar_password_hash_usuarios.py",
+            nombre_campo_hash_lectura_login(),
+        )
 
 
 def _error_base_datos(exc: Exception) -> HTTPException:
@@ -381,7 +404,9 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     )
 
     try:
-        usuario = _autenticar_usuario_login(db, username_entrada, body.password)
+        usuario, n_candidatos, hash_muestra = _autenticar_usuario_login(
+            db, username_entrada, body.password
+        )
     except HTTPException:
         raise
     except PocketBaseNoDisponible as exc:
@@ -396,7 +421,12 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             "Login fallido: usuario no encontrado o contraseña inválida (username=%r)",
             username_entrada,
         )
-        _log_login_401(username_entrada, body.password)
+        _log_login_401(
+            username_entrada,
+            body.password,
+            hash_guardado=hash_muestra,
+            candidatos=n_candidatos,
+        )
         registrar_fallo_login(request, username_entrada)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
