@@ -59,10 +59,15 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
                 "properties": {
                     "nombre": {"type": "string", "description": "Nombre completo del cliente"},
                     "telefono": {"type": "string", "description": "Teléfono móvil (solo dígitos)"},
-                    "direccion": {"type": "string", "description": "Opcional"},
+                    "apellido": {"type": "string", "description": "Apellido del cliente"},
+                    "direccion": {"type": "string", "description": "Dirección de domicilio"},
+                    "whatsapp": {
+                        "type": "string",
+                        "description": "WhatsApp con código de país, por ejemplo +58...",
+                    },
                     "identificacion": {
                         "type": "string",
-                        "description": "Cédula/RIF; si no se menciona, omitir",
+                        "description": "Cédula solo si el formulario o el país la exigen",
                     },
                 },
                 "required": [],
@@ -246,6 +251,27 @@ HERRAMIENTAS_OPENAI: list[dict[str, Any]] = [
         },
     },
 ]
+
+def _aplicar_campos_de_formulario() -> None:
+    """Venta y cobro exigen en la herramienta las mismas claves que el formulario."""
+    from app.services.esquema_formulario import claves_obligatorias, pregunta_del_campo
+
+    for tool in HERRAMIENTAS_OPENAI:
+        nombre = tool["function"]["name"]
+        params = tool["function"]["parameters"]
+        if nombre in ("crear_pedido", "registrar_cobro"):
+            params["required"] = list(claves_obligatorias(nombre))
+        if nombre != "registrar_cliente":
+            continue
+        props = params["properties"]
+        for clave in claves_obligatorias(nombre):
+            props.setdefault(
+                clave,
+                {"type": "string", "description": pregunta_del_campo(nombre, clave)},
+            )
+
+
+_aplicar_campos_de_formulario()
 
 HERRAMIENTAS_VOZ_TODAS: frozenset[str] = frozenset(
     t["function"]["name"] for t in HERRAMIENTAS_OPENAI

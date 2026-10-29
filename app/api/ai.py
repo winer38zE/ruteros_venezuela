@@ -44,7 +44,9 @@ from app.services.ai_voice_confirmacion import (
     requiere_confirmacion,
 )
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
+from app.services.ai_voice_parecido import pregunta_sugerencia, sugerencia_para_args
 from app.services.ai_voice_session import (
+    actualizar_parcial_sesion,
     historial_mensajes_para_llm,
     intent_memoria_pendiente,
     limpiar as limpiar_sesion_voz,
@@ -237,6 +239,50 @@ async def _procesar_audio_comando(
     if resp_confirm is not None:
         return resp_confirm
 
+    herramienta_forzada: str | None = None
+    args_forzados: dict[str, Any] | None = None
+    ses_prop = obtener_sesion_voz(uid)
+    propuesta_viva = (ses_prop.partial or {}).get("_propuesta") if ses_prop else None
+    if isinstance(propuesta_viva, dict) and propuesta_viva.get("valor"):
+        accion_prop = evaluar_respuesta_confirmacion(transcripcion)
+        if accion_prop == "confirmar":
+            args_forzados = dict(propuesta_viva.get("args") or {})
+            if propuesta_viva.get("campo") == "producto":
+                productos = [dict(p) for p in (args_forzados.get("productos") or []) if isinstance(p, dict)]
+                indice = int(propuesta_viva.get("indice") or 0)
+                if indice < len(productos):
+                    productos[indice]["nombre"] = propuesta_viva["valor"]
+                args_forzados["productos"] = productos
+            else:
+                args_forzados[str(propuesta_viva["campo"])] = propuesta_viva["valor"]
+            herramienta_forzada = str(propuesta_viva.get("herramienta") or "")
+            parcial_ok = dict(ses_prop.partial)
+            parcial_ok.pop("_propuesta", None)
+            parcial_ok.update(args_forzados)
+            actualizar_parcial_sesion(uid, herramienta_forzada, parcial_ok, transcripcion)
+        elif accion_prop == "rechazar":
+            parcial_no = dict(ses_prop.partial)
+            parcial_no.pop("_propuesta", None)
+            campo = str(propuesta_viva.get("campo") or "")
+            if campo in parcial_no:
+                parcial_no.pop(campo, None)
+            actualizar_parcial_sesion(uid, str(propuesta_viva.get("herramienta") or "general"), parcial_no, transcripcion)
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta=str(propuesta_viva.get("herramienta") or "ninguna"),
+                exito=False,
+                mensaje="De acuerdo. Dime el nombre completo, tal como está registrado.",
+                detalle={"codigo": "coincidencia_rechazada"},
+            )
+        else:
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta=str(propuesta_viva.get("herramienta") or "ninguna"),
+                exito=False,
+                mensaje=pregunta_sugerencia(propuesta_viva),
+                detalle={"codigo": "confirmar_coincidencia"},
+            )
+
     if transcripcion_debe_rechazarse(transcripcion):
         ses_prev = obtener_sesion_voz(uid)
         en_flujo_activo = bool(
@@ -272,21 +318,24 @@ async def _procesar_audio_comando(
     contexto = "\n\n".join(partes_contexto)
 
     historial = historial_mensajes_para_llm(uid)
-    try:
-        herramienta, args, mensaje_libre = interpretar_texto_voz(
-            transcripcion,
-            contexto_sistema_extra=contexto or None,
-            historial=historial,
-            rol_usuario=usuario.rol,
-        )
-    except AiLlmError as exc:
-        return _respuesta_voz(
-            transcripcion=transcripcion,
-            herramienta="ninguna",
-            exito=False,
-            mensaje=str(exc),
-            detalle={"codigo": "llm_fallido"},
-        )
+    if herramienta_forzada:
+        herramienta, args, mensaje_libre = herramienta_forzada, args_forzados or {}, None
+    else:
+        try:
+            herramienta, args, mensaje_libre = interpretar_texto_voz(
+                transcripcion,
+                contexto_sistema_extra=contexto or None,
+                historial=historial,
+                rol_usuario=usuario.rol,
+            )
+        except AiLlmError as exc:
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta="ninguna",
+                exito=False,
+                mensaje=str(exc),
+                detalle={"codigo": "llm_fallido"},
+            )
 
     herramienta, args, mensaje_pendiente, listo = preparar_ejecucion(
         uid,
@@ -333,6 +382,31 @@ async def _procesar_audio_comando(
                 "intent": intent_guard,
             },
         )
+
+    if listo:
+        try:
+            sugerencia = sugerencia_para_args(db, usuario, herramienta or "", args)
+        except Exception:
+            logger.exception("No se pudo comparar nombres parecidos")
+            sugerencia = None
+        if sugerencia:
+            parcial_sug = dict(args)
+            parcial_sug["_propuesta"] = sugerencia
+            pregunta = pregunta_sugerencia(sugerencia)
+            registrar_intercambio(
+                uid,
+                intent=herramienta or "general",
+                partial=parcial_sug,
+                transcripcion_usuario=transcripcion,
+                respuesta_asistente=pregunta,
+            )
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta=herramienta,
+                exito=False,
+                mensaje=pregunta,
+                detalle={"codigo": "confirmar_coincidencia", "sugerido": sugerencia["valor"]},
+            )
 
     if not herramienta:
         msg = mensaje_libre or MENSAJE_CONFUSION_VOZ

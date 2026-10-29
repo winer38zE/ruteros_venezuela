@@ -323,21 +323,23 @@ def _registrar_cliente(
     empresa_id,
     args: dict[str, Any],
 ) -> tuple[bool, str, dict[str, Any], tuple[bool, str | None]]:
+    from app.services.esquema_formulario import faltantes_cliente, pregunta_del_campo
+
     nombre = str(args.get("nombre") or "").strip()
+    apellido = str(args.get("apellido") or "").strip()
+    if apellido and apellido.casefold() not in nombre.casefold():
+        nombre = f"{nombre} {apellido}".strip()
     telefono = str(args.get("telefono") or "").strip() or None
     direccion = str(args.get("direccion") or "").strip() or None
-    if not nombre:
+    whatsapp = str(args.get("whatsapp") or "").strip() or None
+    faltan = faltantes_cliente({**args, "nombre": nombre})
+    if faltan:
         return _respuesta_fallo(
-            "Falta el nombre del cliente.",
-            {"codigo": "cliente_incompleto", "campo": "nombre"},
-        )
-    if not telefono:
-        return _respuesta_fallo(
-            f"Nombre «{nombre}» anotado. ¿Cuál es el teléfono del cliente?",
-            {"codigo": "cliente_incompleto", "campo": "telefono", "nombre": nombre},
+            pregunta_del_campo("registrar_cliente", faltan[0]),
+            {"codigo": "cliente_incompleto", "campo": faltan[0]},
         )
 
-    ident = _identificacion_desde_voz(args.get("identificacion"), telefono)
+    ident = normalizar_identificacion(str(args.get("identificacion") or ""))
     existente = db.query(Cliente).filter(Cliente.identificacion == ident).first()
     if existente:
         raise HTTPException(status_code=400, detail="Ya existe un cliente con esa identificación.")
@@ -354,6 +356,7 @@ def _registrar_cliente(
         nombre=nombre,
         identificacion=ident,
         telefono=telefono,
+        telefono_secundario=whatsapp,
         direccion=direccion,
         tipo_cliente=TipoCliente.DETAL,
         vendedor_id=vendedor_id,
