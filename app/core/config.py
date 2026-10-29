@@ -53,12 +53,17 @@ AI_WHISPER_API_KEY = os.getenv(
 AI_WHISPER_MODEL = os.getenv("AI_WHISPER_MODEL", "gpt-transcribe")
 AI_ENABLED = bool(AI_LLM_API_KEY and AI_WHISPER_API_KEY)
 
-# TTS respuestas del asistente (OpenAI tts-1; fallback gTTS si no hay clave OpenAI).
+# TTS: gpt-4o-mini-tts acepta instrucciones; si falla, el servicio vuelve a tts-1.
 AI_TTS_API_KEY = os.getenv(
     "AI_TTS_API_KEY",
     os.getenv("OPENAI_API_KEY", ""),
 ).strip()
 AI_TTS_BASE_URL = os.getenv("AI_TTS_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-AI_TTS_MODEL = os.getenv("AI_TTS_MODEL", "tts-1")
-AI_TTS_VOICE = os.getenv("AI_TTS_VOICE", "nova")
+AI_TTS_MODEL = os.getenv("AI_TTS_MODEL", "gpt-4o-mini-tts").strip() or "gpt-4o-mini-tts"
+AI_TTS_VOICE = os.getenv("AI_TTS_VOICE", "nova").strip() or "nova"
+AI_TTS_INSTRUCTIONS = os.getenv(
+    "AI_TTS_INSTRUCTIONS",
+    "Habla en español latinoamericano neutro, con acento mexicano suave, claro y cálido. "
+    "Pronuncia los números y las monedas en español.",
+).strip()
 AI_TTS_PROVIDER = os.getenv("AI_TTS_PROVIDER", "auto").strip().lower()
