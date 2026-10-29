@@ -60,18 +60,8 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       lowerBound: 0.9,
       upperBound: 1.1,
     )..repeat(reverse: true);
-    _playerSub = _responsePlayer.onPlayerStateChanged.listen((state) {
-      final hablando = state == PlayerState.playing;
-      if (!mounted) return;
-      if (_bloqueoMicPorTts == hablando) return;
-      setState(() {
-        _bloqueoMicPorTts = hablando;
-        if (hablando) {
-          _statusText = 'Escuchando respuesta… no hables hasta que termine.';
-        } else if (_phase == AiVoiceUiPhase.idle || _phase == AiVoiceUiPhase.success) {
-          _statusText = 'Mantén pulsado el micrófono y dicta tu orden';
-        }
-      });
+    _playerSub = _responsePlayer.onPlayerComplete.listen((_) {
+      _liberarMicrofonoTrasVoz();
     });
   }
 
@@ -104,9 +94,27 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
     super.dispose();
   }
 
+  void _liberarMicrofonoTrasVoz() {
+    if (!mounted || !_bloqueoMicPorTts) return;
+    setState(() {
+      _bloqueoMicPorTts = false;
+      if (_phase == AiVoiceUiPhase.idle ||
+          _phase == AiVoiceUiPhase.success ||
+          _phase == AiVoiceUiPhase.error) {
+        _statusText = 'Mantén pulsado el micrófono y dicta tu orden';
+      }
+    });
+  }
+
   Future<void> _reproducirRespuestaVoz(String? audioBase64) async {
     final payload = audioBase64?.trim();
     if (payload == null || payload.isEmpty) return;
+    if (mounted) {
+      setState(() {
+        _bloqueoMicPorTts = true;
+        _statusText = 'Escuchando respuesta… no hables hasta que termine.';
+      });
+    }
     try {
       final bytes = base64Decode(payload);
       final dir = await getTemporaryDirectory();
@@ -119,6 +127,7 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
       await _responsePlayer.stop();
       await _responsePlayer.play(DeviceFileSource(path));
     } catch (e) {
+      _liberarMicrofonoTrasVoz();
       if (kDebugMode) {
         debugPrint('No se pudo reproducir audio TTS: $e');
       }
@@ -141,15 +150,7 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
   }
 
   Future<void> _startRecording() async {
-    if (_phase == AiVoiceUiPhase.processing || _holding) return;
-    if (_bloqueoMicPorTts) {
-      if (!mounted) return;
-      setState(() {
-        _phase = AiVoiceUiPhase.error;
-        _statusText = 'Espera a que el asistente termine de hablar antes de grabar.';
-      });
-      return;
-    }
+    if (_phase == AiVoiceUiPhase.processing || _holding || _bloqueoMicPorTts) return;
     if (!await _ensureMicPermission()) {
       if (!mounted) return;
       setState(() {
@@ -370,12 +371,16 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
             else
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onLongPressStart: (_) => unawaited(_startRecording()),
-                onLongPressEnd: (_) => unawaited(_stopAndSend()),
-                onLongPressCancel: () {
-                  if (_holding) unawaited(_stopAndSend());
-                },
-                child: ScaleTransition(
+                onLongPressStart: _bloqueoMicPorTts ? null : (_) => unawaited(_startRecording()),
+                onLongPressEnd: _bloqueoMicPorTts ? null : (_) => unawaited(_stopAndSend()),
+                onLongPressCancel: _bloqueoMicPorTts
+                    ? null
+                    : () {
+                        if (_holding) unawaited(_stopAndSend());
+                      },
+                child: Opacity(
+                  opacity: _bloqueoMicPorTts ? 0.35 : 1,
+                  child: ScaleTransition(
                   scale: listening ? _pulse : const AlwaysStoppedAnimation(1.0),
                   child: Container(
                     width: 96,
@@ -399,10 +404,15 @@ class _AiVoiceModalState extends State<AiVoiceModal> with SingleTickerProviderSt
                     ),
                   ),
                 ),
+                ),
               ),
             const SizedBox(height: 12),
             Text(
-              listening ? 'Suelta para enviar a la IA' : 'Mantén presionado el micrófono',
+              _bloqueoMicPorTts
+                  ? 'El micrófono está bloqueado mientras habla el asistente'
+                  : listening
+                      ? 'Suelta para enviar a la IA'
+                      : 'Mantén presionado el micrófono',
               style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
           ],
