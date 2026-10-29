@@ -26,13 +26,14 @@ def test_parse_tool_call_openai_format():
 def test_rbac_vendedor_no_registrar_gasto():
     permitidas = herramientas_permitidas_para_rol(RolUsuario.VENDEDOR)
     assert "registrar_gasto" not in permitidas
-    assert "consultar_inventario" in permitidas
+    assert "crear_pedido" in permitidas
+    assert "consultar_inventario" not in permitidas
     msg = mensaje_permiso_denegado(RolUsuario.VENDEDOR, "registrar_gasto")
-    assert msg
-    assert "vendedor" in msg.lower()
+    assert msg == "Eso no está disponible para tu rol."
 
 
 def test_rbac_dueno_todas_herramientas():
     permitidas = herramientas_permitidas_para_rol(RolUsuario.DUENO)
-    assert "calcular_nomina" in permitidas
+    assert "calcular_nomina" not in permitidas
+    assert "solicitar_reporte" in permitidas
     assert mensaje_permiso_denegado(RolUsuario.DUENO, "registrar_gasto") is None

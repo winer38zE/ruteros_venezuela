@@ -175,9 +175,6 @@ def _normalizar_argumentos_herramienta(nombre: str, args: dict[str, Any]) -> dic
     if nombre == "crear_factura_proveedor":
         if out.get("proveedor_nombre") is None and out.get("nombre_proveedor"):
             out["proveedor_nombre"] = out.pop("nombre_proveedor")
-    if nombre == "calcular_nomina":
-        if out.get("nombre_empleado") is None and out.get("empleado"):
-            out["nombre_empleado"] = out.pop("empleado")
     return out
 
 
