@@ -23,6 +23,18 @@ from app.services.ai_llm_tools import (
     MENSAJE_CONFUSION_VOZ,
     mensaje_permiso_denegado,
 )
+import app.services.ai_voice_models  # noqa: F401 — registra ordenes_voz en ORM
+
+from app.services.ai_voice_audit import registrar_orden_voz
+from app.services.ai_voice_confirmacion import (
+    construir_resumen_confirmacion,
+    evaluar_respuesta_confirmacion,
+    guardar_pendiente_confirmacion,
+    limpiar_confirmacion,
+    obtener_pendiente_confirmacion,
+    parece_nueva_intencion_negocio,
+    requiere_confirmacion,
+)
 from app.services.ai_voice_executor import VoiceUserError, ejecutar_herramienta_voz
 from app.services.ai_voice_session import (
     historial_mensajes_para_llm,
@@ -47,7 +59,7 @@ _MENSAJE_AUDIO_NO_ENTENDIDO = (
 _HERRAMIENTAS_VALIDAS = HERRAMIENTAS_VOZ_TODAS | frozenset({"ninguna"})
 
 _WHISPER_PALABRAS_CLAVE = (
-    "Ventas, inventario, productos, sábanas, cobros, gastos, proveedores, nómina, facturas."
+    "Ventas, inventario, productos, sábanas, cobros, gastos, proveedores, facturas, reportes."
 )
 
 
@@ -121,7 +133,9 @@ async def reiniciar_sesion_voz(
     usuario: Usuario = Depends(require_ruta_o_superior),
 ):
     """Olvida turnos pendientes (p. ej. al abrir de nuevo el modal de voz)."""
-    limpiar_sesion_voz(str(usuario.id))
+    uid = str(usuario.id)
+    limpiar_sesion_voz(uid)
+    limpiar_confirmacion(uid)
     return {"ok": True}
 
 
@@ -203,6 +217,15 @@ async def _procesar_audio_comando(
         )
 
     uid = str(usuario.id)
+
+    resp_confirm = _procesar_confirmacion_pendiente(
+        db,
+        usuario,
+        uid,
+        transcripcion,
+    )
+    if resp_confirm is not None:
+        return resp_confirm
 
     if transcripcion_debe_rechazarse(transcripcion):
         ses_prev = obtener_sesion_voz(uid)
@@ -321,6 +344,178 @@ async def _procesar_audio_comando(
 
     denegado = mensaje_permiso_denegado(usuario.rol, herramienta)
     if denegado:
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            parametros=args,
+            resultado="permiso_denegado",
+        )
+        return _respuesta_voz(
+            transcripcion=transcripcion,
+            herramienta="ninguna",
+            exito=False,
+            mensaje=denegado,
+            detalle={"codigo": "permiso_denegado", "herramienta": herramienta},
+        )
+
+    if requiere_confirmacion(herramienta):
+        resumen, err_conf = construir_resumen_confirmacion(db, usuario, herramienta, args)
+        if err_conf:
+            registrar_orden_voz(
+                db,
+                usuario,
+                transcripcion=transcripcion,
+                herramienta=herramienta,
+                parametros=args,
+                resultado="error",
+            )
+            return _respuesta_voz(
+                transcripcion=transcripcion,
+                herramienta=herramienta,
+                exito=False,
+                mensaje=err_conf,
+                detalle={"codigo": "confirmacion_invalida"},
+            )
+        guardar_pendiente_confirmacion(
+            uid,
+            herramienta=herramienta,
+            args=args,
+            resumen=resumen or "",
+            transcripcion_origen=transcripcion,
+        )
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            parametros=args,
+            resultado="pendiente_confirmacion",
+        )
+        registrar_intercambio(
+            uid,
+            intent=herramienta,
+            partial={},
+            transcripcion_usuario=transcripcion,
+            respuesta_asistente=resumen,
+        )
+        return _respuesta_voz(
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            exito=False,
+            mensaje=resumen or "¿Confirmas?",
+            detalle={"codigo": "confirmacion_pendiente"},
+        )
+
+    return _ejecutar_y_responder(
+        db,
+        usuario,
+        uid,
+        transcripcion,
+        herramienta,
+        args,
+    )
+
+
+def _procesar_confirmacion_pendiente(
+    db,
+    usuario: Usuario,
+    uid: str,
+    transcripcion: str,
+) -> AiAudioComandoResponse | None:
+    pend = obtener_pendiente_confirmacion(uid)
+    if pend is None:
+        return None
+
+    accion = evaluar_respuesta_confirmacion(transcripcion)
+    if accion == "ambiguo" and parece_nueva_intencion_negocio(transcripcion):
+        limpiar_confirmacion(uid)
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=pend.herramienta,
+            parametros=pend.args,
+            resultado="cancelada",
+        )
+        return None
+
+    if accion == "ambiguo":
+        msg = f"{pend.resumen} Di sí para confirmar o no para cancelar."
+        return _respuesta_voz(
+            transcripcion=transcripcion,
+            herramienta=pend.herramienta,
+            exito=False,
+            mensaje=msg,
+            detalle={"codigo": "confirmacion_pendiente"},
+        )
+
+    limpiar_confirmacion(uid)
+    if accion == "rechazar":
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=pend.herramienta,
+            parametros=pend.args,
+            resultado="cancelada",
+        )
+        limpiar_sesion_voz(uid)
+        return _respuesta_voz(
+            transcripcion=transcripcion,
+            herramienta=pend.herramienta,
+            exito=False,
+            mensaje="Acción cancelada.",
+            detalle={"codigo": "confirmacion_rechazada"},
+        )
+
+    denegado = mensaje_permiso_denegado(usuario.rol, pend.herramienta)
+    if denegado:
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=pend.herramienta,
+            parametros=pend.args,
+            resultado="permiso_denegado",
+        )
+        return _respuesta_voz(
+            transcripcion=transcripcion,
+            herramienta="ninguna",
+            exito=False,
+            mensaje=denegado,
+            detalle={"codigo": "permiso_denegado", "herramienta": pend.herramienta},
+        )
+
+    return _ejecutar_y_responder(
+        db,
+        usuario,
+        uid,
+        transcripcion,
+        pend.herramienta,
+        pend.args,
+    )
+
+
+def _ejecutar_y_responder(
+    db,
+    usuario: Usuario,
+    uid: str,
+    transcripcion: str,
+    herramienta: str,
+    args: dict[str, Any],
+) -> AiAudioComandoResponse:
+    denegado = mensaje_permiso_denegado(usuario.rol, herramienta)
+    if denegado:
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            parametros=args,
+            resultado="permiso_denegado",
+        )
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta="ninguna",
@@ -334,6 +529,14 @@ async def _procesar_audio_comando(
             db, usuario, herramienta, args
         )
     except VoiceUserError as exc:
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            parametros=args,
+            resultado="error",
+        )
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta=herramienta,
@@ -349,6 +552,14 @@ async def _procesar_audio_comando(
                 if isinstance(exc.detail, str)
                 else str(exc.detail)
             )
+            registrar_orden_voz(
+                db,
+                usuario,
+                transcripcion=transcripcion,
+                herramienta=herramienta,
+                parametros=args,
+                resultado="error",
+            )
             return _respuesta_voz(
                 transcripcion=transcripcion,
                 herramienta=herramienta,
@@ -359,6 +570,14 @@ async def _procesar_audio_comando(
         raise
     except Exception as exc:
         logger.exception("Error ejecutando herramienta de voz %s", herramienta)
+        registrar_orden_voz(
+            db,
+            usuario,
+            transcripcion=transcripcion,
+            herramienta=herramienta,
+            parametros=args,
+            resultado="error",
+        )
         return _respuesta_voz(
             transcripcion=transcripcion,
             herramienta=herramienta,
@@ -366,6 +585,15 @@ async def _procesar_audio_comando(
             mensaje="No pude completar la orden. Intenta de nuevo o repite con más detalle.",
             detalle={"codigo": "error_interno", "detalle_tecnico": str(exc)[:240]},
         )
+
+    registrar_orden_voz(
+        db,
+        usuario,
+        transcripcion=transcripcion,
+        herramienta=herramienta,
+        parametros=args,
+        resultado="ok" if exito else "error",
+    )
 
     if exito:
         registrar_intercambio(
