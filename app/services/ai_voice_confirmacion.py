@@ -209,13 +209,14 @@ def construir_resumen_confirmacion(
 
     if h == "registrar_cobro":
         nombre = str(a.get("cliente_nombre") or "").strip()
+        from app.services.lenguaje_dinero import frase_cobro
+
         monto = float(a.get("monto_usd") or 0)
-        metodo = str(a.get("metodo_pago") or "efectivo")
         if monto <= 0:
             return None, "Monto de cobro inválido."
+        dicho = frase_cobro(monto, a.get("moneda"), a.get("metodo_pago"))
         return (
-            f"Voy a registrar un cobro de {monto:.2f} dólares a {nombre} "
-            f"por {metodo.replace('_', ' ')}. ¿Confirmas?",
+            f"Voy a registrar un cobro de {dicho} a {nombre}. ¿Confirmas?",
             None,
         )
 

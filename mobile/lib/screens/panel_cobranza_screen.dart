@@ -139,14 +139,14 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
                     labelText: 'Monto en ${etiquetaMoneda(moneda)}',
-                    helperText: 'Saldo: ${_fmt.format(fila.saldoPendienteUsd)} USD',
+                    helperText: 'Saldo: ${_fmt.format(fila.saldoPendienteUsd)} dólares',
                   ),
                   onChanged: (_) => setDialogState(() {}),
                 ),
                 if (montoIngresado > 0) ...[
                   const SizedBox(height: 8),
                   Text(
-                    '≈ ${_fmt.format(montoUsd)} USD al saldo',
+                    '≈ ${_fmt.format(montoUsd)} dólares al saldo',
                     style: const TextStyle(color: AppColors.emerald, fontWeight: FontWeight.w700),
                   ),
                 ],
@@ -183,7 +183,7 @@ class _PanelCobranzaScreenState extends State<PanelCobranzaScreen> {
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Abono de ${_fmt.format(montoUsd)} USD registrado')),
+          SnackBar(content: Text('Abono de ${_fmt.format(montoUsd)} dólares registrado')),
         );
         _cargar();
       }

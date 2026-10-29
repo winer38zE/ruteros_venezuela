@@ -106,14 +106,12 @@ def _digitos_a_palabras(texto: str) -> str:
     return " ".join(_DIGITOS[d] for d in texto if d.isdigit())
 
 
-def _monto_a_palabras(entero: str, fraccion: str | None) -> str:
+def _monto_a_palabras(entero: str, fraccion: str | None, unidad: str = "dolares") -> str:
     pesos = entero_a_palabras(int(entero))
-    if not fraccion:
-        return f"{pesos} dolares"
+    if not fraccion or fraccion.ljust(2, "0")[:2] == "00":
+        return f"{pesos} {unidad}"
     centavos = fraccion.ljust(2, "0")[:2]
-    if centavos == "00":
-        return f"{pesos} dolares"
-    return f"{pesos} dolares con {entero_a_palabras(int(centavos))} centavos"
+    return f"{pesos} {unidad} con {entero_a_palabras(int(centavos))} centavos"
 
 
 def numeros_a_palabras(texto: str) -> str:
@@ -127,10 +125,12 @@ def numeros_a_palabras(texto: str) -> str:
     salida = re.sub(r"(?<!\d)\d{8,}(?!\d)", _telefono, texto)
 
     def _monto(m: re.Match[str]) -> str:
-        return _monto_a_palabras(m.group(1), m.group(2))
+        palabra = (m.group(3) or "").lower().replace("í", "i").replace("ó", "o")
+        unidad = "bolivares" if palabra.startswith("boliv") else "dolares"
+        return _monto_a_palabras(m.group(1), m.group(2), unidad)
 
     salida = re.sub(
-        r"(?<!\d)(\d{1,6})(?:[.,](\d{1,2}))?\s*(?:d[oó]lares|usd|\$)",
+        r"(?<!\d)(\d{1,6})(?:[.,](\d{1,2}))?\s*(d[oó]lares|bol[ií]vares|usd|\$)",
         _monto,
         salida,
         flags=re.IGNORECASE,
