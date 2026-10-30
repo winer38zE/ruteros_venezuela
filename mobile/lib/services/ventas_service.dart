@@ -42,19 +42,22 @@ class DetalleVenta {
   final String productoId;
   final int cantidad;
   final double precioUnitarioUsd;
+  final String? productoNombre;
 
   DetalleVenta({
     required this.id,
     required this.productoId,
     required this.cantidad,
     required this.precioUnitarioUsd,
+    this.productoNombre,
   });
 
   factory DetalleVenta.fromJson(Map<String, dynamic> j) => DetalleVenta(
-        id: j['id'],
-        productoId: j['producto_id'],
-        cantidad: j['cantidad'],
-        precioUnitarioUsd: (j['precio_unitario_usd'] as num).toDouble(),
+        id: j['id'].toString(),
+        productoId: j['producto_id'].toString(),
+        cantidad: (j['cantidad'] as num?)?.toInt() ?? 0,
+        precioUnitarioUsd: (j['precio_unitario_usd'] as num?)?.toDouble() ?? 0,
+        productoNombre: j['producto_nombre']?.toString(),
       );
 
   double get subtotal => precioUnitarioUsd * cantidad;
@@ -72,6 +75,13 @@ class Venta {
   final bool tieneComprobante;
   final List<DetalleVenta> detalles;
   final List<CuotaAmortizacion> cuotas;
+  final String? fecha;
+  final String clienteNombre;
+  final String clienteApellido;
+  final String? clienteTelefono;
+  final String? clienteEmail;
+  final double saldoPendienteUsd;
+  final String productosResumen;
 
   Venta({
     required this.id,
@@ -85,24 +95,44 @@ class Venta {
     this.tieneComprobante = false,
     required this.detalles,
     required this.cuotas,
+    this.fecha,
+    this.clienteNombre = '',
+    this.clienteApellido = '',
+    this.clienteTelefono,
+    this.clienteEmail,
+    this.saldoPendienteUsd = 0,
+    this.productosResumen = '',
   });
 
+  String get clienteCompleto {
+    final partes = [clienteNombre, clienteApellido].where((p) => p.trim().isNotEmpty);
+    final nombre = partes.join(' ');
+    return nombre.isEmpty ? 'Cliente' : nombre;
+  }
+
   factory Venta.fromJson(Map<String, dynamic> j) => Venta(
-        id: j['id'],
-        clienteId: j['cliente_id'],
-        vendedorId: j['vendedor_id'],
-        totalUsd: (j['total_usd'] as num).toDouble(),
-        estado: j['estado'],
+        id: j['id'].toString(),
+        clienteId: j['cliente_id']?.toString() ?? '',
+        vendedorId: j['vendedor_id']?.toString() ?? '',
+        totalUsd: (j['total_usd'] as num?)?.toDouble() ?? 0,
+        estado: j['estado']?.toString() ?? '',
         frecuenciaPago: j['frecuencia_pago'] ?? 'contado',
         metodoPago: j['metodo_pago'] ?? 'efectivo',
         referenciaPago: j['referencia_pago'],
         tieneComprobante: j['tiene_comprobante'] == true,
         detalles: (j['detalles'] as List? ?? [])
-            .map((e) => DetalleVenta.fromJson(e))
+            .map((e) => DetalleVenta.fromJson(e as Map<String, dynamic>))
             .toList(),
         cuotas: (j['cuotas'] as List? ?? [])
-            .map((e) => CuotaAmortizacion.fromJson(e))
+            .map((e) => CuotaAmortizacion.fromJson(e as Map<String, dynamic>))
             .toList(),
+        fecha: j['fecha']?.toString(),
+        clienteNombre: j['cliente_nombre']?.toString() ?? '',
+        clienteApellido: j['cliente_apellido']?.toString() ?? '',
+        clienteTelefono: j['cliente_telefono']?.toString(),
+        clienteEmail: j['cliente_email']?.toString(),
+        saldoPendienteUsd: (j['saldo_pendiente_usd'] as num?)?.toDouble() ?? 0,
+        productosResumen: j['productos_resumen']?.toString() ?? '',
       );
 }
 
@@ -134,9 +164,12 @@ class VentasService {
   VentasService(this._api);
   final ApiClient _api;
 
-  Future<List<Venta>> misVentas() async {
-    final data = await _api.get('/ventas/mis-ventas') as List;
-    return data.map((e) => Venta.fromJson(e)).toList();
+  Future<List<Venta>> misVentas({String? q}) async {
+    final data = await _api.get(
+      '/ventas/mis-ventas',
+      query: (q == null || q.trim().isEmpty) ? null : {'q': q.trim()},
+    ) as List;
+    return data.map((e) => Venta.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<List<CuotaAmortizacion>> amortizacion(String ventaId) async {
@@ -205,6 +238,11 @@ class VentasService {
   Future<String> enviarRecibo(String ventaId) async {
     final data = await _api.post('/ventas/$ventaId/enviar-recibo', {});
     return data['mensaje'] as String? ?? 'Comprobante enviado';
+  }
+
+  Future<String> enviarReciboWhatsapp(String ventaId) async {
+    final data = await _api.post('/ventas/$ventaId/recibo/whatsapp', {});
+    return data['mensaje'] as String? ?? 'Recibo enviado por WhatsApp';
   }
 
   Future<String> enviarComprobanteWhatsapp(String ventaId) async {

@@ -1,5 +1,6 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import (
@@ -18,18 +19,20 @@ from app.models.core import (
 from app.schemas.core import (
     VentaCreate,
     VentaResponse,
+    DetalleVentaResponse,
     CuotaAmortizacionResponse,
     EnvioReciboResponse,
     WhatsappReporteResponse,
 )
-from app.services.recibos_email import enviar_recibo_venta
 from app.services.evolution_service import (
     armar_caption_comprobante,
     enviar_imagen,
+    enviar_texto,
     estado_http_whatsapp,
     normalizar_telefono,
     telefono_administrador,
 )
+from app.services.recibos_email import enviar_recibo_venta, texto_recibo_venta
 from app.services.contabilidad import generar_asiento_venta
 from app.services.inventario import procesar_detalles_venta, calcular_total_detalles
 from app.services.buro_credito import (
@@ -97,29 +100,106 @@ def _resolver_vendedor(
     return vendedor
 
 
-def _venta_a_response(venta: Venta) -> VentaResponse:
+def _rel_lista(obj, nombre: str) -> list:
+    insp = sa_inspect(obj)
+    if nombre in insp.unloaded:
+        return []
+    return list(getattr(obj, nombre, None) or [])
+
+
+def _rel_uno(obj, nombre: str):
+    insp = sa_inspect(obj)
+    if nombre in insp.unloaded:
+        return None
+    return getattr(obj, nombre, None)
+
+
+def partir_nombre_cliente(nombre: str | None) -> tuple[str, str]:
+    """El alta guarda nombre y apellido juntos en `nombre`."""
+    partes = (nombre or "").strip().split()
+    if not partes:
+        return "", ""
+    if len(partes) == 1:
+        return partes[0], ""
+    return " ".join(partes[:-1]), partes[-1]
+
+
+def _venta_a_response(db: Session, venta: Venta) -> VentaResponse:
     frecuencia = venta.frecuencia_pago or FrecuenciaPago.CONTADO
+    if not isinstance(frecuencia, FrecuenciaPago):
+        try:
+            frecuencia = FrecuenciaPago(str(frecuencia))
+        except ValueError:
+            frecuencia = FrecuenciaPago.CONTADO
     cuotas_enriquecidas = [
         CuotaAmortizacionResponse(**serializar_cuota(c, frecuencia))
-        for c in sorted(venta.cuotas or [], key=lambda x: x.numero_cuota)
+        for c in sorted(_rel_lista(venta, "cuotas"), key=lambda x: x.numero_cuota or 0)
     ]
+    detalles = []
+    nombres = []
+    for d in _rel_lista(venta, "detalles"):
+        candidatos = db.query(Producto).filter(Producto.id == d.producto_id).all() if d.producto_id else []
+        prod = next((p for p in candidatos if str(p.id) == str(d.producto_id)), None)
+        nombre = prod.nombre if prod else None
+        if nombre:
+            nombres.append(f"{nombre} x{d.cantidad}")
+        detalles.append(
+            DetalleVentaResponse(
+                id=d.id,
+                producto_id=d.producto_id,
+                cantidad=d.cantidad,
+                precio_unitario_usd=float(d.precio_unitario_usd or 0),
+                producto_nombre=nombre,
+            )
+        )
+    cliente = _rel_uno(venta, "cliente")
+    nombre_cli, apellido_cli = partir_nombre_cliente(cliente.nombre if cliente else None)
+    cobrado = sum(
+        (Decimal(str(c.monto_usd)) for c in _rel_lista(venta, "cobros") if c.monto_usd is not None),
+        Decimal("0"),
+    )
+    saldo = float(Decimal(str(venta.total_usd or 0)) - cobrado)
+    estado = venta.estado.value if isinstance(venta.estado, EstadoVenta) else str(venta.estado or "")
     return VentaResponse(
         id=venta.id,
         empresa_id=venta.empresa_id,
         cliente_id=venta.cliente_id,
         vendedor_id=venta.vendedor_id,
-        total_usd=float(venta.total_usd),
-        estado=venta.estado.value,
+        total_usd=float(venta.total_usd or 0),
+        estado=estado,
         frecuencia_pago=frecuencia.value,
-        tipo_tasa_usd=venta.tipo_tasa_usd.value if venta.tipo_tasa_usd else "bcv",
+        tipo_tasa_usd=venta.tipo_tasa_usd.value if getattr(venta, "tipo_tasa_usd", None) else "bcv",
         numero_cuotas=venta.numero_cuotas,
         metodo_pago=venta.metodo_pago or "efectivo",
         referencia_pago=venta.referencia_pago,
         tiene_comprobante=bool(venta.comprobante_base64),
         cuenta_bancaria_id=venta.cuenta_bancaria_id,
-        detalles=venta.detalles or [],
+        detalles=detalles,
         cuotas=cuotas_enriquecidas,
+        fecha=venta.fecha,
+        cliente_nombre=nombre_cli,
+        cliente_apellido=apellido_cli,
+        cliente_telefono=cliente.telefono if cliente else None,
+        cliente_email=cliente.email if cliente else None,
+        saldo_pendiente_usd=saldo,
+        productos_resumen=", ".join(nombres) if nombres else "—",
     )
+
+
+def _filtrar_por_cliente(ventas: list[Venta], q: str | None) -> list[Venta]:
+    texto = (q or "").strip().casefold()
+    if not texto:
+        return ventas
+    salida = []
+    for venta in ventas:
+        cliente = _rel_uno(venta, "cliente")
+        if cliente is None:
+            continue
+        nombre = (cliente.nombre or "").casefold()
+        telefono = (cliente.telefono or "").casefold()
+        if texto in nombre or texto in telefono:
+            salida.append(venta)
+    return salida
 
 
 def _actualizar_ubicacion_cliente(cliente: Cliente, venta: VentaCreate) -> None:
@@ -260,7 +340,7 @@ def crear_venta(
             enviar_recibo_venta(db, venta_final)
         except Exception:
             logger.exception("No se pudo enviar comprobante de venta por correo")
-    return _venta_a_response(venta_final)
+    return _venta_a_response(db, venta_final)
 
 
 @router.post("/{venta_id}/aprobar", response_model=VentaResponse)
@@ -315,7 +395,7 @@ def aprobar_venta_borrador(
             enviar_recibo_venta(db, venta_final)
         except Exception:
             logger.exception("No se pudo enviar comprobante de venta por correo")
-    return _venta_a_response(venta_final)
+    return _venta_a_response(db, venta_final)
 
 
 @router.post("/{venta_id}/verificar", response_model=VentaResponse)
@@ -353,7 +433,7 @@ def verificar_pago_transferencia(
         actualizar_historial_comportamiento(db, venta.cliente)
     db.commit()
     db.refresh(venta)
-    return _venta_a_response(venta)
+    return _venta_a_response(db, venta)
 
 
 @router.get("/{venta_id}/amortizacion", response_model=List[CuotaAmortizacionResponse])
@@ -453,35 +533,91 @@ def enviar_comprobante_venta_whatsapp(
     return WhatsappReporteResponse(enviado=True, telefono=destino, mensaje=mensaje)
 
 
-@router.get("/mis-ventas", response_model=List[VentaResponse])
-def listar_mis_ventas(
+@router.post("/{venta_id}/recibo/whatsapp", response_model=WhatsappReporteResponse)
+def enviar_recibo_venta_por_whatsapp(
+    venta_id: str,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_vendedor_o_superior),
 ):
-    q = (
+    """Si el cliente no tiene correo, el recibo sale por WhatsApp a su teléfono."""
+    candidatas = (
+        db.query(Venta)
+        .options(
+            joinedload(Venta.detalles),
+            joinedload(Venta.cliente),
+            joinedload(Venta.cobros),
+        )
+        .filter(Venta.id == venta_id, Venta.empresa_id == usuario.empresa_id)
+        .all()
+    )
+    venta = next((v for v in candidatas if str(v.id) == str(venta_id)), None)
+    if not venta or str(venta.empresa_id) != str(usuario.empresa_id):
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    telefono = (venta.cliente.telefono or "").strip() if venta.cliente else ""
+    if not telefono:
+        raise HTTPException(
+            status_code=400,
+            detail="El cliente no tiene teléfono para enviar el recibo por WhatsApp",
+        )
+    ok, mensaje = enviar_texto(telefono, texto_recibo_venta(db, venta))
+    if not ok:
+        raise HTTPException(status_code=400, detail=mensaje)
+    try:
+        destino = normalizar_telefono(telefono)
+    except ValueError:
+        destino = telefono
+    return WhatsappReporteResponse(enviado=True, telefono=destino, mensaje=mensaje)
+
+
+def _opciones_venta():
+    return (
+        joinedload(Venta.detalles),
+        joinedload(Venta.cuotas),
+        joinedload(Venta.cliente),
+        joinedload(Venta.cobros),
+    )
+
+
+@router.get("/mis-ventas", response_model=List[VentaResponse])
+def listar_mis_ventas(
+    q: Optional[str] = Query(default=None, description="Nombre o teléfono del cliente"),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_vendedor_o_superior),
+):
+    consulta = (
         db.query(Venta)
         .filter(Venta.empresa_id == usuario.empresa_id)
-        .options(joinedload(Venta.detalles), joinedload(Venta.cuotas))
+        .options(*_opciones_venta())
     )
     if usuario.rol == RolUsuario.VENDEDOR:
-        q = q.filter(Venta.vendedor_id == usuario.id)
-    ventas = q.order_by(Venta.fecha.desc()).all()
-    return [_venta_a_response(v) for v in ventas]
+        consulta = consulta.filter(Venta.vendedor_id == usuario.id)
+    ventas = [
+        v for v in consulta.order_by(Venta.fecha.desc()).all()
+        if str(v.empresa_id) == str(usuario.empresa_id)
+    ]
+    if usuario.rol == RolUsuario.VENDEDOR:
+        ventas = [v for v in ventas if str(v.vendedor_id) == str(usuario.id)]
+    return [_venta_a_response(db, v) for v in _filtrar_por_cliente(ventas, q)]
 
 
 @router.get("/", response_model=List[VentaResponse])
 def listar_ventas(
+    q: Optional[str] = Query(default=None, description="Nombre o teléfono del cliente"),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_operaciones),
 ):
-    ventas = (
-        db.query(Venta)
-        .filter(Venta.empresa_id == usuario.empresa_id)
-        .options(joinedload(Venta.detalles), joinedload(Venta.cuotas))
-        .order_by(Venta.fecha.desc())
-        .all()
-    )
-    return [_venta_a_response(v) for v in ventas]
+    ventas = [
+        v
+        for v in (
+            db.query(Venta)
+            .filter(Venta.empresa_id == usuario.empresa_id)
+            .options(*_opciones_venta())
+            .order_by(Venta.fecha.desc())
+            .all()
+        )
+        if str(v.empresa_id) == str(usuario.empresa_id)
+    ]
+    return [_venta_a_response(db, v) for v in _filtrar_por_cliente(ventas, q)]
 
 
 @router.get("/{venta_id}", response_model=VentaResponse)
@@ -498,4 +634,4 @@ def obtener_venta(
     )
     if not venta:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
-    return _venta_a_response(venta)
+    return _venta_a_response(db, venta)

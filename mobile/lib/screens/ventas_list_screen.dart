@@ -22,6 +22,13 @@ class _VentasListScreenState extends State<VentasListScreen> {
   bool _cargando = true;
   String? _error;
   final _fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  final _busqueda = TextEditingController();
+
+  @override
+  void dispose() {
+    _busqueda.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -61,7 +68,7 @@ class _VentasListScreenState extends State<VentasListScreen> {
       _error = null;
     });
     try {
-      _ventas = await context.read<AppState>().ventas.misVentas();
+      _ventas = await context.read<AppState>().ventas.misVentas(q: _busqueda.text);
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -116,7 +123,24 @@ class _VentasListScreenState extends State<VentasListScreen> {
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ),
+                          TextField(
+                            controller: _busqueda,
+                            decoration: InputDecoration(
+                              hintText: 'Buscar por nombre del cliente',
+                              prefixIcon: const Icon(Icons.search_rounded),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.arrow_forward_rounded),
+                                onPressed: _cargar,
+                              ),
+                            ),
+                            onSubmitted: (_) => _cargar(),
+                          ),
+                          const SizedBox(height: 12),
                           ..._ventas.map((v) {
+                            final fecha = (v.fecha != null && v.fecha!.length >= 10)
+                                ? v.fecha!.substring(0, 10)
+                                : 'sin fecha';
+                            final telefono = (v.clienteTelefono ?? '').trim();
                             return GlassListTile(
                               accentColor: AppColors.emerald,
                               leading: Container(
@@ -136,14 +160,26 @@ class _VentasListScreenState extends State<VentasListScreen> {
                                   ),
                                 ),
                               ),
-                              title: Text(_fmt.format(v.totalUsd)),
-                              subtitle: Wrap(
-                                spacing: 8,
-                                runSpacing: 4,
-                                crossAxisAlignment: WrapCrossAlignment.center,
+                              title: Text(v.clienteCompleto),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  StatusBadge.estado(v.estado),
-                                  Text(_etiquetaVenta(v)),
+                                  Text(telefono.isEmpty ? 'Sin teléfono' : telefono),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      StatusBadge.estado(v.estado),
+                                      Text(_etiquetaVenta(v)),
+                                      Text(fecha),
+                                      Text(_fmt.format(v.totalUsd)),
+                                      Text('Saldo ${_fmt.format(v.saldoPendienteUsd)}'),
+                                    ],
+                                  ),
+                                  if (v.productosResumen.isNotEmpty && v.productosResumen != '—')
+                                    Text(v.productosResumen),
                                 ],
                               ),
                               children: [
@@ -159,7 +195,9 @@ class _VentasListScreenState extends State<VentasListScreen> {
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text('${d.cantidad} uds × \$${d.precioUnitarioUsd}'),
+                                          Text(
+                                            '${d.productoNombre ?? 'Producto'} · ${d.cantidad} uds × \$${d.precioUnitarioUsd}',
+                                          ),
                                           Text(
                                             _fmt.format(d.subtotal),
                                             style: const TextStyle(fontWeight: FontWeight.w600),
@@ -184,7 +222,12 @@ class _VentasListScreenState extends State<VentasListScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       EnviarReciboButton(
+                                        email: v.clienteEmail,
+                                        telefono: v.clienteTelefono,
                                         onEnviar: () => context.read<AppState>().ventas.enviarRecibo(v.id),
+                                        onWhatsapp: (v.clienteEmail ?? '').contains('@')
+                                            ? null
+                                            : () => context.read<AppState>().ventas.enviarReciboWhatsapp(v.id),
                                       ),
                                       if (v.estado == 'por_verificar' &&
                                           context.watch<AppState>().puedeOperaciones) ...[
