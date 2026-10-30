@@ -197,7 +197,9 @@ def _fecha_limite_pago(venta: Venta) -> datetime | None:
 
 
 def aplicar_ajuste_score(db: Session, cliente: Cliente, delta: int, motivo: str, tipo_evento: str) -> int:
-    nuevo = _clamp_score(cliente.score_credito + delta)
+    # PocketBase no manda el default 70: score_credito llega en None.
+    base = 70 if cliente.score_credito is None else int(cliente.score_credito)
+    nuevo = _clamp_score(base + delta)
     cliente.score_credito = nuevo
     registrar_evento_buro(
         db,

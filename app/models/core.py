@@ -710,8 +710,16 @@ class Cobro(Base):
 
     sincronizado = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    clave_idempotencia = Column(String(80), nullable=True, index=True)
+    cliente_id = Column(GUID(), ForeignKey("clientes.id"), nullable=True)
+    latitud = Column(Numeric(10, 7), nullable=True)
+    longitud = Column(Numeric(10, 7), nullable=True)
+    precision_metros = Column(Numeric(8, 2), nullable=True)
+    sin_ubicacion = Column(Boolean, nullable=True)
+    notas = Column(Text, nullable=True)
 
     venta = relationship("Venta", back_populates="cobros")
+    cliente = relationship("Cliente", foreign_keys=[cliente_id])
 
     @property
     def tiene_comprobante(self) -> bool:

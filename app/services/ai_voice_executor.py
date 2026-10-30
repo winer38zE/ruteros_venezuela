@@ -580,38 +580,37 @@ def _registrar_cobro(
     es_electronico = moneda in (MonedaPago.TRANSFERENCIA, MonedaPago.PAGO_MOVIL)
     tasa_usd, tasa_eur = _tasas_default(db, empresa_id)
 
-    from app.core.pb_orm.ids import nuevo_id_pocketbase
-    from app.services.amortizacion import aplicar_abono_a_cuotas
+    from app.api.cobros import _registrar_cobro_interno
+    from app.schemas.core import CobroCreate
 
-    cobro = Cobro(
-        id=nuevo_id_pocketbase(),
-        empresa_id=empresa_id,
-        venta_id=venta.id,
-        cobrador_id=usuario.id,
-        fecha=datetime.utcnow(),
-        monto_usd=monto,
-        moneda_pago=moneda,
-        tasa_usd_aplicada=tasa_usd,
-        tasa_eur_aplicada=tasa_eur,
-        es_transferencia=es_electronico,
-        verificado=not es_electronico or usuario.rol in (RolUsuario.DUENO, RolUsuario.ADMINISTRADOR),
+    clave = str(args.get("clave_idempotencia") or args.get("id") or "").strip() or None
+    canal = None
+    if moneda == MonedaPago.TRANSFERENCIA:
+        canal = "transferencia"
+    elif moneda == MonedaPago.PAGO_MOVIL:
+        canal = "pago_movil"
+    resp = _registrar_cobro_interno(
+        db,
+        CobroCreate(
+            id=clave,
+            clave_idempotencia=clave,
+            venta_id=str(venta.id),
+            monto_usd=monto,
+            moneda_pago=moneda.value,
+            tasa_usd_aplicada=tasa_usd,
+            tasa_eur_aplicada=tasa_eur,
+            es_transferencia=es_electronico,
+            canal=canal,
+            latitud=args.get("latitud"),
+            longitud=args.get("longitud"),
+            precision_metros=args.get("precision_metros") or args.get("precision"),
+            notas=(str(args.get("notas")).strip() if args.get("notas") else None),
+        ),
+        usuario,
     )
-    db.add(cobro)
-    db.flush()
-    db.refresh(venta, attribute_names=["cobros", "cliente", "cuotas"])
-    total_cobrado = sum(Decimal(str(c.monto_usd)) for c in venta.cobros)
-    if total_cobrado >= Decimal(str(venta.total_usd)):
-        venta.estado = EstadoVenta.PAGADA
-    elif total_cobrado > 0:
-        venta.estado = EstadoVenta.PARCIAL
-    aplicar_abono_a_cuotas(db, venta, Decimal(str(monto)))
-    if venta.cliente:
-        actualizar_historial_comportamiento(db, venta.cliente)
-    generar_asiento_cobro(db, cobro)
-    db.commit()
-    db.refresh(cobro)
-
-    saldo_final = float(max(saldo - Decimal(str(monto)), Decimal("0")))
+    cobrado_final = sum(Decimal(str(c.monto_usd or 0)) for c in (venta.cobros or []))
+    saldo_final = float(max(Decimal(str(venta.total_usd)) - cobrado_final, Decimal("0")))
+    cobro_id = resp.id
     dicho = frase_cobro(monto_dicho, moneda_dicha, metodo)
     msg_wa = (
         f"*Ruteros* — Cobro registrado\n"
@@ -622,7 +621,7 @@ def _registrar_cobro(
     tel = telefono or cliente.telefono
     wa = _whatsapp_confirmar(tel, msg_wa)
     detalle = {
-        "cobro_id": str(cobro.id),
+        "cobro_id": str(cobro_id),
         "venta_id": str(venta.id),
         "cliente_id": str(cliente.id),
         "monto_usd": monto,

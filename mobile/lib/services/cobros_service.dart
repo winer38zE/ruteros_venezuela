@@ -100,6 +100,7 @@ class VentaPendiente {
   final String estado;
   final String frecuenciaPago;
   final String tipoCredito;
+  final String? fecha;
 
   VentaPendiente({
     required this.id,
@@ -111,18 +112,20 @@ class VentaPendiente {
     required this.estado,
     this.frecuenciaPago = 'contado',
     this.tipoCredito = 'Contado',
+    this.fecha,
   });
 
   factory VentaPendiente.fromJson(Map<String, dynamic> j) => VentaPendiente(
-        id: j['id'],
-        clienteId: j['cliente_id'],
+        id: j['id'].toString(),
+        clienteId: j['cliente_id'].toString(),
         clienteNombre: j['cliente_nombre'] ?? '—',
-        totalUsd: (j['total_usd'] as num).toDouble(),
-        cobradoUsd: (j['cobrado_usd'] as num).toDouble(),
-        saldoPendienteUsd: (j['saldo_pendiente_usd'] as num).toDouble(),
-        estado: j['estado'],
+        totalUsd: (j['total_usd'] as num?)?.toDouble() ?? 0,
+        cobradoUsd: (j['cobrado_usd'] as num?)?.toDouble() ?? 0,
+        saldoPendienteUsd: (j['saldo_pendiente_usd'] as num?)?.toDouble() ?? 0,
+        estado: j['estado']?.toString() ?? 'pendiente',
         frecuenciaPago: j['frecuencia_pago'] ?? 'contado',
         tipoCredito: j['tipo_credito'] ?? 'Contado',
+        fecha: j['fecha']?.toString(),
       );
 }
 
@@ -144,12 +147,82 @@ class Cobro {
   });
 
   factory Cobro.fromJson(Map<String, dynamic> j) => Cobro(
-        id: j['id'],
-        ventaId: j['venta_id'],
-        montoUsd: (j['monto_usd'] as num).toDouble(),
-        monedaPago: j['moneda_pago'],
-        fecha: j['fecha'],
-        estadoVenta: j['estado_venta'],
+        id: j['id']?.toString() ?? '',
+        ventaId: j['venta_id']?.toString() ?? '',
+        montoUsd: (j['monto_usd'] as num?)?.toDouble() ?? 0,
+        monedaPago: j['moneda_pago']?.toString() ?? '',
+        fecha: j['fecha']?.toString() ?? '',
+        estadoVenta: j['estado_venta']?.toString(),
+      );
+}
+
+class CobradorOpcion {
+  final String id;
+  final String nombre;
+  final String rol;
+
+  CobradorOpcion({required this.id, required this.nombre, required this.rol});
+
+  factory CobradorOpcion.fromJson(Map<String, dynamic> j) => CobradorOpcion(
+        id: j['id'].toString(),
+        nombre: j['nombre']?.toString() ?? 'Cobrador',
+        rol: j['rol']?.toString() ?? '',
+      );
+}
+
+class PuntoCobro {
+  final String cobroId;
+  final String fecha;
+  final String clienteNombre;
+  final double montoUsd;
+  final String metodo;
+  final double? latitud;
+  final double? longitud;
+  final bool sinUbicacion;
+
+  PuntoCobro({
+    required this.cobroId,
+    required this.fecha,
+    required this.clienteNombre,
+    required this.montoUsd,
+    required this.metodo,
+    this.latitud,
+    this.longitud,
+    this.sinUbicacion = true,
+  });
+
+  factory PuntoCobro.fromJson(Map<String, dynamic> j) => PuntoCobro(
+        cobroId: j['cobro_id'].toString(),
+        fecha: j['fecha']?.toString() ?? '',
+        clienteNombre: j['cliente_nombre']?.toString() ?? 'Cliente',
+        montoUsd: (j['monto_usd'] as num?)?.toDouble() ?? 0,
+        metodo: j['metodo']?.toString() ?? '',
+        latitud: (j['latitud'] as num?)?.toDouble(),
+        longitud: (j['longitud'] as num?)?.toDouble(),
+        sinUbicacion: j['sin_ubicacion'] != false,
+      );
+}
+
+class SeguimientoRuta {
+  final String cobradorId;
+  final String cobradorNombre;
+  final String fecha;
+  final List<PuntoCobro> puntos;
+
+  SeguimientoRuta({
+    required this.cobradorId,
+    required this.cobradorNombre,
+    required this.fecha,
+    required this.puntos,
+  });
+
+  factory SeguimientoRuta.fromJson(Map<String, dynamic> j) => SeguimientoRuta(
+        cobradorId: j['cobrador_id'].toString(),
+        cobradorNombre: j['cobrador_nombre']?.toString() ?? '',
+        fecha: j['fecha']?.toString() ?? '',
+        puntos: (j['puntos'] as List? ?? [])
+            .map((e) => PuntoCobro.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
 }
 
@@ -198,6 +271,9 @@ class CobrosService {
     String? referenciaPago,
     String? comprobanteBase64,
     String? cuentaBancariaId,
+    double? latitud,
+    double? longitud,
+    double? precisionMetros,
   }) async {
     final body = {
       'venta_id': ventaId,
@@ -208,6 +284,10 @@ class CobrosService {
       'es_transferencia': esTransferencia,
       if (canal != null) 'canal': canal,
       if (cobroId != null) 'id': cobroId,
+      if (latitud != null && longitud != null) 'latitud': latitud,
+      if (latitud != null && longitud != null) 'longitud': longitud,
+      if (latitud != null && longitud != null && precisionMetros != null)
+        'precision_metros': precisionMetros,
       if (referenciaPago != null && referenciaPago.trim().isNotEmpty)
         'referencia_pago': referenciaPago.trim(),
       if (comprobanteBase64 != null && comprobanteBase64.isNotEmpty)
@@ -221,6 +301,19 @@ class CobrosService {
   Future<String> enviarRecibo(String cobroId) async {
     final data = await _api.post('/cobros/$cobroId/enviar-recibo', {});
     return data['mensaje'] as String? ?? 'Recibo enviado';
+  }
+
+  Future<List<CobradorOpcion>> cobradoresSeguimiento() async {
+    final data = await _api.get('/cobros/seguimiento/cobradores') as List;
+    return data.map((e) => CobradorOpcion.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<SeguimientoRuta> seguimiento({required String cobradorId, required String fecha}) async {
+    final data = await _api.get(
+      '/cobros/seguimiento',
+      query: {'cobrador_id': cobradorId, 'fecha': fecha},
+    ) as Map<String, dynamic>;
+    return SeguimientoRuta.fromJson(data);
   }
 
   Future<String> enviarComprobanteWhatsapp(String cobroId, {String? metodo}) async {

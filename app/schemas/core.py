@@ -486,6 +486,7 @@ class DetalleVentaResponse(BaseModel):
     producto_id: RecordId
     cantidad: int
     precio_unitario_usd: float
+    producto_nombre: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -540,6 +541,13 @@ class VentaResponse(BaseModel):
     cuenta_bancaria_id: Optional[RecordId] = None
     detalles: List[DetalleVentaResponse] = []
     cuotas: List[CuotaAmortizacionResponse] = []
+    fecha: Optional[datetime] = None
+    cliente_nombre: str = ""
+    cliente_apellido: str = ""
+    cliente_telefono: Optional[str] = None
+    cliente_email: Optional[str] = None
+    saldo_pendiente_usd: float = 0
+    productos_resumen: str = ""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -609,6 +617,11 @@ class CobroCreate(BaseModel):
     referencia_pago: Optional[str] = Field(default=None, max_length=80)
     comprobante_base64: Optional[str] = Field(default=None, max_length=2_000_000)
     cuenta_bancaria_id: Optional[RecordId] = None
+    clave_idempotencia: Optional[str] = Field(default=None, max_length=80)
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    precision_metros: Optional[float] = None
+    notas: Optional[str] = Field(default=None, max_length=500)
 
 class CobroResponse(BaseModel):
     id: RecordId
@@ -628,8 +641,41 @@ class CobroResponse(BaseModel):
     tiene_comprobante: bool = False
     estado_venta: Optional[str] = None
     cuenta_bancaria_id: Optional[RecordId] = None
+    cliente_id: Optional[RecordId] = None
+    cliente_nombre: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    precision_metros: Optional[float] = None
+    sin_ubicacion: bool = True
+    notas: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CobradorOpcionResponse(BaseModel):
+    id: str
+    nombre: str
+    rol: str
+
+
+class PuntoSeguimientoResponse(BaseModel):
+    cobro_id: str
+    fecha: datetime
+    cliente_id: Optional[str] = None
+    cliente_nombre: str = "Cliente"
+    monto_usd: float
+    metodo: str
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    precision_metros: Optional[float] = None
+    sin_ubicacion: bool = True
+
+
+class SeguimientoRutaResponse(BaseModel):
+    cobrador_id: str
+    cobrador_nombre: str
+    fecha: date
+    puntos: List[PuntoSeguimientoResponse]
 
 class VentaPendienteResponse(BaseModel):
     id: RecordId
@@ -658,6 +704,7 @@ class VentaPendienteResponse(BaseModel):
     cuotas_pagadas: int = 0
     cuotas_totales: int = 0
     cuotas: List[CuotaAmortizacionResponse] = []
+    fecha: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

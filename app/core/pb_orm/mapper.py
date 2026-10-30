@@ -99,7 +99,8 @@ def _coerce_storage(val: Any) -> Any:
 def _coerce_python(col, raw: Any) -> Any:
     if raw is None or raw == "":
         return None
-    impl = getattr(col.type, "python_type", None)
+    # GUID (TypeDecorator) no implementa python_type y lanza NotImplementedError.
+    # Tiene que quedar dentro del try: si no, ninguna lectura de ventas o cobros arranca.
     try:
         py_type = col.type.python_type
     except Exception:

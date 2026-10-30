@@ -104,6 +104,10 @@ class _CobrosListScreenState extends State<CobrosListScreen> {
                             ),
                           ),
                           ..._cobros.map((c) {
+                            final ventaCorta = c.ventaId.length >= 8
+                                ? '${c.ventaId.substring(0, 8)}...'
+                                : (c.ventaId.isEmpty ? 'sin venta' : c.ventaId);
+                            final fechaCorta = c.fecha.length >= 10 ? c.fecha.substring(0, 10) : 'sin fecha';
                             return GlassListTile(
                               accentColor: AppColors.neonCyan,
                               leading: Container(
@@ -124,7 +128,7 @@ class _CobrosListScreenState extends State<CobrosListScreen> {
                               ),
                               title: Text(_fmt.format(c.montoUsd)),
                               subtitle: Text(
-                                '${_labelMoneda(c.monedaPago)} · Venta ${c.ventaId.substring(0, 8)}...',
+                                '${_labelMoneda(c.monedaPago)} · Venta $ventaCorta',
                               ),
                               trailing: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -134,7 +138,7 @@ class _CobrosListScreenState extends State<CobrosListScreen> {
                                   border: Border.all(color: AppColors.glassBorder),
                                 ),
                                 child: Text(
-                                  c.fecha.substring(0, 10),
+                                  fechaCorta,
                                   style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                                 ),
                               ),
