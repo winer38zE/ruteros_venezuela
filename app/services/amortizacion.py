@@ -53,9 +53,12 @@ def estado_cuota_display(cuota: CuotaAmortizacion, referencia: Optional[datetime
     if cuota.estado == EstadoCuota.PAGADA:
         return "Pagado"
     hoy = (referencia or datetime.utcnow()).date()
-    if cuota.fecha_vencimiento.date() < hoy and cuota.estado in (
-        EstadoCuota.PENDIENTE,
-        EstadoCuota.PARCIAL,
+    vencimiento = getattr(cuota, "fecha_vencimiento", None)
+    if (
+        vencimiento is not None
+        and hasattr(vencimiento, "date")
+        and vencimiento.date() < hoy
+        and cuota.estado in (EstadoCuota.PENDIENTE, EstadoCuota.PARCIAL)
     ):
         return "Vencido"
     if cuota.estado == EstadoCuota.PARCIAL:
@@ -69,18 +72,57 @@ def monto_pendiente_cuota(cuota: CuotaAmortizacion) -> float:
 
 
 def serializar_cuota(cuota: CuotaAmortizacion, frecuencia: FrecuenciaPago) -> dict:
+    freq = frecuencia if isinstance(frecuencia, FrecuenciaPago) else FrecuenciaPago.CONTADO
+    estado = cuota.estado.value if isinstance(cuota.estado, EstadoCuota) else (cuota.estado or "pendiente")
     return {
         "id": cuota.id,
         "venta_id": cuota.venta_id,
-        "numero_cuota": cuota.numero_cuota,
-        "fecha_vencimiento": cuota.fecha_vencimiento,
-        "monto_usd": float(cuota.monto_usd),
-        "monto_pagado_usd": float(cuota.monto_pagado_usd),
-        "estado": cuota.estado.value if cuota.estado else "pendiente",
-        "etiqueta_periodo": etiqueta_periodo(frecuencia, cuota.numero_cuota),
+        "numero_cuota": int(cuota.numero_cuota or 0),
+        "fecha_vencimiento": cuota.fecha_vencimiento or datetime.utcnow(),
+        "monto_usd": float(_d(cuota.monto_usd)),
+        "monto_pagado_usd": float(_d(cuota.monto_pagado_usd)),
+        "estado": estado,
+        "etiqueta_periodo": etiqueta_periodo(freq, cuota.numero_cuota),
         "estado_display": estado_cuota_display(cuota),
         "monto_pendiente_usd": monto_pendiente_cuota(cuota),
     }
+
+
+def asegurar_cuota_unica_si_falta(db: Session, venta: Venta) -> Optional[CuotaAmortizacion]:
+    """Crédito sin filas en cuotas_amortizacion: una cuota por el total.
+
+    Las ventas nuevas ya generan el plan en crear_venta. Esta función cubre
+    las que quedaron sin plan, para que el abono tenga dónde aplicarse.
+    """
+    freq = venta.frecuencia_pago
+    valor = freq.value if isinstance(freq, FrecuenciaPago) else str(freq or "contado")
+    if str(valor).lower() in ("", "contado"):
+        return None
+
+    actuales = (
+        db.query(CuotaAmortizacion)
+        .filter(CuotaAmortizacion.venta_id == venta.id)
+        .order_by(CuotaAmortizacion.numero_cuota.asc())
+        .all()
+    )
+    if actuales:
+        venta.cuotas = actuales
+        return None
+
+    dias = DIAS_FRECUENCIA.get(freq, 30) if isinstance(freq, FrecuenciaPago) else 30
+    fecha_base = venta.fecha or datetime.utcnow()
+    cuota = CuotaAmortizacion(
+        venta_id=venta.id,
+        numero_cuota=1,
+        fecha_vencimiento=fecha_base + timedelta(days=dias),
+        monto_usd=_d(venta.total_usd),
+        monto_pagado_usd=Decimal("0"),
+        estado=EstadoCuota.PENDIENTE,
+    )
+    db.add(cuota)
+    venta.numero_cuotas = 1
+    venta.cuotas = [cuota]
+    return cuota
 
 
 def generar_plan_amortizacion(
