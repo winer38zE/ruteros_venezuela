@@ -59,7 +59,9 @@ Recomendación:
 | `ADMIN_EMAIL` | Sí | Email del superusuario PocketBase |
 | `ADMIN_PASSWORD` | Sí | Contraseña del superusuario |
 | `JWT_SECRET_KEY` | Recomendada | Firma de tokens JWT (si usas endpoints que emiten JWT) |
-| `DEMO_PASSWORD` | Opcional | Clave de usuarios demo; por defecto `123456` en código |
+| `DEMO_PASSWORD` | Opcional | Clave demo; mínimo 12 caracteres o el arranque no sincroniza cuentas demo |
+| `DEMO_USERS_ENABLED` | Opcional | En producción (`ENVIRONMENT=production`) el default es `false`. Pon `true` solo si aún usas dueno/vendedor/cobrador |
+| `ENVIRONMENT` | Recomendada | `production` en Coolify para desactivar demo por defecto |
 | `PORT` | Opcional | Debe ser **8000** si el proxy apunta a 8000 |
 | `CORS_ORIGINS` | Opcional | Orígenes permitidos, separados por coma |
 | `PB_COLLECTIONS_CACHE_TTL` | Opcional | Segundos de caché del listado de colecciones (default 300) |

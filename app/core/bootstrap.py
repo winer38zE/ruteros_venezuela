@@ -7,7 +7,7 @@ from sqlalchemy import func
 from app.api.auth import (
     get_password_hash,
     log_huella_demo_password_configurada,
-    obtener_demo_password,
+    motivo_omitir_sync_usuarios_demo,
     password_demo_para_username,
 )
 from app.core.db import get_pocketbase_client
@@ -140,8 +140,12 @@ def asegurar_usuario_admin() -> None:
                 emp.activa = True
 
         _asegurar_almacen_principal(db, empresa.id)
-        for username, nombre, rol in DEMO_USUARIOS:
-            _asegurar_usuario_demo(db, empresa.id, username, nombre, rol)
+        motivo_omitir_demo = motivo_omitir_sync_usuarios_demo()
+        if motivo_omitir_demo:
+            logger.error(motivo_omitir_demo)
+        else:
+            for username, nombre, rol in DEMO_USUARIOS:
+                _asegurar_usuario_demo(db, empresa.id, username, nombre, rol)
 
         if pais_ve:
             for u in db.query(Usuario).filter(Usuario.pais_id.is_(None)).all():
@@ -150,25 +154,30 @@ def asegurar_usuario_admin() -> None:
                 empresa.pais_id = pais_ve.id
 
         db.commit()
-        logger.info(
-            "Usuarios demo sincronizados (dueno, admin, vendedor, cobrador) — empresa '%s'.",
-            empresa.nombre,
-        )
-        log_huella_demo_password_configurada(logger, contexto="Bootstrap")
-        _confirmar_demo_listo(db)
-
-        demo_ids: list[tuple[str, str]] = []
-        for username, _nombre, _rol in DEMO_USUARIOS:
-            username_norm = username.strip().lower()
-            u = (
-                db.query(Usuario)
-                .filter(func.lower(Usuario.username) == username_norm)
-                .first()
+        if motivo_omitir_demo:
+            logger.error(
+                "Bootstrap sin sincronizar usuarios demo (dueno, admin, vendedor, cobrador)."
             )
-            if u is not None:
-                demo_ids.append((username_norm, mapper.record_id(u)))
-        if demo_ids:
-            verificar_hashes_usuarios_demo(pb, demo_ids)
+        else:
+            logger.info(
+                "Usuarios demo sincronizados (dueno, admin, vendedor, cobrador) — empresa '%s'.",
+                empresa.nombre,
+            )
+            log_huella_demo_password_configurada(logger, contexto="Bootstrap")
+            _confirmar_demo_listo(db)
+
+            demo_ids: list[tuple[str, str]] = []
+            for username, _nombre, _rol in DEMO_USUARIOS:
+                username_norm = username.strip().lower()
+                u = (
+                    db.query(Usuario)
+                    .filter(func.lower(Usuario.username) == username_norm)
+                    .first()
+                )
+                if u is not None:
+                    demo_ids.append((username_norm, mapper.record_id(u)))
+            if demo_ids:
+                verificar_hashes_usuarios_demo(pb, demo_ids)
     except ClientResponseError as exc:
         db.rollback()
         if getattr(exc, "status", None) == 404:

@@ -60,6 +60,10 @@ def record_to_model(model: type, data: dict[str, Any]) -> Any:
     return inst
 
 
+def _es_campo_identificador(key: str) -> bool:
+    return key == "id" or key.endswith("_id")
+
+
 def model_to_record(obj: Any) -> dict[str, Any]:
     model = type(obj)
     out: dict[str, Any] = {}
@@ -68,7 +72,7 @@ def model_to_record(obj: Any) -> dict[str, Any]:
         val = getattr(obj, key, None)
         if val is None:
             continue
-        out[key] = _coerce_storage(val)
+        out[key] = _coerce_storage(val, es_identificador=_es_campo_identificador(key))
     return out
 
 
@@ -79,11 +83,16 @@ def record_id(obj: Any) -> str:
     return str(rid)
 
 
-def _coerce_storage(val: Any) -> Any:
+def _coerce_storage(val: Any, *, es_identificador: bool = False) -> Any:
     if isinstance(val, uuid.UUID):
         s = str(val)
         return s if es_id_pocketbase(s) else id_pocketbase_desde_cualquiera(val)
-    if isinstance(val, str) and len(val) > 15 and not es_id_pocketbase(val):
+    if (
+        es_identificador
+        and isinstance(val, str)
+        and len(val) > 15
+        and not es_id_pocketbase(val)
+    ):
         return id_pocketbase_desde_cualquiera(val)
     if isinstance(val, enum.Enum):
         return val.value
