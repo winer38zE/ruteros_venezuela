@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -43,6 +44,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
   String? _comprobanteNombre;
   bool _cargando = true;
   bool _guardando = false;
+  String? _errorCarga;
 
   final _fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   final _fmtNum = NumberFormat('#,##0.00');
@@ -63,6 +65,35 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
 
   double get _montoIngresado =>
       double.tryParse(_montoCtrl.text.replaceAll(',', '.')) ?? 0;
+
+  /// Sin permiso o sin señal el cobro sigue. El servidor lo marca sin ubicación.
+  Future<({double lat, double lng, double precision})?> _ubicacionSiHay() async {
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return null;
+      var permiso = await Geolocator.checkPermission();
+      if (permiso == LocationPermission.denied) {
+        permiso = await Geolocator.requestPermission();
+      }
+      if (permiso == LocationPermission.denied || permiso == LocationPermission.deniedForever) {
+        return null;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+      return (lat: pos.latitude, lng: pos.longitude, precision: pos.accuracy);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _fechaCorta(String? iso) {
+    if (iso == null || iso.length < 10) return 'sin fecha';
+    return iso.substring(0, 10);
+  }
 
   String _captionComprobante() {
     final cliente = _venta?.clienteNombre.trim();
@@ -92,11 +123,13 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
       ]);
       _pendientes = results[0] as List<VentaPendiente>;
       _tasa = results[1] as TasaCambioDetalle;
+      _errorCarga = null;
       if (_pendientes.isNotEmpty) {
         _venta = _pendientes.first;
         _actualizarMontoSugerido();
       }
     } catch (e) {
+      _errorCarga = '$e';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFEF4444)),
@@ -163,6 +196,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
 
     setState(() => _guardando = true);
     try {
+      final gps = await _ubicacionSiHay();
       final cobro = await context.read<AppState>().cobros.registrarCobro(
             ventaId: _venta!.id,
             montoUsd: montoUsd,
@@ -170,6 +204,9 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
             tasaUsd: _tasa!.usdBcvBs,
             tasaEur: _tasa!.eurBs,
             cobroId: const Uuid().v4(),
+            latitud: gps?.lat,
+            longitud: gps?.lng,
+            precisionMetros: gps?.precision,
             esTransferencia: _canalCobro != 'efectivo',
             canal: _canalCobro == 'efectivo' ? null : _canalCobro,
             referenciaPago: _canalCobro != 'efectivo' ? _referenciaCtrl.text : null,
@@ -247,7 +284,14 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
           ),
         ),
       ),
-      body: _pendientes.isEmpty
+      body: _errorCarga != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(_errorCarga!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFEF4444))),
+              ),
+            )
+          : _pendientes.isEmpty
           ? const EmptyState(
               icon: Icons.check_circle_outline_rounded,
               message: 'No hay ventas pendientes de cobro',
@@ -265,7 +309,7 @@ class _NuevoCobroScreenState extends State<NuevoCobroScreen> {
                     title: Text(v.clienteNombre),
                     subtitle: Text(
                       'Saldo: ${_fmt.format(v.saldoPendienteUsd)} · '
-                      'Total: ${_fmt.format(v.totalUsd)} · ${v.estado}',
+                      '${_fechaCorta(v.fecha)} · ${v.estado}',
                     ),
                     trailing: selected
                         ? const Icon(Icons.check_circle_rounded, color: AppColors.neonCyan)
