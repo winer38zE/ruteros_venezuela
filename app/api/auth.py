@@ -37,6 +37,9 @@ def huella_contraseña_log(plain_password: str) -> tuple[int, str]:
     return len(plain_password or ""), hashlib.sha256(data).hexdigest()[:6]
 
 
+DEMO_PASSWORD_LONGITUD_MINIMA = 12
+
+
 def obtener_demo_password() -> str:
     """Clave del usuario dueño (DEMO_PASSWORD en Coolify)."""
     raw = os.getenv("DEMO_PASSWORD")
@@ -44,6 +47,50 @@ def obtener_demo_password() -> str:
         return "123456"
     stripped = raw.strip()
     return stripped if stripped else "123456"
+
+
+def demo_password_cumple_longitud_minima(password: str | None = None) -> bool:
+    clave = obtener_demo_password() if password is None else password
+    return len(clave or "") >= DEMO_PASSWORD_LONGITUD_MINIMA
+
+
+def motivo_rechazo_sync_demo_por_password() -> str | None:
+    """Si DEMO_PASSWORD es demasiado corta, no se deben sincronizar usuarios demo."""
+    clave = obtener_demo_password()
+    n = len(clave or "")
+    if n >= DEMO_PASSWORD_LONGITUD_MINIMA:
+        return None
+    return (
+        f"No se sincronizan usuarios demo: DEMO_PASSWORD tiene {n} caracteres "
+        f"(mínimo {DEMO_PASSWORD_LONGITUD_MINIMA}). Define una clave más larga "
+        "o desactiva las cuentas demo."
+    )
+
+
+def entorno_es_produccion() -> bool:
+    val = (os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or os.getenv("ENV") or "").strip().lower()
+    if val in ("development", "dev", "local", "test"):
+        return False
+    if val in ("production", "prod"):
+        return True
+    return bool(os.getenv("COOLIFY_FQDN") or os.getenv("COOLIFY_URL"))
+
+
+def demo_users_enabled() -> bool:
+    """En producción, por defecto no se sincronizan cuentas demo."""
+    raw = os.getenv("DEMO_USERS_ENABLED")
+    if raw is not None and raw.strip() != "":
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+    return not entorno_es_produccion()
+
+
+def motivo_omitir_sync_usuarios_demo() -> str | None:
+    if not demo_users_enabled():
+        return (
+            "No se sincronizan usuarios demo: DEMO_USERS_ENABLED está desactivado "
+            "(valor por defecto en producción). Actívalo solo si aún necesitas cuentas demo."
+        )
+    return motivo_rechazo_sync_demo_por_password()
 
 
 def obtener_demo_roles_password() -> str:
