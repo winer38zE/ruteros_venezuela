@@ -24,6 +24,7 @@ import 'cartera_critica_screen.dart';
 import 'proveedores_screen.dart';
 import 'rutas_list_screen.dart';
 import 'rutas_resumen_screen.dart';
+import 'seguimiento_rutas_screen.dart';
 import '../widgets/unauthenticated_entry.dart';
 import 'cuenta_bancaria_empleado_screen.dart';
 import 'datos_bancarios_screen.dart';
@@ -191,6 +192,15 @@ class HomeScreen extends StatelessWidget {
           badge: 'LIVE',
         ),
         _ModuleDef(
+          id: 'seguimiento_rutas',
+          icon: Icons.map_rounded,
+          title: 'Seguimiento de rutas',
+          subtitle: 'Puntos de cobro del día en el mapa',
+          color: AppColors.neonCyan,
+          screen: SeguimientoRutasScreen(),
+          badge: 'GPS',
+        ),
+        _ModuleDef(
           id: 'paises_reglas',
           icon: Icons.public_rounded,
           title: 'Países y sueldos',
@@ -319,6 +329,15 @@ class HomeScreen extends StatelessWidget {
     }
 
     if (state.puedeOperaciones) {
+      modules.add(const _ModuleDef(
+        id: 'seguimiento_rutas',
+        icon: Icons.map_rounded,
+        title: 'Seguimiento de rutas',
+        subtitle: 'Puntos de cobro del día en el mapa',
+        color: AppColors.neonCyan,
+        screen: SeguimientoRutasScreen(),
+        badge: 'GPS',
+      ));
       modules.add(const _ModuleDef(
         id: 'datos_bancarios',
         icon: Icons.account_balance_rounded,

@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.models.core import Cobro, Venta, Producto
-from app.services.amortizacion import proxima_cuota_pendiente, serializar_cuota
+from app.services.amortizacion import monto_pendiente_cuota, proxima_cuota_pendiente, serializar_cuota
 from app.services.email_service import enviar_correo
 
 FRECUENCIA_LABEL = {
@@ -107,7 +107,7 @@ def html_recibo_cobro(db: Session, venta: Venta, cobro: Cobro) -> str:
     saldo = float(venta.total_usd) - float(cobrado)
     proxima = proxima_cuota_pendiente(db, venta.id)
     prox_txt = proxima.fecha_vencimiento.strftime("%d/%m/%Y") if proxima else "—"
-    prox_monto = float(proxima.monto_usd - proxima.monto_pagado_usd) if proxima else 0.0
+    prox_monto = monto_pendiente_cuota(proxima) if proxima else 0.0
     moneda = MONEDA_LABEL.get(
         cobro.moneda_pago.value if hasattr(cobro.moneda_pago, "value") else str(cobro.moneda_pago),
         str(cobro.moneda_pago),
@@ -130,6 +130,24 @@ def html_recibo_cobro(db: Session, venta: Venta, cobro: Cobro) -> str:
     <p style="margin-top:24px;color:#666;font-size:12px">Mensaje automático — Ruteros Venezuela</p>
     </body></html>
     """
+
+
+def texto_recibo_venta(db: Session, venta: Venta) -> str:
+    cliente = venta.cliente.nombre if venta.cliente else "Cliente"
+    lineas = [
+        f"Recibo de venta — {cliente}",
+        f"Fecha: {venta.fecha.strftime('%d/%m/%Y') if venta.fecha else '—'}",
+        f"Total: {_fmt_usd(venta.total_usd or 0)}",
+        f"Estado: {venta.estado.value if getattr(venta, 'estado', None) else '—'}",
+    ]
+    for d in venta.detalles or []:
+        prod = db.query(Producto).filter(Producto.id == d.producto_id).first() if d.producto_id else None
+        nombre = prod.nombre if prod else "Producto"
+        lineas.append(f"- {nombre} x{d.cantidad} ({_fmt_usd(d.precio_unitario_usd or 0)})")
+    cobrado = sum(Decimal(str(c.monto_usd or 0)) for c in (venta.cobros or []))
+    saldo = float(venta.total_usd or 0) - float(cobrado)
+    lineas.append(f"Saldo: {_fmt_usd(saldo)}")
+    return "\n".join(lineas)
 
 
 def enviar_recibo_venta(db: Session, venta: Venta) -> tuple[bool, str]:
